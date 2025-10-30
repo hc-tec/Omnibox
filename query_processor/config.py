@@ -2,16 +2,41 @@
 查询处理器配置
 使用 Pydantic Settings 管理环境变量（最佳实践）
 """
-from typing import Optional, Literal
+from pathlib import Path
+from typing import List, Literal, Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
+
+
+def _resolve_env_files() -> List[Path]:
+    """
+    获取应当加载的 .env 文件（项目根目录优先，其次当前工作目录）
+    """
+    candidates = []
+
+    if DEFAULT_ENV_FILE.exists():
+        candidates.append(DEFAULT_ENV_FILE)
+
+    cwd_env = Path.cwd() / ".env"
+    try:
+        if cwd_env.exists() and cwd_env.resolve() != DEFAULT_ENV_FILE.resolve():
+            candidates.append(cwd_env)
+    except FileNotFoundError:
+        # 某些虚拟文件系统下 resolve() 可能失败，直接忽略
+        pass
+
+    return candidates
 
 
 class LLMSettings(BaseSettings):
     """LLM配置（从环境变量读取）"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_resolve_env_files(),
         env_file_encoding="utf-8",
         env_prefix="",  # 不使用前缀
         case_sensitive=False,
@@ -75,7 +100,7 @@ class PromptSettings(BaseSettings):
     """Prompt配置"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_resolve_env_files(),
         env_file_encoding="utf-8",
         env_prefix="PROMPT_",
         case_sensitive=False,
@@ -103,7 +128,7 @@ class PathSettings(BaseSettings):
     """路径构建配置"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_resolve_env_files(),
         env_file_encoding="utf-8",
         env_prefix="PATH_",
         case_sensitive=False,

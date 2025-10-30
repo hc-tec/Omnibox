@@ -2,7 +2,7 @@
 快速开始脚本
 一键构建索引并测试查询
 """
-from rag_pipeline import RAGPipeline
+from rag_system.rag_pipeline import RAGPipeline
 import logging
 
 logging.basicConfig(level=logging.INFO)

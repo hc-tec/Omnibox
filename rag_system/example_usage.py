@@ -2,7 +2,7 @@
 RAG系统使用示例
 演示如何使用RAG管道进行路由检索
 """
-from rag_pipeline import RAGPipeline
+from rag_system.rag_pipeline import RAGPipeline
 import logging
 
 logging.basicConfig(level=logging.INFO)

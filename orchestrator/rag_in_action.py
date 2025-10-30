@@ -87,16 +87,17 @@ class RAGInAction:
             - clarification_question: 如果需要澄清的问题
             - retrieved_tools: RAG检索到的所有工具
         """
+        # 关键业务事件：开始处理查询
+        logger.info(f"开始处理查询: {user_query}")
+
         if verbose:
-            logger.info("="*80)
-            logger.info(f"开始处理查询: {user_query}")
-            logger.info("="*80)
+            logger.debug("="*80)
 
         try:
             # ========== 阶段1: RAG检索 ==========
             if verbose:
-                logger.info("\n[阶段1] RAG向量检索")
-                logger.info("-" * 80)
+                logger.debug("[阶段1] RAG向量检索")
+                logger.debug("-" * 80)
 
             rag_results = self.rag_pipeline.search(
                 query=user_query,
@@ -106,6 +107,7 @@ class RAGInAction:
             )
 
             if not rag_results:
+                logger.warning(f"未找到匹配工具: {user_query}")
                 return {
                     "status": "not_found",
                     "reasoning": "未找到相关的API工具",
@@ -120,12 +122,12 @@ class RAGInAction:
             retrieved_tools = [route_def for _, _, route_def in rag_results]
 
             if verbose:
-                logger.info(f"✓ 检索到 {len(retrieved_tools)} 个相关工具")
+                logger.debug(f"检索到 {len(retrieved_tools)} 个相关工具")
 
             # ========== 阶段2: 构建Prompt ==========
             if verbose:
-                logger.info("\n[阶段2] 构建LLM Prompt")
-                logger.info("-" * 80)
+                logger.debug("[阶段2] 构建LLM Prompt")
+                logger.debug("-" * 80)
 
             prompt = self.prompt_builder.build(
                 user_query=user_query,
@@ -133,12 +135,12 @@ class RAGInAction:
             )
 
             if verbose:
-                logger.info(f"✓ Prompt构建完成（长度: {len(prompt)} 字符）")
+                logger.debug(f"Prompt构建完成（长度: {len(prompt)} 字符）")
 
             # ========== 阶段3: LLM解析 ==========
             if verbose:
-                logger.info("\n[阶段3] LLM查询解析")
-                logger.info("-" * 80)
+                logger.debug("[阶段3] LLM查询解析")
+                logger.debug("-" * 80)
 
             parse_result = self.query_parser.parse(
                 prompt=prompt,
@@ -146,15 +148,15 @@ class RAGInAction:
             )
 
             if verbose:
-                logger.info(f"✓ 解析完成: status={parse_result.get('status')}")
+                logger.debug(f"解析完成: status={parse_result.get('status')}")
                 if parse_result.get('reasoning'):
-                    logger.info(f"  推理: {parse_result['reasoning']}")
+                    logger.debug(f"推理: {parse_result['reasoning']}")
 
             # ========== 阶段4: 路径构建（如果成功） ==========
             if parse_result["status"] == "success":
                 if verbose:
-                    logger.info("\n[阶段4] 构建API路径")
-                    logger.info("-" * 80)
+                    logger.debug("[阶段4] 构建API路径")
+                    logger.debug("-" * 80)
 
                 # 从retrieved_tools中找到对应的完整路由定义
                 selected_route_id = parse_result["selected_tool"]["route_id"]
@@ -175,15 +177,24 @@ class RAGInAction:
                     parse_result["generated_path"] = verified_path
 
                     if verbose:
-                        logger.info(f"✓ 路径已构建: {verified_path}")
+                        logger.debug(f"路径已构建: {verified_path}")
 
             # ========== 返回结果 ==========
             parse_result["retrieved_tools"] = retrieved_tools
 
+            # 关键业务事件：处理完成
+            status = parse_result['status']
+            if status == 'success':
+                logger.info(f"处理成功: {parse_result.get('generated_path')}")
+            elif status == 'needs_clarification':
+                logger.warning(f"需要澄清: {parse_result.get('clarification_question', 'N/A')}")
+            elif status == 'not_found':
+                logger.warning("未找到匹配工具")
+            else:
+                logger.error(f"处理失败: {parse_result.get('reasoning', 'Unknown')}")
+
             if verbose:
-                logger.info("\n" + "="*80)
-                logger.info("处理完成！")
-                logger.info("="*80)
+                logger.debug("="*80)
                 self._print_result(parse_result)
 
             return parse_result
@@ -203,24 +214,24 @@ class RAGInAction:
 
     def _print_result(self, result: Dict[str, Any]) -> None:
         """打印处理结果（美化输出）"""
-        print("\n📊 处理结果:")
+        print("\n[处理结果]")
         print(f"  状态: {result['status']}")
 
         if result['status'] == 'success':
-            print(f"\n✅ 成功生成API调用:")
+            print(f"\n[成功] 生成API调用:")
             print(f"  路径: {result['generated_path']}")
             print(f"  工具: {result['selected_tool']['name']} ({result['selected_tool']['route_id']})")
             print(f"  参数: {result['parameters_filled']}")
 
         elif result['status'] == 'needs_clarification':
-            print(f"\n❓ 需要更多信息:")
+            print(f"\n[需要澄清] 需要更多信息:")
             print(f"  问题: {result.get('clarification_question')}")
 
         elif result['status'] == 'not_found':
-            print(f"\n❌ 未找到匹配的功能")
+            print(f"\n[错误] 未找到匹配的功能")
 
         elif result['status'] == 'error':
-            print(f"\n❌ 处理错误:")
+            print(f"\n[错误] 处理失败:")
             print(f"  原因: {result.get('reasoning')}")
 
 

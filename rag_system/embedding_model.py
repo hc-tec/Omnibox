@@ -53,8 +53,8 @@ class EmbeddingModel:
 
         self.device = device
 
-        logger.info(f"准备加载模型: {model_name}")
-        logger.info(f"使用设备: {device}")
+        logger.debug(f"准备加载模型: {model_name}")
+        logger.debug(f"使用设备: {device}")
 
         # 根据配置选择加载方式
         model_path = model_name
@@ -66,12 +66,12 @@ class EmbeddingModel:
                 )
             except Exception as e:
                 logger.warning(f"ModelScope下载失败: {e}")
-                logger.info("降级使用Hugging Face下载")
+                logger.debug("降级使用Hugging Face下载")
                 # 降级使用 Hugging Face
                 model_path = model_name
 
         # 加载模型
-        logger.info(f"正在加载模型...")
+        logger.debug(f"正在加载模型...")
         self.model = SentenceTransformer(
             model_path,
             device=device,
@@ -100,17 +100,17 @@ class EmbeddingModel:
             self.model.max_seq_length = target_max_length
 
         self.max_length = target_max_length
-        logger.info(
+        logger.debug(
             "最大序列长度设置为 %s (模型默认: %s)",
             self.max_length if self.max_length is not None else "未限制",
             model_default_max_length if model_default_max_length is not None else "未知",
         )
 
-        logger.info("✓ 模型加载完成")
+        logger.info("向量模型加载完成")
 
         # 打印模型信息
         if device == "cuda":
-            logger.info(f"GPU显存占用: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+            logger.debug(f"GPU显存占用: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
 
     def _download_from_modelscope(
         self,
@@ -151,8 +151,8 @@ class EmbeddingModel:
             # 尝试直接使用原始ID
             ms_model_id = model_name
 
-        logger.info(f"使用ModelScope镜像下载: {ms_model_id}")
-        logger.info("提示: 首次下载会较慢，后续会使用缓存")
+        logger.debug(f"使用ModelScope镜像下载: {ms_model_id}")
+        logger.debug("提示: 首次下载会较慢，后续会使用缓存")
 
         # 下载模型到本地
         model_dir = snapshot_download(
@@ -160,7 +160,7 @@ class EmbeddingModel:
             cache_dir=os.path.expanduser("~/.cache/modelscope")
         )
 
-        logger.info(f"✓ 模型已下载到: {model_dir}")
+        logger.debug(f"模型已下载到: {model_dir}")
         return model_dir
 
     def encode(
@@ -184,7 +184,7 @@ class EmbeddingModel:
         if isinstance(texts, str):
             texts = [texts]
 
-        logger.info(f"开始向量化 {len(texts)} 个文本")
+        logger.debug(f"开始向量化 {len(texts)} 个文本")
 
         # 使用模型编码
         embeddings = self.model.encode(
@@ -195,7 +195,7 @@ class EmbeddingModel:
             convert_to_numpy=True,
         )
 
-        logger.info(f"向量化完成，向量维度: {embeddings.shape}")
+        logger.debug(f"向量化完成，向量维度: {embeddings.shape}")
 
         return embeddings
 

@@ -11,6 +11,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from orchestrator.rag_in_action import create_rag_in_action
+from query_processor.config import llm_settings
 
 
 def example_1_basic_usage():
@@ -22,22 +23,25 @@ def example_1_basic_usage():
     print("示例1：基本使用")
     print("="*80)
 
-    # 配置LLM（需要设置环境变量 OPENAI_API_KEY）
-    if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️  请先设置环境变量: export OPENAI_API_KEY=your_key")
-        print("或者在代码中设置: os.environ['OPENAI_API_KEY'] = 'your_key'")
+    # 配置LLM（需要在 .env 文件中设置 OPENAI_API_KEY）
+    if not llm_settings.openai_api_key:
+        print("[警告] 请在 .env 文件中设置: OPENAI_API_KEY=your_key")
+        print("或者设置环境变量: export OPENAI_API_KEY=your_key")
         return
 
-    # 创建RAG-in-Action实例
+    # 创建RAG-in-Action实例（使用 .env 配置的提供商和模型）
     ria = create_rag_in_action(
-        llm_provider="openai",
-        llm_config={
-            "model": "gpt-4",  # 或 gpt-3.5-turbo
-        }
+        llm_provider=llm_settings.llm_provider,  # 从 .env 读取
     )
 
     # 处理用户查询
     user_query = "帮我看看虎扑步行街今天最新发布的帖子"
+
+    print(f"\n使用 LLM: {llm_settings.llm_provider}")
+    print(f"模型: {llm_settings.openai_model}")
+    if llm_settings.openai_base_url:
+        print(f"Base URL: {llm_settings.openai_base_url}")
+    print(f"查询: {user_query}\n")
 
     result = ria.process(
         user_query=user_query,
@@ -46,7 +50,45 @@ def example_1_basic_usage():
 
     # 使用结果
     if result["status"] == "success":
-        print(f"\n✅ 可以调用API:")
+        print(f"\n[成功] 可以调用API:")
+        print(f"   路径: {result['generated_path']}")
+        print(f"   参数: {result['parameters_filled']}")
+
+
+def example_1b_anthropic_usage():
+    """
+    示例1b：使用 Anthropic Claude
+    使用 .env 配置的 Anthropic API
+    """
+    print("\n" + "="*80)
+    print("示例1b：使用 Anthropic Claude")
+    print("="*80)
+
+    # 检查 Anthropic API Key（从 .env 文件读取）
+    if not llm_settings.anthropic_api_key:
+        print("[警告] 请在 .env 文件中设置: ANTHROPIC_API_KEY=your_key")
+        return
+
+    # 创建RAG-in-Action实例，使用配置的 LLM 提供商
+    ria = create_rag_in_action(
+        llm_provider=llm_settings.llm_provider,  # 从 .env 读取
+    )
+
+    # 处理用户查询
+    user_query = "帮我看看虎扑步行街今天最新发布的帖子"
+
+    print(f"\n使用 LLM: {llm_settings.llm_provider}")
+    print(f"模型: {llm_settings.anthropic_model if llm_settings.llm_provider == 'anthropic' else llm_settings.openai_model}")
+    print(f"查询: {user_query}\n")
+
+    result = ria.process(
+        user_query=user_query,
+        verbose=True,
+    )
+
+    # 使用结果
+    if result["status"] == "success":
+        print(f"\n[成功] 可以调用API:")
         print(f"   路径: {result['generated_path']}")
         print(f"   参数: {result['parameters_filled']}")
 
@@ -170,8 +212,8 @@ def example_4_error_handling():
     print("示例4：错误处理")
     print("="*80)
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️  需要设置OPENAI_API_KEY")
+    if not llm_settings.openai_api_key:
+        print("[警告] 需要在 .env 文件中设置 OPENAI_API_KEY")
         return
 
     ria = create_rag_in_action(
@@ -193,16 +235,16 @@ def example_4_error_handling():
         result = ria.process(query, verbose=False)
 
         if result["status"] == "success":
-            print(f"✅ 成功: {result['generated_path']}")
+            print(f"[成功] {result['generated_path']}")
 
         elif result["status"] == "needs_clarification":
-            print(f"❓ 需要澄清: {result.get('clarification_question')}")
+            print(f"[需要澄清] {result.get('clarification_question')}")
 
         elif result["status"] == "not_found":
-            print(f"❌ 未找到匹配功能")
+            print(f"[错误] 未找到匹配功能")
 
         elif result["status"] == "error":
-            print(f"❌ 错误: {result.get('reasoning')}")
+            print(f"[错误] {result.get('reasoning')}")
 
 
 def main():
@@ -212,18 +254,24 @@ def main():
     print("RAG-in-Action 使用示例")
     print("="*80)
 
-    # 检查环境
+    # 检查环境（使用 Pydantic Settings 读取 .env 文件）
     print("\n环境检查:")
-    print(f"  OPENAI_API_KEY: {'已设置' if os.getenv('OPENAI_API_KEY') else '未设置'}")
+    print(f"  LLM提供商: {llm_settings.llm_provider}")
+    print(f"  OPENAI_API_KEY: {'已设置' if llm_settings.openai_api_key else '未设置'}")
+    print(f"  ANTHROPIC_API_KEY: {'已设置' if llm_settings.anthropic_api_key else '未设置'}")
 
-    # 运行示例
-    # example_1_basic_usage()  # 需要OPENAI_API_KEY
-    # example_2_custom_llm()
-    example_3_step_by_step()  # 不需要LLM
-    # example_4_error_handling()  # 需要OPENAI_API_KEY
+    # 运行示例（根据 .env 配置自动选择）
+    if llm_settings.llm_provider == "openai" and llm_settings.openai_api_key:
+        example_1_basic_usage()  # 使用 OpenAI（或 DeepSeek 等兼容 API）
+    elif llm_settings.llm_provider == "anthropic" and llm_settings.anthropic_api_key:
+        example_1b_anthropic_usage()  # 使用 Anthropic Claude
+    else:
+        print("[警告] 未配置 LLM，运行演示示例（不调用 LLM）")
+        example_3_step_by_step()  # 不需要LLM
 
     print("\n提示:")
-    print("  - example_1: 基本使用（需要OPENAI_API_KEY）")
+    print("  - example_1: 基本使用 OpenAI（需要OPENAI_API_KEY）")
+    print("  - example_1b: 使用 Anthropic Claude（需要ANTHROPIC_API_KEY）")
     print("  - example_2: 自定义LLM")
     print("  - example_3: 分步调用（无需API Key）")
     print("  - example_4: 错误处理")

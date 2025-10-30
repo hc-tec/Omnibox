@@ -58,7 +58,7 @@ class QueryParser:
 
         for attempt in range(self.max_retries + 1):
             try:
-                logger.info(f"调用LLM解析查询（尝试 {attempt + 1}/{self.max_retries + 1}）")
+                logger.debug(f"调用LLM解析查询（尝试 {attempt + 1}/{self.max_retries + 1}）")
 
                 # 调用LLM
                 raw_response = self.llm_client.generate(
@@ -75,7 +75,7 @@ class QueryParser:
                 # 验证结构
                 self._validate_result(parsed_result)
 
-                logger.info(f"✓ 成功解析查询: status={parsed_result.get('status')}")
+                logger.debug(f"成功解析查询: status={parsed_result.get('status')}")
                 return parsed_result
 
             except (json.JSONDecodeError, ValueError) as e:
@@ -83,7 +83,7 @@ class QueryParser:
                 logger.warning(f"解析失败（尝试 {attempt + 1}）: {e}")
 
                 if attempt < self.max_retries:
-                    logger.info("重试中...")
+                    logger.debug("重试中...")
                     continue
 
         # 所有重试都失败
