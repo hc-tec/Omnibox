@@ -3,9 +3,10 @@ LLM客户端抽象层
 职责：使用成熟的LangChain聊天模型接口统一不同LLM提供商的调用方式
 """
 import logging
-import os
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
+
+from .config import llm_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class OpenAIClient(LLMClient):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gpt-4o-mini",
+        model: Optional[str] = None,
         base_url: Optional[str] = None,
         system_prompt: Optional[str] = None,
     ):
@@ -51,22 +52,27 @@ class OpenAIClient(LLMClient):
         self._HumanMessage = HumanMessage
         self._SystemMessage = SystemMessage
 
-        api_key = api_key or os.getenv("OPENAI_API_KEY")
+        # 优先使用参数，否则从配置读取
+        api_key = api_key or llm_settings.openai_api_key
         if not api_key:
-            raise ValueError("未提供 OPENAI_API_KEY")
+            raise ValueError(
+                "未提供 OPENAI_API_KEY，请设置环境变量或在.env文件中配置"
+            )
 
-        self.model_name = model
+        # 优先使用参数，否则从配置读取
+        self.model_name = model or llm_settings.openai_model
+        base_url = base_url or llm_settings.openai_base_url
         self.system_prompt = system_prompt or (
             "You are a helpful API calling assistant. Always return valid JSON."
         )
 
         self.client = self._ChatOpenAI(
-            model=model,
+            model=self.model_name,
             openai_api_key=api_key,
             openai_api_base=base_url,
         )
 
-        logger.info("✓ 使用 LangChain ChatOpenAI 初始化成功: %s", model)
+        logger.info("✓ 使用 LangChain ChatOpenAI 初始化成功: %s", self.model_name)
 
     def generate(self, prompt: str, **kwargs) -> str:
         """调用OpenAI聊天模型"""
@@ -102,9 +108,19 @@ class AnthropicClient(LLMClient):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "claude-3-sonnet-20240229",
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
         system_prompt: Optional[str] = None,
     ):
+        """
+        初始化 Anthropic 客户端
+
+        Args:
+            api_key: API Key（可选，默认从配置读取）
+            model: 模型名称（可选，默认从配置读取）
+            base_url: API Base URL（可选，用于代理或服务模拟器）
+            system_prompt: 系统提示（可选）
+        """
         try:
             from langchain_anthropic import ChatAnthropic
             from langchain_core.messages import HumanMessage, SystemMessage
@@ -117,19 +133,30 @@ class AnthropicClient(LLMClient):
         self._HumanMessage = HumanMessage
         self._SystemMessage = SystemMessage
 
-        api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        # 优先使用参数，否则从配置读取
+        api_key = api_key or llm_settings.anthropic_api_key
         if not api_key:
-            raise ValueError("未提供 ANTHROPIC_API_KEY")
+            raise ValueError(
+                "未提供 ANTHROPIC_API_KEY，请设置环境变量或在.env文件中配置"
+            )
 
-        self.model_name = model
+        self.model_name = model or llm_settings.anthropic_model
+        base_url = base_url or llm_settings.anthropic_base_url
         self.system_prompt = system_prompt
 
-        self.client = self._ChatAnthropic(
-            model=model,
-            api_key=api_key,
-        )
+        # 构建 ChatAnthropic 参数
+        client_kwargs = {
+            "model": self.model_name,
+            "anthropic_api_key": api_key,
+        }
 
-        logger.info("✓ 使用 LangChain ChatAnthropic 初始化成功: %s", model)
+        # 只有在提供 base_url 时才添加
+        if base_url:
+            client_kwargs["base_url"] = base_url
+
+        self.client = self._ChatAnthropic(**client_kwargs)
+
+        logger.info("✓ 使用 LangChain ChatAnthropic 初始化成功: %s", self.model_name)
 
     def generate(self, prompt: str, **kwargs) -> str:
         """调用Anthropic聊天模型"""

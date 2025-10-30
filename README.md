@@ -8,18 +8,24 @@
 # 1. 安装依赖
 cd rag_system
 pip install -r requirements.txt
-pip install langchain-openai langchain-anthropic  # LLM调用库
 
-# 2. 构建向量索引
+cd ../query_processor
+pip install -r requirements.txt
+
+# 2. 配置环境变量（Pydantic Settings 最佳实践）
+cp .env.example .env
+nano .env  # 编辑.env，填写 OPENAI_API_KEY
+
+# 3. 构建向量索引
+cd ../rag_system
 python quick_start.py
-
-# 3. 设置LLM API Key
-export OPENAI_API_KEY=your_key
 
 # 4. 运行示例
 cd ../orchestrator
 python example_usage.py
 ```
+
+**配置说明**：详见 [CONFIGURATION.md](CONFIGURATION.md)
 
 ## 架构说明
 
@@ -166,6 +172,34 @@ D:\AIProject\omni/
 
 ## 配置说明
 
+### 环境变量配置（推荐方式 - Pydantic Settings）
+
+**创建 .env 文件**：
+
+```bash
+cp .env.example .env
+```
+
+**编辑 .env**：
+
+```env
+# 最少只需要这一个
+OPENAI_API_KEY=sk-your-key-here
+
+# 可选配置
+OPENAI_MODEL=gpt-4o-mini
+LLM_TEMPERATURE=0.1
+PROMPT_MAX_TOOLS=3
+```
+
+**优势**：
+- ✅ 类型验证（Pydantic）
+- ✅ 环境分离（开发/生产）
+- ✅ 密钥安全（不提交到Git）
+- ✅ 自动加载（无需手动读取）
+
+详见：[CONFIGURATION.md](CONFIGURATION.md)
+
 ### RAG配置（rag_system/config.py）
 
 ```python
@@ -173,17 +207,6 @@ EMBEDDING_MODEL_CONFIG = {
     "model_name": "BAAI/bge-m3",
     "device": "cuda",
     "use_modelscope": True,  # 国内镜像
-}
-```
-
-### LLM配置（query_processor/config.py）
-
-```python
-LLM_CONFIG = {
-    "provider": "openai",  # openai/anthropic/custom
-    "openai": {
-        "model": "gpt-4",
-    },
 }
 ```
 
@@ -201,8 +224,9 @@ LLM_CONFIG = {
 cd rag_system
 pip install -r requirements.txt
 
-# 安装LLM依赖
-pip install openai  # 或 anthropic
+# 安装查询解析模块依赖（包含 LangChain + OpenAI/Anthropic SDK）
+cd ../query_processor
+pip install -r requirements.txt
 ```
 
 ## 设计原则

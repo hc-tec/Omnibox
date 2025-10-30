@@ -12,6 +12,9 @@ venv/
 env/
 .env/
 
+# Environment variables (contains secrets)
+.env
+
 # Build and distribution artifacts
 build/
 dist/
