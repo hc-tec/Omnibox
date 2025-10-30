@@ -1,0 +1,49 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+
+# Build and distribution artifacts
+build/
+dist/
+*.egg
+*.whl
+
+# Logs and caches
+*.log
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# IDE metadata
+.vscode/
+.idea/
+
+# --- Node.js ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Project generated artifacts ---
+rag_system/vector_db/
+rag_system/semantic_docs/
+rag_system/rag_system.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+RSSHub/*
+

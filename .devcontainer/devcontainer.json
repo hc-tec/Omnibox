@@ -1,0 +1,44 @@
+{
+  "name": "RSSHub Development",
+  "dockerComposeFile": "../deploy/docker-compose.yml",
+  "service": "rsshub",
+  "workspaceFolder": "/app",
+
+  // 端口转发
+  "forwardPorts": [1200],
+  "portsAttributes": {
+    "1200": {
+      "label": "RSSHub",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // 容器创建后执行的命令
+  "postCreateCommand": "npm install",
+
+  // VSCode 设置
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  // 容器用户
+  "remoteUser": "root",
+
+  // 挂载本地代码到容器
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/app,type=bind,consistency=cached"
+  ],
+
+  // 运行参数覆盖
+  "overrideCommand": true,
+  "shutdownAction": "stopCompose"
+}

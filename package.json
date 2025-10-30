@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "rsshub": "^1.0.0-master.cb1cf51",
+    "typescript": "^5.9.3"
+  }
+}
