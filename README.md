@@ -4,28 +4,85 @@
 
 ## 快速开始
 
+### 1. 安装依赖
+
+**方式1：一次性安装（推荐）**
+
 ```bash
-# 1. 安装依赖
+# 使用根目录统一的 requirements.txt
+pip install -r requirements.txt
+
+# 国内用户推荐使用清华镜像加速
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+**方式2：按模块安装**
+
+```bash
+# RAG系统依赖
 cd rag_system
 pip install -r requirements.txt
 
+# 查询处理器依赖
 cd ../query_processor
 pip install -r requirements.txt
 
-# 2. 配置环境变量（Pydantic Settings 最佳实践）
+# API服务器依赖
+pip install fastapi uvicorn httpx feedparser cachetools
+```
+
+### 2. 启动本地RSSHub服务
+
+**重要：本系统默认使用本地RSSHub，需先启动Docker服务**
+
+```bash
+# 进入部署目录
+cd deploy
+
+# 启动RSSHub服务（包含Redis和Browserless）
+docker-compose up -d
+
+# 验证RSSHub启动成功
+curl http://localhost:1200/
+# 看到欢迎页面表示成功
+
+# 查看服务状态
+docker-compose ps
+
+# 停止服务（如需）
+# docker-compose down
+```
+
+### 3. 配置环境变量
+
+```bash
+# 复制环境变量模板
 cp .env.example .env
-nano .env  # 编辑.env，填写 OPENAI_API_KEY
 
-# 3. 构建向量索引
-cd ../rag_system
+# 编辑配置文件，至少填写 OPENAI_API_KEY
+nano .env  # 或使用其他编辑器
+
+# 主要配置项：
+# - OPENAI_API_KEY: OpenAI API密钥（必填）
+# - RSSHUB_BASE_URL: 本地RSSHub地址（默认 http://localhost:1200）
+# - RSSHUB_FALLBACK_URL: 降级地址（默认 https://rsshub.app）
+```
+
+### 4. 构建向量索引
+
+```bash
+cd rag_system
 python quick_start.py
+```
 
-# 4. 运行示例
+### 5. 运行示例
+
+```bash
 cd ../orchestrator
 python example_usage.py
 ```
 
-**配置说明**：详见 [CONFIGURATION.md](CONFIGURATION.md)
+**详细配置说明**：详见 [CONFIGURATION.md](CONFIGURATION.md)
 
 ## 架构说明
 

@@ -137,8 +137,76 @@ HTTPS_PROXY=http://proxy.com:8080
 
 | 环境变量 | 类型 | 默认值 | 说明 |
 |---------|------|--------|------|
-| `PATH_BASE_URL` | str | "" | RSSHub基础URL |
 | `PATH_PATH_PREFIX` | str | "" | 路径前缀 |
+
+### RSSHub 配置
+
+| 环境变量 | 类型 | 默认值 | 说明 |
+|---------|------|--------|------|
+| `RSSHUB_BASE_URL` | str | http://localhost:1200 | 本地RSSHub服务地址 |
+| `RSSHUB_FALLBACK_URL` | str | https://rsshub.app | 本地不可用时的降级地址 |
+| `RSSHUB_HEALTH_CHECK_TIMEOUT` | int | 3 | 健康检查超时时间（秒） |
+| `RSSHUB_REQUEST_TIMEOUT` | int | 30 | RSS请求超时时间（秒） |
+| `RSSHUB_MAX_RETRIES` | int | 2 | 请求失败重试次数 |
+
+**重要说明**：
+
+本系统**默认使用本地RSSHub服务**，这样可以：
+- 避免公共RSSHub限流
+- 提升响应速度
+- 保护隐私
+- 支持自定义配置
+
+**启动本地RSSHub服务**：
+
+```bash
+# 进入部署目录
+cd deploy
+
+# 启动Docker Compose服务
+docker-compose up -d
+
+# 验证服务启动成功
+curl http://localhost:1200/
+# 应该看到RSSHub欢迎页面
+
+# 查看服务状态
+docker-compose ps
+
+# 查看日志（如有问题）
+docker-compose logs rsshub
+
+# 停止服务
+# docker-compose down
+```
+
+**服务组件**：
+- `rsshub`：RSSHub主服务（端口1200）
+- `redis`：缓存服务
+- `browserless`：浏览器渲染支持
+
+**降级机制**：
+
+系统会自动检测本地RSSHub健康状态：
+- ✅ 本地服务正常 → 使用 `RSSHUB_BASE_URL`（默认 http://localhost:1200）
+- ❌ 本地服务不可用 → 自动降级到 `RSSHUB_FALLBACK_URL`（默认 https://rsshub.app）
+
+降级时会在日志中明确标记，并在响应中返回 `source: "fallback"` 字段。
+
+**配置示例**：
+
+```env
+# 默认配置（推荐）
+RSSHUB_BASE_URL=http://localhost:1200
+RSSHUB_FALLBACK_URL=https://rsshub.app
+
+# 使用自定义部署
+RSSHUB_BASE_URL=http://192.168.1.100:1200
+
+# 调整超时时间
+RSSHUB_HEALTH_CHECK_TIMEOUT=5
+RSSHUB_REQUEST_TIMEOUT=60
+```
 
 ## 使用技巧
 

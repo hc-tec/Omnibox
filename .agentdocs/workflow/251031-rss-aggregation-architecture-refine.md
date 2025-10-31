@@ -48,15 +48,36 @@ CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，�
 
 ### 阶段0：方案落地准备 ✅
 - [x] 完成改进方案文档
-- [ ] 将本方案纳入 `.agentdocs/index.md` 的“当前任务文档”
+- [x] 将本方案纳入 `.agentdocs/index.md` 的"当前任务文档"
 
-### 阶段1：配置与依赖
-- [ ] 扩展 `query_processor/config.py`（或新增配置模块）支持 `rsshub_base_url`、降级列表。
-- [ ] 根目录新增 `requirements.txt` 并收敛依赖；更新 `README.md` 安装说明。
-- [ ] 检查 Docker Compose 文档，提示开发者默认启动 `rsshub` 服务。
+### 阶段1：配置与依赖 ✅
+- [x] 扩展 `query_processor/config.py`（或新增配置模块）支持 `rsshub_base_url`、降级列表。
+  - ✅ 新增 `RSSHubSettings` 类
+  - ✅ 支持本地地址（http://localhost:1200）和降级地址（https://rsshub.app）
+  - ✅ 支持健康检查超时、请求超时、最大重试配置
+  - ✅ 更新 `.env.example` 添加RSSHub配置示例
+  - ✅ 删除 `PathSettings.base_url` 避免配置重复
+- [x] 根目录新增 `requirements.txt` 并收敛依赖；更新 `README.md` 安装说明。
+  - ✅ 创建根目录统一的 `requirements.txt`
+  - ✅ 整合RAG系统、查询处理器、API服务器所有依赖
+  - ✅ 添加新依赖：httpx、feedparser、cachetools、fastapi、uvicorn
+  - ✅ 提供国内镜像安装命令
+- [x] 检查 Docker Compose 文档，提示开发者默认启动 `rsshub` 服务。
+  - ✅ 更新 `README.md` 添加 "启动本地RSSHub服务" 章节
+  - ✅ 更新 `CONFIGURATION.md` 详细说明RSSHub配置和降级机制
+  - ✅ 提供完整的 docker-compose 操作指引
 
 ### 阶段2：Integration 层
-- [ ] 创建 `integration/data_executor.py`，实现同步 `DataExecutor`，支持健康检查、降级与源信息。
+- [x] 创建 `integration/data_executor.py`，实现同步 `DataExecutor`，支持健康检查、降级与源信息。
+  - ✅ 实现FeedItem通用数据模型（支持"万物皆可RSS"）
+  - ✅ 本地优先降级机制
+  - ✅ **关键修复：路径编码安全**
+    - `_split_path_and_query()` 拆分路径与查询字符串
+    - `_encode_path()` 逐段URL编码，解决 `#步行街主干道` 等特殊字符被截断问题
+    - `_build_query_params()` 去重format参数
+  - ✅ **关键修复：依赖管理统一**
+    - 消除 rag_system/requirements.txt 和 query_processor/requirements.txt 重复维护
+    - 子目录改为引用 `-r ../requirements.txt`，保持向后兼容
 - [ ] 实现同步的缓存封装（`integration/cache_service.py`），提供 TTL 缓存。
 - [ ] 覆盖单元测试（本地成功、远端降级、缓存命中/失效、错误处理）。
 
