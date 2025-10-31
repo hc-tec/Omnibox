@@ -1,4 +1,4 @@
-# 项目文档索引
+﻿# 项目文档索引
 
 ## 项目概述
 智能RSS聚合系统 - 基于RAG + LLM的自然语言到API调用转换系统
@@ -61,6 +61,7 @@
 - IntentService和CacheService使用全局单例，DataQueryService使用上下文管理器
 - ChatService默认为调用方管理DataQueryService生命周期，只有在`manage_data_service=True`时才会自动关闭
 - ChatResponse.to_dict()用于API响应序列化，包含丰富的元数据信息
+- FastAPI 层通过 `CHAT_SERVICE_MODE` 控制服务初始化（auto/mock/production），测试环境推荐设为 `mock`
 
 ### 配置管理
 - RSSHub配置统一使用`RSSHubSettings`（`query_processor/config.py`）

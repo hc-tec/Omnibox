@@ -1,4 +1,4 @@
-# Service层使用指南
+﻿# Service层使用指南
 
 ## 概述
 Service层是业务逻辑层，负责整合Integration层的组件，提供完整的业务功能。所有外部调用都应该通过Service层进行，不应直接调用Integration层组件。
@@ -120,6 +120,7 @@ data_service = DataQueryService(rag_in_action)
 chat_service = ChatService(data_service, manage_data_service=True)
 ```
 > 如需复用同一个 `DataQueryService` 实例（例如在多个入口共享），请保持 `manage_data_service=False`（默认值），并由调用方负责生命周期管理。
+> FastAPI 层会读取环境变量 `CHAT_SERVICE_MODE`（auto/mock/production），测试或本地场景推荐设置为 `mock`，避免初始化真实的 RAG/LLM 依赖。
 
 **基本使用**:
 ```python
@@ -230,3 +231,5 @@ print(f"缓存命中: {metadata['cache_hit']}")
 3. **资源管理**: DataQueryService使用上下文管理器或手动close()
 4. **缓存策略**: 优先使用缓存，只有需要强制刷新时才禁用
 5. **错误处理**: 统一使用Service层的错误处理，不要在调用层单独处理
+
+

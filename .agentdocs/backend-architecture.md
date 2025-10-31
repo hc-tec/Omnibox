@@ -1,4 +1,4 @@
-# 后端架构与技术约束
+﻿# 后端架构与技术约束
 
 ## 概述
 本文档记录后端（Integration/Service/Controller层）的架构设计、技术约束和可复用组件规范。修改任何后端代码时必读。
@@ -39,7 +39,7 @@ finally:
 3. **万物皆可RSS** - FeedItem模型支持视频、社交动态、论坛、商品等多种数据类型
 4. **媒体信息提取** - 自动从RSSHub的enclosure字段提取图片/视频/音频URL
 
-**重要记忆**:
+**重要记忆**:\n- 默认由调用方管理 DataQueryService 生命周期；若设置 manage_data_service=True，ChatService 会在关闭时一并释放资源
 - 所有RSSHub路径必须通过DataExecutor访问，不允许直接拼接URL
 - 特殊字符路径（如`/hupu/bbs/#步行街主干道/1`）会被正确编码
 - 返回的FetchResult包含`source`字段（local/fallback），用于监控降级情况
@@ -342,8 +342,142 @@ response_dict = response.to_dict()
 **重要记忆**:
 - 所有对话入口统一走ChatService，不要直接调用DataQueryService
 - ChatService 仅在 `manage_data_service=True` 时负责关闭 DataQueryService，默认由调用方管理生命周期
+- 通过环境变量 `CHAT_SERVICE_MODE` 控制服务初始化（auto/production/mock），auto 模式下依赖缺失会自动回退到 MockChatService
 - ChatResponse.to_dict()用于API响应序列化
 - 闲聊响应当前是规则+模板，后续可接入LLM
+
+## Controller层 (api/)
+
+### 设计原则
+1. **线程池解耦** - 使用`run_in_threadpool`执行同步Service，避免阻塞FastAPI事件循环
+2. **统一响应格式** - 所有接口返回ApiResponse[T]统一结构
+3. **异常集中处理** - 中间件统一捕获并转换为标准错误响应
+4. **依赖注入** - 通过Depends()管理服务生命周期
+
+### 核心组件
+
+#### 1. ChatController (api/controllers/chat_controller.py)
+**职责**: 处理HTTP请求，调用Service层，返回标准响应
+
+**关键接口**:
+```python
+POST /api/v1/chat
+- 请求: ChatRequest (query, filter_datasource, use_cache)
+- 响应: ChatResponse (success, message, data, metadata)
+- 实现: await run_in_threadpool(chat_service.chat, ...)
+```
+
+```python
+GET /api/v1/health
+- 响应: 健康状态 (chat_service, rsshub, rag, cache)
+- 检查: RSSHub本地/降级状态
+```
+
+**生命周期管理**:
+- `initialize_services()` - 应用启动时创建全局ChatService (manage_data_service=True)
+- `shutdown_services()` - 应用关闭时调用ChatService.close()
+- `get_chat_service()` - 依赖注入函数，向路由提供服务实例
+
+#### 2. 异常处理中间件 (api/middleware/exception_handlers.py)
+**统一错误格式**:
+```python
+{
+  "success": false,
+  "error_code": "HTTP_404" | "VALIDATION_ERROR" | "INTERNAL_ERROR",
+  "message": "错误描述",
+  "detail": [...] // 仅验证错误时包含
+}
+```
+
+**处理器**:
+- `exception_handler_middleware` - 捕获所有未处理异常，返回500错误
+- `http_exception_handler` - 处理HTTPException，返回对应状态码
+- `validation_exception_handler` - 处理Pydantic验证错误，返回422+详情
+- `add_process_time_header_middleware` - 添加X-Process-Time响应头
+
+#### 3. 统一响应Schema (api/schemas/responses.py)
+**核心模型**:
+- `FeedItemSchema` - RSS数据项（title/link/description/pub_date/media_url等）
+- `ResponseMetadata` - 元数据（intent/cache_hit/source/confidence等）
+- `ApiResponse[T]` - 泛型响应容器（success/message/data/metadata）
+- `ChatRequest` - 对话请求（query必填，filter_datasource/use_cache可选）
+- `ChatResponse` - 对话响应（继承ApiResponse[List[FeedItemSchema]]）
+
+#### 4. FastAPI应用 (api/app.py)
+**配置项**:
+- CORS中间件 - 允许跨域（生产应限制域名）
+- 异常处理 - 注册全局异常处理器
+- 路由注册 - `/api/v1/chat`, `/api/v1/health`
+- 生命周期 - startup事件初始化服务，shutdown事件释放资源
+- API文档 - `/docs` (Swagger UI), `/redoc` (ReDoc)
+
+**关键实现**:
+```python
+@app.on_event("startup")
+async def startup_event():
+    initialize_services()  # 创建全局ChatService
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    shutdown_services()  # 关闭ChatService（级联关闭DataQueryService）
+```
+
+### 关键技术决策
+
+#### 同步Service + 异步Controller
+**问题**: Service层是同步实现，FastAPI是异步框架
+**方案**: 使用`fastapi.concurrency.run_in_threadpool`
+```python
+response = await run_in_threadpool(
+    chat_service.chat,
+    user_query=request.query,
+    filter_datasource=request.filter_datasource,
+    use_cache=request.use_cache,
+)
+```
+**优点**:
+- Service层保持同步，简化测试和RAG集成
+- FastAPI事件循环不被阻塞，支持高并发
+- 后续可平滑迁移到async Service（通过asyncio.to_thread）
+
+#### 元数据映射
+**问题**: Service层返回dict，API需要Pydantic模型
+**方案**: 显式映射所有字段到ResponseMetadata
+```python
+metadata = ResponseMetadata(
+    intent_type=response.metadata.get("intent_type"),
+    intent_confidence=response.metadata.get("intent_confidence"),
+    generated_path=response.metadata.get("generated_path"),
+    source=response.metadata.get("source"),
+    cache_hit=response.metadata.get("cache_hit"),
+    feed_title=response.metadata.get("feed_title"),
+    status=response.metadata.get("status"),
+    reasoning=response.metadata.get("reasoning"),
+)
+```
+**注意**: 所有字段Optional，Service层返回None时API也返回null
+
+### 测试策略
+**集成测试** (tests/api/test_chat_controller.py):
+- 使用FastAPI TestClient（同步测试客户端）
+- module级别fixture共享客户端（避免重复启动）
+- 覆盖范围：
+  - 根路径和健康检查
+  - 基本对话查询（数据查询/闲聊）
+  - 缓存控制（use_cache=true/false）
+  - 验证错误（空查询/缺失参数/无效类型）
+  - 响应格式（必需字段/元数据结构/处理时间头）
+  - 并发请求（10个并发请求全部成功）
+  - 错误处理（404/405）
+
+**当前状态**: 12个测试全部通过 ✅
+
+### 重要记忆
+- **线程池必须** - 所有同步Service调用都必须通过run_in_threadpool，禁止直接在async函数中调用同步代码
+- **依赖注入模式** - 路由通过Depends(get_chat_service)获取服务实例，不要在路由内部创建服务
+- **生命周期管理** - ChatService在startup时创建（manage_data_service=True），在shutdown时关闭（级联释放所有资源）
+- **元数据完整性** - 所有metadata字段都要显式映射，即使值为None也要传递
+- **错误响应统一** - 所有异常都通过中间件转换为{success, error_code, message, detail}格式
 
 ## 后续扩展规划
 
@@ -351,3 +485,5 @@ response_dict = response.to_dict()
 2. **异步支持** - Service层可补充async包装方法，通过`asyncio.to_thread`调用同步实现
 3. **监控指标** - 降级次数、缓存命中率、响应耗时等
 4. **LLM闲聊** - ChatService的闲聊响应可接入真实LLM，提供更自然的对话
+5. **WebSocket流式** - 阶段5将实现按阶段推送的流式接口（意图识别→检索→数据→总结）
+

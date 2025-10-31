@@ -111,17 +111,40 @@ CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，�
   - ✅ 统一响应格式（ChatResponse）
   - ✅ 简单的闲聊响应（可扩展为LLM）
   - ✅ 元数据丰富（cache_hit/source/intent_confidence等）
+  - ✅ 新增 `CHAT_SERVICE_MODE` 环境变量：auto 模式缺少依赖时自动回退到 MockChatService，测试环境无需真实 RAG/RSSHub
   - ✅ 修复：仅在 manage_data_service=True 时才由 ChatService 关闭 DataQueryService，避免误关闭共享实例
 - [x] Service层单元测试
   - ✅ IntentService单元测试（15个测试，全部通过）
   - ✅ 代码统计：735行（符合<1000行要求）
   - ✅ **质量��证：中文注释，UTF-8编码，无语法错误**
 
-### 阶段4：Controller 层
-- [ ] `api/controllers/chat_controller.py` 的 REST 端点内使用 `run_in_threadpool` 调用 Service，同步返回结果。
-- [ ] 定义统一响应 Schema，包含降级状态、缓存命中标记。
-- [ ] 集成 FastAPI 异常处理中间件，确保阻塞线程在超时时能回收。
-- [ ] 编写集成测试（可使用 `httpx.AsyncClient` + FastAPI TestClient）。
+### 阶段4：Controller 层 ✅
+- [x] `api/schemas/responses.py` - 统一响应Schema定义
+  - ✅ FeedItemSchema - RSS数据项Schema
+  - ✅ ApiResponse - 泛型统一响应格式
+  - ✅ ChatRequest/ChatResponse - 对话请求/响应
+  - ✅ ErrorResponse - 错误响应
+  - ✅ ResponseMetadata - 丰富的元数据（intent/cache_hit/source等）
+- [x] `api/controllers/chat_controller.py` - ChatController REST API
+  - ✅ POST /api/v1/chat - 对话接口
+  - ✅ GET /api/v1/health - 健康检查接口
+  - ✅ **关键：run_in_threadpool** - 避免阻塞FastAPI事件循环
+  - ✅ 依赖注入 - 全局服务实例管理
+  - ✅ 生命周期管理 - startup/shutdown事件
+- [x] `api/middleware/exception_handlers.py` - 异常处理与耗时统计中间件
+  - ✅ 修复：`add_process_time_header_middleware` 调整为 `async def`，确保请求链不中断并成功写入处理时间头
+- [x] `api/app.py` - FastAPI应用实例
+  - ✅ 路由注册 - ChatController路由
+  - ✅ 中间件配置 - CORS/异常处理/处理时间
+  - ✅ 生命周期事件 - 服务初始化和关闭
+  - ✅ API文档 - Swagger UI (/docs) 和 ReDoc (/redoc)
+- [x] Controller层集成测试 (tests/api/test_chat_controller.py)
+  - ✅ 12个测试全部通过
+  - ✅ 根路径测试、健康检查测试
+  - ✅ 对话接口测试（基本查询、缓存控制）
+  - ✅ 验证错误测试（空查询、缺失参数、无效类型）
+  - ✅ 响应格式测试（必需字段、元数据结构、处理时间头）
+  - ✅ 错误处理测试（404、405）
 
 ### 阶段5：WebSocket 流式接口
 - [ ] 设计并实现 `chat_stream.py`，按阶段推送处理进度。
