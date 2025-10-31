@@ -135,13 +135,45 @@ class PathSettings(BaseSettings):
         extra="ignore",
     )
 
-    base_url: str = Field(
-        default="",
-        description="RSSHub基础URL（如果需要）"
-    )
     path_prefix: str = Field(
         default="",
         description="路径前缀"
+    )
+
+
+class RSSHubSettings(BaseSettings):
+    """RSSHub服务配置"""
+
+    model_config = SettingsConfigDict(
+        env_file=_resolve_env_files(),
+        env_file_encoding="utf-8",
+        env_prefix="RSSHUB_",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    base_url: str = Field(
+        default="http://localhost:1200",
+        description="RSSHub基础URL（默认本地部署）"
+    )
+    fallback_url: str = Field(
+        default="https://rsshub.app",
+        description="RSSHub降级URL（本地不可用时使用）"
+    )
+    health_check_timeout: int = Field(
+        default=3,
+        gt=0,
+        description="健康检查超时时间（秒）"
+    )
+    request_timeout: int = Field(
+        default=30,
+        gt=0,
+        description="RSS数据请求超时时间（秒）"
+    )
+    max_retries: int = Field(
+        default=2,
+        ge=0,
+        description="请求失败时的最大重试次数"
     )
 
 
@@ -149,11 +181,13 @@ class PathSettings(BaseSettings):
 llm_settings = LLMSettings()
 prompt_settings = PromptSettings()
 path_settings = PathSettings()
+rsshub_settings = RSSHubSettings()
 
 
 def reload_settings():
     """重新加载配置（主要用于测试）"""
-    global llm_settings, prompt_settings, path_settings
+    global llm_settings, prompt_settings, path_settings, rsshub_settings
     llm_settings = LLMSettings()
     prompt_settings = PromptSettings()
     path_settings = PathSettings()
+    rsshub_settings = RSSHubSettings()
