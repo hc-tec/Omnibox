@@ -1,25 +1,41 @@
 # 251101-intelligent-panel-backend
 
-## èƒŒæ™¯
-æ™ºèƒ½æ•°æ®é¢æ¿çš„è®¾è®¡æ–‡æ¡£å·²å¯¹è¾“å‡ºç»“æ„ï¼ˆDataBlockã€ViewDescriptorã€LayoutTree ç­‰ï¼‰åšå‡ºä¸¥æ ¼çº¦æŸï¼Œä½†å®ç°ä¸­ä»å­˜åœ¨å…¼å®¹æ€§ä¸åŠŸèƒ½ç¼ºé™·ï¼šPython 3.8 ç¯å¢ƒæ— æ³•åŠ è½½é¢æ¿æ¨èæ¨¡å—ã€ç»„ä»¶åªä¼šé€€åŒ–ä¸ºåŸºç¡€åˆ—è¡¨ã€å¸ƒå±€ä¿¡æ¯ç¼ºå¤±ï¼ŒåŒæ—¶ç¼ºå°‘ä¸ä»»åŠ¡ç›¸å…³çš„æ–‡æ¡£ä¸æµ‹è¯•æ²‰æ·€ã€‚
+## ±³¾°
+ºó¶ËÖÇÄÜÊı¾İÃæ°åÁ´Â·Ô­±¾ÒÀÀµ¹Ì¶¨×Ö¶ÎºÍÕıÔòÈ¥¡°²Â²â¡± RSSHub ·µ»ØµÄÊı¾İ×Ö¶Î£¬ÕâÔÚ¡°ÍòÎï½Ô¿É RSS¡±³¡¾°ÏÂÎŞ·¨¹¤×÷¡£ÎªÁË³Ğ½ÓºóĞøÇ°¶Ë¹¤×÷£¬ĞèÒª¸ÄÎª¡°±£ÁôÔ­Ê¼Êı¾İ + ÊÊÅäÆ÷¿ÉÀ©Õ¹¡±µÄÄ£Ê½¡£
 
-## ç›®æ ‡
-- ä¿®å¤é¢æ¿æ¨¡å—æ ¸å¿ƒç¼ºé™·ï¼Œç¡®ä¿ Python 3.8 ç¯å¢ƒå¯ç”¨ä¸”èƒ½æ¨èå¤šæ ·åŒ–ç»„ä»¶ã€‚
-- ä¸°å¯Œå¸ƒå±€å±æ€§è¾“å‡ºï¼Œæ»¡è¶³å‰ç«¯æ¸²æŸ“éœ€æ±‚ã€‚
-- è¡¥é½ä»»åŠ¡æ–‡æ¡£ã€ç´¢å¼•è®°å½•ï¼Œå¹¶å®Œæˆæµ‹è¯•æ‰§è¡Œã€‚
+## µ±Ç°½øÕ¹
+- DataExecutor ½ö²Ã¼ô²¢·µ»Ø RSSHub Ô­Ê¼ JSON£¬²»ÔÙÇ¿ÖÆÓ³Éä×Ö¶Î£¨integration/data_executor.py£©¡£
+- DataBlockBuilder / PanelGenerator ÒıÈëÂ·ÓÉ¼¶ÊÊÅäÆ÷»úÖÆ£¨services/panel/adapters.py£©£¬Î´×¢²áÊ±Ä¬ÈÏÊ¹ÓÃ FallbackRichText Õ¹Ê¾Ô­Ê¼Êı¾İ¡£
+- SchemaSummary ½öÍ³¼Æ×Ö¶ÎÀàĞÍºÍÑù±¾£¬È¥µôÓïÒå±êÇ©£¨services/panel/schema_summary.py£©¡£
+- Áªµ÷ÎÄµµ `docs/backend-intelligent-panel-overview.md` ÒÑ¸üĞÂÊÊÅäÆ÷Ê¹ÓÃËµÃ÷¡£
+- »Ø¹é²âÊÔÍ¨¹ı£º`D:\Anaconda\envs\torch-cuda\python.exe -m pytest tests/api/test_chat_controller.py tests/api/test_chat_stream.py`¡£
 
-## æ–¹æ¡ˆæ¦‚è¿°
-1. **å…¼å®¹æ€§ä¿®å¤**ï¼šè°ƒæ•´ç±»å‹æç¤ºä¸å­—æ®µåŒ¹é…ç­–ç•¥ï¼Œè¡¥å…… canonical å­—æ®µæ˜ å°„ï¼Œä¿è¯ Python 3.8 æ­£å¸¸è¿è¡Œã€‚
-2. **å¸ƒå±€å¢å¼º**ï¼šè¯»å–ç»„ä»¶é»˜è®¤å¸ƒå±€ä¸ ViewDescriptor æç¤ºï¼Œç”ŸæˆåŒ…å« span/order ç­‰ä¿¡æ¯çš„ LayoutTreeã€‚
-3. **æ–‡æ¡£ä¸æµ‹è¯•**ï¼šå»ºç«‹ä»»åŠ¡æ–‡æ¡£ã€æ›´æ–°ç´¢å¼•ï¼Œå®‰è£… pytest å¹¶è¿è¡Œæ ¸å¿ƒ API/WebSocket ç”¨ä¾‹ã€‚
+## Î´Íê³ÉÊÂÏî
+1. **Â·ÓÉÊÊÅäÆ÷ÊµÏÖÎª¿Õ°×**£ºÄ¿Ç°³ıÁË¶µµ×Âß¼­ÍâÃ»ÓĞÈÎºÎ route µÄ¾ßÌåÊÊÅäÊµÏÖ£¬ĞèÒª°´Êı¾İÔ´ÖğÒ»²¹Æë¡£
+2. **×é¼şÔ¼¶¨´ıÈ·ÈÏ**£ºÊÊÅäÆ÷·µ»ØµÄ props/options ĞèÓëÇ°¶Ë×é¼ş±£³ÖÒ»ÖÂ£¬ºóĞøÒªÓëÇ°¶ËĞ­Í¬¶¨ÒåÆõÔ¼¡£
+3. **´óÊı¾İÓëÃô¸Ğ×Ö¶Î´¦Àí**£ºÔ­Ê¼ JSON ¿ÉÄÜºÜ´ó£¬Ò²¿ÉÄÜº¬Ãô¸Ğ×Ö¶Î£¬ºóĞøĞè²¹³ä²Ã¼ô/¹ıÂË²ßÂÔ¡£
+4. **²âÊÔ²»×ã**£ºÈ±ÉÙÕë¶ÔÊÊÅäÆ÷ºÍ PanelGenerator µÄµ¥Ôª/¼¯³É²âÊÔ£¬Ó¦ÔÚ±àĞ´ÊÊÅäÆ÷Ê±Í¬²½²¹ÉÏ¡£
 
-## TODO
-- [x] ä¿®å¤ ComponentSuggester çš„å…¼å®¹æ€§ä¸å­—æ®µåŒ¹é…é—®é¢˜ã€‚
-- [x] è°ƒæ•´ LayoutEngine/PanelGeneratorï¼Œè¾“å‡ºåŒ…å« span/order ç­‰ä¿¡æ¯çš„å¸ƒå±€ã€‚
-- [x] å®‰è£… pytest å¹¶è¿è¡Œ `tests/api/test_chat_controller.py` ä¸ `tests/api/test_chat_stream.py`ã€‚
-- [x] æ›´æ–° `.agentdocs/index.md`ï¼Œè®°å½•æœ¬ä»»åŠ¡æ–‡æ¡£å¹¶åŒæ­¥å‹¾é€‰ TODO çŠ¶æ€ã€‚
+## ²âÊÔ¼ÇÂ¼
+- `D:\Anaconda\envs\torch-cuda\python.exe -m pytest tests/api/test_chat_controller.py tests/api/test_chat_stream.py`
 
-## ç»“æœ
-- é¢æ¿æ¨èåœ¨ Python 3.8+ ç¯å¢ƒæ­£å¸¸è¿è¡Œï¼ŒæŠ˜çº¿å›¾ã€ç»Ÿè®¡å¡ç­‰ç»„ä»¶å¯æŒ‰ Schema è‡ªåŠ¨åŒ¹é…ã€‚
-- LayoutTree ç°æºå¸¦ `span`/`min_height` ç­‰ä¿¡æ¯ï¼ŒREST ä¸ WebSocket è¿”å›ä¸€è‡´çš„å¸ƒå±€ç»“æ„ã€‚
-- `D:\Anaconda\envs\torch-cuda\python.exe -m pytest tests/api/test_chat_controller.py tests/api/test_chat_stream.py` å…¨éƒ¨é€šè¿‡ï¼ˆ26 é¡¹ï¼‰ã€‚
+## ºóĞø½¨Òé
+- ÔÚ `services/panel/adapters.py` ÖĞÎª¸÷¸ö RSSHub route ×¢²áÊÊÅäÆ÷£¬ÀıÈç£º
+  ```python
+  from services.panel.adapters import register_route_adapter, AdapterBlockPlan, RouteAdapterResult
+
+  def bilibili_video_adapter(source_info, records):
+      refined = [{"title": r.get("title"), "url": r.get("link") } for r in records]
+      return RouteAdapterResult(
+          records=refined,
+          block_plans=[AdapterBlockPlan(
+              component_id="ListPanel",
+              props={"title_field": "title", "link_field": "url"},
+              options={"span": 12},
+          )],
+      )
+
+  register_route_adapter("/bilibili/user/video/", bilibili_video_adapter)
+  ```
+- ÊÊÅäÆ÷¿ÉÒÔ¾ö¶¨×Ö¶ÎÓ³Éä¡¢Êä³ö¶à¸ö block¡¢ÅäÖÃ½»»¥µÈ£»Î´×¢²áµÄÂ·ÓÉ²»»áÓ°ÏìÕûÌåÁ÷³Ì£¬¿É°´ÓÅÏÈ¼¶Öğ²½²¹Æë¡£
+- Ç°¶Ë±£³ÖÓë PanelPayload/AdapterBlockPlan ÆõÔ¼Ò»ÖÂ£¬Õë¶ÔÎ´ÊÊÅäµÄÊı¾İ±£Áô¶µµ×Õ¹Ê¾£¬±ÜÃâÊı¾İ¸ñÊ½±ä¶¯µ¼ÖÂäÖÈ¾Ê§°Ü¡£

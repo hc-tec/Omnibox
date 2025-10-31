@@ -29,7 +29,6 @@ class SchemaFieldSummary(BaseModel):
     stats: Optional[Dict[str, Any]] = Field(
         None, description="Optional statistics such as min/max"
     )
-    semantic: List[str] = Field(default_factory=list, description="Semantic tags for this field")
 
 
 class SchemaSummary(BaseModel):

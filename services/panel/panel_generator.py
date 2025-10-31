@@ -1,28 +1,20 @@
 """
-智能数据面板生成器：负责串联数据块构建、组件推荐与布局输出。
+PanelGenerator：根据 DataBlock 与适配结果构建面板载荷。
 """
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from __future__ import annotations
 
-from api.schemas.panel import (
-    DataBlock,
-    PanelPayload,
-    UIBlock,
-    ViewDescriptor,
-    LayoutTree,
-    LayoutHint,
-    SourceInfo,
-)
-from services.panel.component_suggester import ComponentSuggester
-from services.panel.data_block_builder import DataBlockBuilder
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Sequence
+
+from api.schemas.panel import LayoutHint, LayoutTree, PanelPayload, SourceInfo, UIBlock
+from services.panel.adapters import AdapterBlockPlan
+from services.panel.data_block_builder import BlockBuildResult, DataBlockBuilder
 from services.panel.layout_engine import LayoutEngine
 
 
 @dataclass
 class PanelBlockInput:
-    """单个数据块输入描述。"""
-
     block_id: str
     records: Sequence[Any]
     source_info: SourceInfo
@@ -34,26 +26,20 @@ class PanelBlockInput:
 
 @dataclass
 class PanelGenerationResult:
-    """面板生成结果。"""
-
     payload: PanelPayload
-    data_blocks: Dict[str, DataBlock]
-    view_descriptors: List[ViewDescriptor]
+    data_blocks: Dict[str, Any]
+    view_descriptors: List[Any]
     component_confidence: Dict[str, float]
     debug: Dict[str, Any]
 
 
 class PanelGenerator:
-    """将数据块转换为UI面板结构的入口。"""
-
     def __init__(
         self,
         data_block_builder: Optional[DataBlockBuilder] = None,
-        component_suggester: Optional[ComponentSuggester] = None,
         layout_engine: Optional[LayoutEngine] = None,
     ):
         self.data_block_builder = data_block_builder or DataBlockBuilder()
-        self.component_suggester = component_suggester or ComponentSuggester()
         self.layout_engine = layout_engine or LayoutEngine()
 
     def generate(
@@ -62,50 +48,30 @@ class PanelGenerator:
         block_inputs: Sequence[PanelBlockInput],
         history_token: Optional[str] = None,
     ) -> PanelGenerationResult:
-        data_blocks: Dict[str, DataBlock] = {}
+        data_blocks: Dict[str, Any] = {}
         ui_blocks: List[UIBlock] = []
-        view_descriptors: List[ViewDescriptor] = []
         component_confidence: Dict[str, float] = {}
         debug_info: Dict[str, Any] = {"blocks": []}
         layout_hints: Dict[str, LayoutHint] = {}
 
         for block_index, block_input in enumerate(block_inputs, start=1):
-            data_block = self.data_block_builder.build(
-                block_id=block_input.block_id,
-                records=block_input.records,
-                source_info=block_input.source_info,
-                full_data_ref=block_input.full_data_ref,
-                stats=block_input.stats,
-            )
+            result = self._build_data_block(block_input)
+            data_block = result.data_block
             data_blocks[data_block.id] = data_block
 
-            descriptors = self.component_suggester.suggest(
-                data_block_id=data_block.id,
-                schema_fields=data_block.schema_summary.fields,
-                user_preferences=block_input.user_preferences,
-            )
-            view_descriptors.extend(descriptors)
-
-            for view_index, descriptor in enumerate(descriptors, start=1):
-                block_id = f"block-{block_index}-{view_index}"
-                ui_block = self._descriptor_to_ui_block(
-                    descriptor=descriptor,
-                    ui_block_id=block_id,
-                    data_block=data_block,
-                    title=block_input.title,
-                )
+            plans = result.block_plans or [self._build_fallback_plan(block_input, data_block)]
+            for plan_index, plan in enumerate(plans, start=1):
+                block_id = f"block-{block_index}-{plan_index}"
+                ui_block = self._plan_to_ui_block(block_id, data_block, plan)
                 ui_blocks.append(ui_block)
-                component_confidence[block_id] = descriptor.confidence
-                if descriptor.layout_hint:
-                    layout_hints[ui_block.id] = descriptor.layout_hint
+                component_confidence[block_id] = plan.confidence
+                if plan.layout_hint:
+                    layout_hints[ui_block.id] = plan.layout_hint
 
             debug_info["blocks"].append(
                 {
                     "data_block_id": data_block.id,
-                    "available_semantic": {
-                        field.name: field.semantic for field in data_block.schema_summary.fields
-                    },
-                    "descriptor_ids": [descriptor.id for descriptor in descriptors],
+                    "planned_components": [plan.component_id for plan in plans],
                 }
             )
 
@@ -121,37 +87,58 @@ class PanelGenerator:
         return PanelGenerationResult(
             payload=payload,
             data_blocks=data_blocks,
-            view_descriptors=view_descriptors,
+            view_descriptors=[],
             component_confidence=component_confidence,
             debug=debug_info,
         )
 
-    def _descriptor_to_ui_block(
-        self,
-        descriptor: ViewDescriptor,
-        ui_block_id: str,
-        data_block: DataBlock,
-        title: Optional[str],
-    ) -> UIBlock:
-        """将ViewDescriptor转换为UIBlock实体。"""
-        data_payload = {
-            "items": data_block.records,
-            "schema": data_block.schema_summary.model_dump(),
-            "stats": data_block.stats,
-        }
+    def _build_data_block(self, block_input: PanelBlockInput) -> BlockBuildResult:
+        return self.data_block_builder.build(
+            block_id=block_input.block_id,
+            records=block_input.records,
+            source_info=block_input.source_info,
+            full_data_ref=block_input.full_data_ref,
+            stats=block_input.stats,
+        )
 
-        options = dict(descriptor.options or {})
-        if descriptor.layout_hint and descriptor.layout_hint.span is not None:
-            options.setdefault("span", descriptor.layout_hint.span)
+    def _plan_to_ui_block(
+        self,
+        block_id: str,
+        data_block: Any,
+        plan: AdapterBlockPlan,
+    ) -> UIBlock:
+        options = dict(plan.options)
+        if plan.layout_hint and plan.layout_hint.span is not None:
+            options.setdefault("span", plan.layout_hint.span)
 
         return UIBlock(
-            id=ui_block_id,
-            component=descriptor.component_id,
+            id=block_id,
+            component=plan.component_id,
             data_ref=data_block.id,
-            data=data_payload,
-            props=descriptor.props,
+            data={
+                "items": data_block.records,
+                "schema": data_block.schema_summary.model_dump(),
+                "stats": data_block.stats,
+            },
+            props=plan.props,
             options=options,
-            interactions=descriptor.interactions,
-            confidence=descriptor.confidence,
-            title=title,
+            interactions=plan.interactions,
+            confidence=plan.confidence,
+            title=plan.title,
+        )
+
+    def _build_fallback_plan(self, block_input: PanelBlockInput, data_block: Any) -> AdapterBlockPlan:
+        title_field = "title"
+        if data_block.records:
+            first_record = data_block.records[0]
+            title_field = next(iter(first_record.keys()), "title")
+
+        return AdapterBlockPlan(
+            component_id="FallbackRichText",
+            props={"title_field": title_field},
+            options={"span": 12},
+            interactions=[],
+            title=block_input.title or data_block.source_info.route,
+            layout_hint=LayoutHint(span=12, min_height=220),
+            confidence=0.4,
         )

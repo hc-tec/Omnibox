@@ -59,9 +59,9 @@
           "items": [...],        // 裁剪后的原始记录
           "schema": {
             "fields": [
-              {"name": "title", "type": "string", "semantic": ["title"], "sample": ["示例标题"], "stats": null},
-              {"name": "url", "type": "string", "semantic": ["url"], "sample": ["https://example.com"], "stats": null},
-              {"name": "publishedAt", "type": "string", "semantic": ["datetime"], "sample": ["2024-01-01T10:00:00Z"], "stats": {"min": "2024-01-01T10:00:00+00:00", "max": "2024-01-03T09:00:00+00:00", "count": 3}}
+              {"name": "title", "type": "string", "sample": ["示例标题"], "stats": null},
+              {"name": "url", "type": "string", "sample": ["https://example.com"], "stats": null},
+              {"name": "publishedAt", "type": "string", "sample": ["2024-01-01T10:00:00Z"], "stats": {"min": "2024-01-01T10:00:00+00:00", "max": "2024-01-03T09:00:00+00:00", "count": 3}}
             ],
             "stats": {"total": 20, "time_range": ["2024-01-01T10:00:00+00:00", "2024-01-03T09:00:00+00:00"]},
             "schema_digest": "List(publishedAt:string/title:string/url:string)"
@@ -97,8 +97,8 @@
       "blocks": [
         {
           "data_block_id": "data_block_hupu",
-          "available_semantic": {"title": ["title"], "url": ["url"], "publishedAt": ["datetime"]},
-          "descriptor_ids": ["data_block_hupu-view-1"]
+          "planned_components": ["ListPanel"],
+          "records_preview": [{"title": "..."}]
         }
       ]
     }
@@ -114,21 +114,41 @@
 
 ---
 
-## 3. 组件推荐细节
+## 3. 组件与适配策略
 
-- 字段语义由 SchemaSummary 的 `fields[].semantic` 提供，后端通过可扩展规则自动识别 `title`、`url`、`datetime`、`image`、`value` 等标签。
-- 当前内置组件：
-  | 组件 ID | 必需字段 | 可选 | 默认布局 | 交互 | 说明 |
-  | ------- | -------- | ---- | -------- | ---- | ---- |
-  | ListPanel | `title`, `link` | description/pubDate/author | span=12, min_height=320 | open_link | 文本列表 |
-  | LineChart | `timestamp`, `value` | series/category | span=12, min_height=280 | filter/compare | 趋势图 |
-  | StatisticCard | `title`, `value` | trend/unit | span=6, min_height=160 | - | 数字概览 |
-  | FallbackRichText | `title` | description | span=12, min_height=200 | - | 兜底展示 |
+- 后端不再尝试自动推断字段语义。若需要定制展示，请在 `services/panel/adapters.py` 中注册路由适配器，手工决定返回结构与组件规划。
+- 默认情况下若没有适配器，后端仅返回裁剪后的原始记录，并使用 `FallbackRichText` 兜底展示原始 JSON。
+- 适配器可以返回一个或多个 `AdapterBlockPlan`，用于指定组件 ID、字段映射、布局提示等。未注册的路由不会影响整体流程，可按需逐步补齐。
 
-- 推荐规则优先级：  
-  1. 用户偏好（`user_preferences.preferred_component`）  
-  2. 兼容性 + 简单打分（含 `pubDate` 列的 ListPanel → 0.9 等）  
-  3. 若无匹配，使用 `FallbackRichText`。
+示例：
+
+```python
+from services.panel.adapters import register_route_adapter, AdapterBlockPlan, RouteAdapterResult
+
+def bilibili_video_adapter(source_info, records):
+    refined = []
+    for record in records:
+        refined.append(
+            {
+                "title": record.get("title"),
+                "url": record.get("link"),
+                "published_at": record.get("pubDate"),
+            }
+        )
+
+    return RouteAdapterResult(
+        records=refined,
+        block_plans=[
+            AdapterBlockPlan(
+                component_id="ListPanel",
+                props={"title_field": "title", "link_field": "url", "description_field": "published_at"},
+                options={"span": 12},
+            )
+        ],
+    )
+
+register_route_adapter("/bilibili/user/video/", bilibili_video_adapter)
+```
 
 ---
 
@@ -140,7 +160,7 @@
   - `min_height`：最小高度，用于设定卡片高度基础值
   - `order` / `priority`：当后续支持排序或插入时提供优先级
   - `responsive`：预留前端响应式配置
-- 每个 UIBlock 的 `props` 提供组件必需字段映射（如 `title_field`），值来自 Schema 字段 `name`；`semantic` 标签用于校验/兜底，`options` 给出组件可配置项（如 `show_description`）。
+- 每个 UIBlock 的 `props` 由适配器定义（如 `title_field`、`link_field`），与前端组件的 props 保持一致；`options` 可传递组件个性化参数。
 
 ---
 
