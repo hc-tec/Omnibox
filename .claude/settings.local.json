@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

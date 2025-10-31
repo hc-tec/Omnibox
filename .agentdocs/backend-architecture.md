@@ -237,8 +237,117 @@ class FeedItem:
    - DataExecutor使用`httpx.Client`复用连接
    - 必须通过上下文管理器或手动close()释放资源
 
+## Service层组件
+
+### IntentService - 意图识别
+**位置**: `services/intent_service.py`
+
+**职责**:
+- 判断用户查询的意图类型（data_query/chitchat）
+- 基于规则+关键词的轻量级识别
+- 提供置信度评分
+
+**使用规范**:
+```python
+from services.intent_service import get_intent_service
+
+# 获取全局单例（推荐）
+service = get_intent_service()
+
+# 识别意图
+result = service.recognize("虎扑步行街最新帖子")
+if result.intent_type == "data_query":
+    # 调用数据查询服务
+    pass
+
+# 快捷方法
+if service.is_data_query("虎扑步行街最新帖子", threshold=0.5):
+    # 数据查询逻辑
+    pass
+```
+
+**关键特性**:
+1. **关键词匹配** - 维护数据查询和闲聊关键词列表
+2. **置信度计算** - 基于关键词匹配数量，范围[0.5, 0.99]
+3. **默认策略** - 包含问号 -> 数据查询；短查询 -> 闲聊；其他 -> 数据查询
+4. **全局单例** - `get_intent_service()`保证全局唯一
+
+### DataQueryService - 数据查询服务
+**位置**: `services/data_query_service.py`
+
+**职责**:
+- 整合RAG检索、路径生成、RSS数据获取
+- 双层缓存管理（RAG结果 + RSS数据）
+- 统一查询结果封装
+
+**使用规范**:
+```python
+from services.data_query_service import DataQueryService
+from orchestrator.rag_in_action import create_rag_in_action
+
+# 创建服务
+rag_in_action = create_rag_in_action()
+service = DataQueryService(rag_in_action)
+
+# 使用上下文管理器（推荐）
+with DataQueryService(rag_in_action) as service:
+    result = service.query("虎扑步行街最新帖子")
+    if result.status == "success":
+        for item in result.items:
+            print(item.title)
+```
+
+**关键特性**:
+1. **双层缓存** - RAG结果缓存（避免重复RAG）+ RSS数据缓存（避免重复请求）
+2. **智能缓存键** - RAG缓存包含filter_datasource参数
+3. **资源管理** - 自动创建和释放DataExecutor
+4. **统一结果** - DataQueryResult包含status/items/cache_hit/source等信息
+
+**流程**:
+1. 检查RAG缓存 → 2. 调用RAGInAction → 3. 缓存RAG结果 → 4. 检查RSS缓存 → 5. 调用DataExecutor → 6. 缓存RSS数据 → 7. 返回结果
+
+### ChatService - 统一对话服务
+**位置**: `services/chat_service.py`
+
+**职责**:
+- 统一的对话入口
+- 自动意图识别和路由
+- 格式化响应
+
+**使用规范**:
+```python
+from services.chat_service import ChatService
+
+# 创建服务
+# manage_data_service=True 表示 ChatService 负责在关闭时释放 data_query_service
+service = ChatService(data_query_service, manage_data_service=True)
+
+# 处理对话
+response = service.chat("虎扑步行街最新帖子")
+print(response.message)
+if response.data:
+    for item in response.data:
+        print(item['title'])
+
+# 转换为字典（API响应）
+response_dict = response.to_dict()
+```
+
+**关键特性**:
+1. **自动路由** - 根据IntentService识别结果路由到数据查询或闲聊
+2. **统一响应** - ChatResponse包含success/intent_type/message/data/metadata
+3. **闲聊支持** - 简单的关键词匹配响应（可扩展为LLM）
+4. **元数据丰富** - 包含cache_hit/source/intent_confidence等调试信息
+
+**重要记忆**:
+- 所有对话入口统一走ChatService，不要直接调用DataQueryService
+- ChatService 仅在 `manage_data_service=True` 时负责关闭 DataQueryService，默认由调用方管理生命周期
+- ChatResponse.to_dict()用于API响应序列化
+- 闲聊响应当前是规则+模板，后续可接入LLM
+
 ## 后续扩展规划
 
 1. **Redis缓存** - CacheService设计支持替换为Redis，不改业务代码
 2. **异步支持** - Service层可补充async包装方法，通过`asyncio.to_thread`调用同步实现
 3. **监控指标** - 降级次数、缓存命中率、响应耗时等
+4. **LLM闲聊** - ChatService的闲聊响应可接入真实LLM，提供更自然的对话

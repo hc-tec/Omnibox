@@ -29,6 +29,9 @@
 - `workflow/251031-rss-aggregation-layered-architecture.md` - 实现RSS聚合系统分层架构
 - `workflow/251031-rss-aggregation-architecture-refine.md` - RSS聚合架构落地改进方案，补充本地依赖、同步异步策略与接口设计
 
+## 技术使用指南
+- `service-layer-usage.md` - Service层完整使用指南，包含所有服务的创建、使用和扩展方法
+
 ## 全局重要记忆
 
 ### 项目架构
@@ -46,6 +49,18 @@
 - **DataExecutor** - 所有RSSHub数据获取统一走DataExecutor，不允许直接拼接URL
 - **CacheService** - 所有数据缓存统一走CacheService（全局单例），不允许使用functools.lru_cache
 - **URL编码安全** - RSSHub路径包含特殊字符（如`#步行街主干道`）会被DataExecutor正确编码，不会截断
+
+### Service层核心组件（必须复用）
+- **IntentService** - 意图识别服务（全局单例），判断data_query/chitchat
+- **DataQueryService** - 数据查询服务，整合RAGInAction+DataExecutor+双层缓存
+- **ChatService** - 统一对话入口，自动意图路由，所有对话请求必须走ChatService
+- **双层缓存** - RAG结果缓存（避免重复RAG）+ RSS数据缓存（避免重复HTTP请求）
+
+**重要记忆**:
+- 所有业务调用必须通过Service层，禁止直接调用Integration层组件
+- IntentService和CacheService使用全局单例，DataQueryService使用上下文管理器
+- ChatService默认为调用方管理DataQueryService生命周期，只有在`manage_data_service=True`时才会自动关闭
+- ChatResponse.to_dict()用于API响应序列化，包含丰富的元数据信息
 
 ### 配置管理
 - RSSHub配置统一使用`RSSHubSettings`（`query_processor/config.py`）

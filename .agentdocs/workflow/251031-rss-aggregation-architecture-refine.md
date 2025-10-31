@@ -1,4 +1,4 @@
-# RSS聚合系统分层架构改进方案
+﻿# RSS聚合系统分层架构改进方案
 
 ## 背景
 CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，但在本地部署依赖、同步异步策略、缓存设计、接口形态等方面仍存在风险。本方案用于在原有规划基础上补齐关键决策，避免后续开发返工。
@@ -93,10 +93,29 @@ CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，�
     - 真实请求测试需要RSSHUB_TEST_REAL=1环境变量
     - 健康检查失败时自动跳过，避免CI/离线环境失败
 
-### 阶段3：Service 层
-- [ ] `DataQueryService` 整合 `RAGInAction`、`DataExecutor`、缓存；提供同步方法与可选 `async` 包装。
-- [ ] `IntentService`、`ChatService` 保持同步接口，以便线程池复用。
-- [ ] 为不同意图编写单元测试，验证线程池调用的可重入性。
+### 阶段3：Service 层 ✅
+- [x] `IntentService` - 意图识别服务（数据查询/闲聊）
+  - ✅ 基于规则+关键词的意图识别（支持中文、英文、混合查询）
+  - ✅ 置信度计算（0.5-0.99范围）
+  - ✅ 全局单例模式
+  - ✅ 15个单元测试全部通过（意图识别、置信度、边缘情况、单例）
+- [x] `DataQueryService` - 数据查询服务
+  - ✅ 整合RAGInAction、DataExecutor和CacheService
+  - ✅ 双层缓存（RAG结果缓存 + RSS数据缓存）
+  - ✅ 统一的查询结果封装（DataQueryResult）
+  - ✅ 上下文管理器支持
+  - ✅ **修复：闲聊响应引号问题** - 内部示例改用全角引号避免语法错误
+- [x] `ChatService` - 统一对话入口
+  - ✅ 整合IntentService和DataQueryService
+  - ✅ 自动意图路由（数据查询/闲聊）
+  - ✅ 统一响应格式（ChatResponse）
+  - ✅ 简单的闲聊响应（可扩展为LLM）
+  - ✅ 元数据丰富（cache_hit/source/intent_confidence等）
+  - ✅ 修复：仅在 manage_data_service=True 时才由 ChatService 关闭 DataQueryService，避免误关闭共享实例
+- [x] Service层单元测试
+  - ✅ IntentService单元测试（15个测试，全部通过）
+  - ✅ 代码统计：735行（符合<1000行要求）
+  - ✅ **质量��证：中文注释，UTF-8编码，无语法错误**
 
 ### 阶段4：Controller 层
 - [ ] `api/controllers/chat_controller.py` 的 REST 端点内使用 `run_in_threadpool` 调用 Service，同步返回结果。
@@ -125,3 +144,5 @@ CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，�
 - 后续若改造 `RAGInAction` 为异步版本，需要同步调整 Service 层线程池调用逻辑。
 - RSSHub 本地实例需要与 `deploy/rsshub.env` 中的隐私数据隔离，建议提供清空或示例配置。
 - 流式接口上线后，要关注前端消费协议，必要时补充兼容的 JSON Lines / SSE 方案。
+
+
