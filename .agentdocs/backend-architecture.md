@@ -375,6 +375,11 @@ GET /api/v1/health
 
 **生命周期管理**:
 - `initialize_services()` - 应用启动时创建全局ChatService (manage_data_service=True)
+  - 支持环境变量 `CHAT_SERVICE_MODE` 控制初始化模式：
+    - `auto`（默认）- 尝试创建真实服务，失败时回退到MockChatService
+    - `mock` - 直接使用MockChatService（测试/无依赖环境）
+    - `production` - 必须创建真实服务，失败则抛出异常
+  - MockChatService提供简单的模拟响应，无需RAG/LLM/向量索引依赖
 - `shutdown_services()` - 应用关闭时调用ChatService.close()
 - `get_chat_service()` - 依赖注入函数，向路由提供服务实例
 
@@ -393,7 +398,7 @@ GET /api/v1/health
 - `exception_handler_middleware` - 捕获所有未处理异常，返回500错误
 - `http_exception_handler` - 处理HTTPException，返回对应状态码
 - `validation_exception_handler` - 处理Pydantic验证错误，返回422+详情
-- `add_process_time_header_middleware` - 添加X-Process-Time响应头
+- `add_process_time_header_middleware` - **[async def]** 添加X-Process-Time响应头（关键修复：必须是async函数，否则请求链中断）
 
 #### 3. 统一响应Schema (api/schemas/responses.py)
 **核心模型**:
@@ -470,14 +475,196 @@ metadata = ResponseMetadata(
   - 并发请求（10个并发请求全部成功）
   - 错误处理（404/405）
 
-**当前状态**: 12个测试全部通过 ✅
+**当前状态**: 13个测试全部通过 ✅（使用Mock模式，无需RAG/LLM依赖）
 
 ### 重要记忆
 - **线程池必须** - 所有同步Service调用都必须通过run_in_threadpool，禁止直接在async函数中调用同步代码
 - **依赖注入模式** - 路由通过Depends(get_chat_service)获取服务实例，不要在路由内部创建服务
 - **生命周期管理** - ChatService在startup时创建（manage_data_service=True），在shutdown时关闭（级联释放所有资源）
+- **Mock模式测试** - 使用`CHAT_SERVICE_MODE=mock`运行测试，避免强依赖RAG/LLM/向量索引；auto模式会自动回退
+- **中间件async要求** - HTTP中间件（如add_process_time_header_middleware）必须是`async def`，否则请求链中断返回500
 - **元数据完整性** - 所有metadata字段都要显式映射，即使值为None也要传递
 - **错误响应统一** - 所有异常都通过中间件转换为{success, error_code, message, detail}格式
+
+## WebSocket流式接口 (api/controllers/chat_stream.py)
+
+### 设计原则
+1. **按阶段推送** - 将处理过程拆分为4个阶段，逐步推送进度和数据
+2. **线程池执行** - 使用`asyncio.to_thread + 生成器`模式，避免阻塞事件循环
+3. **stream_id追踪** - 每个流式请求生成唯一ID，所有日志和消息都包含该ID
+4. **统一消息格式** - 所有WebSocket消息遵循StreamMessage基类规范
+
+### 核心组件
+
+#### 1. 流式消息Schema (api/schemas/stream_messages.py)
+**消息类型**:
+- `StreamMessage` - 基类（type/stream_id/timestamp）
+- `StageMessage` - 阶段更新（stage/message/progress）
+- `DataMessage` - 数据推送（stage/data）
+- `ErrorMessage` - 错误通知（error_code/error_message）
+- `CompleteMessage` - 完成通知（success/message/total_time）
+
+**流式阶段定义**:
+```python
+class StreamStage:
+    INTENT = "intent"      # 意图识别 (progress=0.25)
+    RAG = "rag"            # RAG检索 (progress=0.50)
+    FETCH = "fetch"        # 数据获取 (progress=0.75)
+    SUMMARY = "summary"    # 结果总结 (progress=1.0)
+```
+
+#### 2. WebSocket端点
+**连接地址**: `ws://host:port/api/v1/chat/stream`
+
+**客户端发送**:
+```json
+{
+  "query": "用户查询",
+  "filter_datasource": null,  // 可选
+  "use_cache": true          // 可选
+}
+```
+
+**服务端推送**:
+```python
+# 阶段更新
+{"type": "stage", "stream_id": "stream-abc123", "stage": "intent",
+ "message": "正在识别意图...", "progress": 0.25}
+
+# 数据推送
+{"type": "data", "stream_id": "stream-abc123", "stage": "intent",
+ "data": {"intent_type": "data_query", "confidence": 0.95}}
+
+# 完成通知
+{"type": "complete", "stream_id": "stream-abc123",
+ "success": true, "message": "查询完成", "total_time": 2.5}
+```
+
+#### 3. 流式处理流程
+```python
+def stream_chat_processing(...) -> Generator[dict, None, None]:
+    # 阶段1: 意图识别
+    yield StageMessage(stage="intent", progress=0.25)
+    yield DataMessage(stage="intent", data={...})
+
+    # 阶段2: RAG检索（仅数据查询）
+    if intent == "data_query":
+        yield StageMessage(stage="rag", progress=0.50)
+        yield DataMessage(stage="rag", data={...})
+
+    # 阶段3: 数据获取
+    yield StageMessage(stage="fetch", progress=0.75)
+    response = chat_service.chat(...)
+    yield DataMessage(stage="fetch", data={...})
+
+    # 阶段4: 结果总结
+    yield StageMessage(stage="summary", progress=1.0)
+    yield DataMessage(stage="summary", data=response.to_dict())
+
+    # 完成
+    yield CompleteMessage(success=True, total_time=...)
+```
+
+#### 4. 异步执行策略
+**问题**: 生成器是同步的，WebSocket端点是async的
+**方案**: 使用`asyncio.to_thread`在线程池中逐个获取消息
+```python
+@router.websocket("/chat/stream")
+async def chat_stream(websocket: WebSocket, chat_service=Depends(...)):
+    await websocket.accept()
+    stream_id = generate_stream_id()  # stream-{uuid[:12]}
+
+    # 创建生成器
+    message_generator = stream_chat_processing(
+        chat_service, user_query, stream_id, ...
+    )
+
+    # 在线程池中逐个获取消息并发送
+    while True:
+        message = await asyncio.to_thread(next, message_generator, None)
+        if message is None:
+            break
+        await websocket.send_json(message)
+```
+
+**优点**:
+- WebSocket事件循环不被阻塞
+- 支持真正的流式推送（不需要等待全部完成）
+- 可以随时中断（客户端断开连接）
+
+### 测试策略
+**端到端测试** (tests/api/test_chat_stream.py):
+- 使用FastAPI TestClient的`websocket_connect()`
+- 13个测试覆盖所有场景：
+  - WebSocket连接和stream_id生成
+  - 消息类型序列验证（stage→data→complete）
+  - 消息结构验证（所有字段存在且类型正确）
+  - 流式阶段顺序验证（intent→rag→fetch→summary）
+  - 错误处理（空查询、无效JSON、连接断开）
+  - 缓存控制和数据源过滤
+  - 进度值有效性（0.0-1.0递增）
+
+**当前状态**: 13个测试全部通过 ✅
+
+### 客户端示例
+**Python客户端**:
+```python
+import asyncio
+import websockets
+import json
+
+async def stream_query(query: str):
+    uri = "ws://localhost:8000/api/v1/chat/stream"
+    async with websockets.connect(uri) as ws:
+        # 发送查询
+        await ws.send(json.dumps({"query": query}))
+
+        # 接收流式消息
+        async for message in ws:
+            data = json.loads(message)
+
+            if data['type'] == 'stage':
+                print(f"[{data['progress']*100:.0f}%] {data['message']}")
+            elif data['type'] == 'data':
+                print(f"数据: {data['data']}")
+            elif data['type'] == 'complete':
+                print(f"完成: {data['message']} (耗时{data['total_time']:.2f}s)")
+                break
+            elif data['type'] == 'error':
+                print(f"错误: {data['error_message']}")
+                break
+
+asyncio.run(stream_query("虎扑步行街最新帖子"))
+```
+
+**JavaScript客户端**:
+```javascript
+const ws = new WebSocket('ws://localhost:8000/api/v1/chat/stream');
+
+ws.onopen = () => {
+    ws.send(JSON.stringify({query: '虎扑步行街最新帖子'}));
+};
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === 'stage') {
+        console.log(`[${data.progress*100}%] ${data.message}`);
+    } else if (data.type === 'data') {
+        console.log('数据:', data.data);
+    } else if (data.type === 'complete') {
+        console.log(`完成: ${data.message}`);
+        ws.close();
+    }
+};
+```
+
+### 重要记忆
+- **生成器 + asyncio.to_thread** - WebSocket流式接口必须使用此模式，禁止直接在async函数中调用同步生成器
+- **stream_id必须** - 每个流式请求都必须生成唯一stream_id，所有日志和消息都包含该ID
+- **阶段顺序** - 流式阶段必须按顺序推送：intent → rag（可选）→ fetch → summary
+- **complete最后** - 每个流式请求最后必须发送complete消息，无论成功失败
+- **错误即关闭** - 发送error消息后应立即发送complete并关闭连接
 
 ## 后续扩展规划
 
@@ -485,5 +672,5 @@ metadata = ResponseMetadata(
 2. **异步支持** - Service层可补充async包装方法，通过`asyncio.to_thread`调用同步实现
 3. **监控指标** - 降级次数、缓存命中率、响应耗时等
 4. **LLM闲聊** - ChatService的闲聊响应可接入真实LLM，提供更自然的对话
-5. **WebSocket流式** - 阶段5将实现按阶段推送的流式接口（意图识别→检索→数据→总结）
+5. **流式优化** - 实现Service层回调机制，在RAG/数据获取阶段实时推送中间结果（目前是模拟）
 

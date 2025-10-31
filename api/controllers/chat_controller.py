@@ -332,3 +332,42 @@ async def health_check() -> dict:
             "error": str(exc),
         }
 
+
+@router.get(
+    "/metrics",
+    response_model=dict,
+    summary="运维指标",
+    description="获取系统运行指标（缓存命中率、降级次数、响应耗时等）"
+)
+async def get_metrics() -> dict:
+    """
+    获取运维指标接口
+
+    返回系统运行统计：
+    - 缓存命中率（RAG/RSS）
+    - RSSHub降级率
+    - API成功率
+    - WebSocket连接数
+    - 响应耗时统计（平均/P95）
+    - 运行时长
+
+    Returns:
+        运维指标字典
+    """
+    try:
+        from monitoring import get_metrics_collector
+
+        metrics = get_metrics_collector()
+        return {
+            "status": "success",
+            "data": metrics.get_summary()
+        }
+
+    except Exception as e:
+        logger.error(f"获取指标失败: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e),
+            "data": None
+        }
+

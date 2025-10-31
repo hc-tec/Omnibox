@@ -131,30 +131,86 @@ CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，�
   - ✅ **关键：run_in_threadpool** - 避免阻塞FastAPI事件循环
   - ✅ 依赖注入 - 全局服务实例管理
   - ✅ 生命周期管理 - startup/shutdown事件
+  - ✅ 根路径返回真实的 REST / WebSocket 地址（基于请求动态构建）
+  - ✅ **关键修复：Mock模式支持** - 新增MockChatService和CHAT_SERVICE_MODE环境变量
+    - `CHAT_SERVICE_MODE=auto` - 默认，尝试真实服务，失败回退到Mock
+    - `CHAT_SERVICE_MODE=mock` - 直接使用Mock（测试/无依赖环境）
+    - `CHAT_SERVICE_MODE=production` - 必须真实服务，失败抛异常
+    - 解决测试环境强依赖RAG/LLM/向量索引的问题
 - [x] `api/middleware/exception_handlers.py` - 异常处理与耗时统计中间件
-  - ✅ 修复：`add_process_time_header_middleware` 调整为 `async def`，确保请求链不中断并成功写入处理时间头
+  - ✅ **修复：add_process_time_header_middleware** - 改为 `async def`，确保请求链正常执行并成功写入X-Process-Time头
 - [x] `api/app.py` - FastAPI应用实例
   - ✅ 路由注册 - ChatController路由
   - ✅ 中间件配置 - CORS/异常处理/处理时间
   - ✅ 生命周期事件 - 服务初始化和关闭
   - ✅ API文档 - Swagger UI (/docs) 和 ReDoc (/redoc)
 - [x] Controller层集成测试 (tests/api/test_chat_controller.py)
-  - ✅ 12个测试全部通过
+  - ✅ 13个测试全部通过（使用Mock模式，无需RAG/LLM依赖）
   - ✅ 根路径测试、健康检查测试
   - ✅ 对话接口测试（基本查询、缓存控制）
   - ✅ 验证错误测试（空查询、缺失参数、无效类型）
   - ✅ 响应格式测试（必需字段、元数据结构、处理时间头）
+  - ✅ 并发请求测试（10个并发请求）
   - ✅ 错误处理测试（404、405）
 
-### 阶段5：WebSocket 流式接口
-- [ ] 设计并实现 `chat_stream.py`，按阶段推送处理进度。
-- [ ] WebSocket 内部仍走线程池，避免阻塞事件循环；对外暴露 `stream_id` 以关联日志。
-- [ ] 增加端到端测试（可使用 `websockets` 或 FastAPI 内置测试工具）。
+### 阶段5：WebSocket 流式接口 ✅
+- [x] `api/schemas/stream_messages.py` - 流式消息Schema定义
+  - ✅ StreamMessage基类 - 统一消息格式（type/stream_id/timestamp）
+  - ✅ StageMessage - 阶段更新消息（intent/rag/fetch/summary + progress）
+  - ✅ DataMessage - 数据推送消息（阶段数据）
+  - ✅ ErrorMessage - 错误消息（error_code/error_message）
+  - ✅ CompleteMessage - 完成消息（success/message/total_time）
+  - ✅ 阶段常量和描述映射（STAGE_DESCRIPTIONS/STAGE_PROGRESS）
+- [x] `api/controllers/chat_stream.py` - WebSocket流式控制器
+  - ✅ WebSocket端点：`/api/v1/chat/stream`
+  - ✅ stream_id生成（格式：stream-{uuid[:12]}）
+  - ✅ 流式处理生成器（stream_chat_processing）
+  - ✅ **关键：asyncio.to_thread + 生成器** - 在线程池中逐个获取消息，避免阻塞事件循环
+  - ✅ 按阶段推送：intent → rag（仅数据查询）→ fetch → summary
+  - ✅ 错误处理（空查询、连接断开、内部错误）
+  - ✅ 日志追踪（所有日志包含stream_id）
+- [x] FastAPI应用集成
+  - ✅ 注册WebSocket路由到`api/app.py`
+  - ✅ 更新根路径返回WebSocket端点信息
+- [x] WebSocket端到端测试（tests/api/test_chat_stream.py）
+  - ✅ 13个测试全部通过
+  - ✅ 基本连接和消息推送测试
+  - ✅ stream_id生成和一致性测试
+  - ✅ 消息类型验证（stage/data/error/complete）
+  - ✅ 消息结构验证（所有消息类型）
+  - ✅ 流式阶段顺序验证（intent → rag → fetch → summary）
+  - ✅ 错误处理测试（空查询、无效JSON）
+  - ✅ 缓存控制和数据源过滤测试
+  - ✅ 进度值有效性测试（0.0-1.0递增）
 
-### 阶段6：运维与监控
-- [ ] 记录 RSSHub 源切换/失败日志到统一日志格式。
-- [ ] 增加 Prometheus 指标或简单统计（命中率、降级次数、单次响应耗时）。
-- [ ] 更新部署文档，明确需要先启动 `docker-compose` 并配置 `.env`。
+### 阶段6：运维与监控 ✅
+- [x] 统一日志格式（monitoring/metrics.py）
+  - ✅ `log_rsshub_switch()` - RSSHub源切换日志
+  - ✅ `log_rsshub_error()` - RSSHub错误日志
+  - ✅ `log_cache_event()` - 缓存事件日志
+  - ✅ `log_api_request()` - API请求日志
+  - ✅ `log_websocket_event()` - WebSocket事件日志
+- [x] 指标收集器（monitoring/metrics.py）
+  - ✅ MetricsCollector类 - 线程安全的指标收集
+  - ✅ 缓存统计（RAG/RSS命中率）
+  - ✅ RSSHub统计（本地/降级成功失败次数）
+  - ✅ API统计（请求数/成功率）
+  - ✅ WebSocket统计（连接数/消息数/错误数）
+  - ✅ 性能统计（平均响应时间/P95响应时间）
+  - ✅ 运行时长统计
+- [x] Metrics端点（GET /api/v1/metrics）
+  - ✅ 返回完整的系统运行指标
+  - ✅ 支持运维监控和性能分析
+- [x] 部署文档（DEPLOYMENT.md）
+  - ✅ Docker Compose部署说明
+  - ✅ 环境变量配置详解
+  - ✅ 启动顺序和依赖检查
+  - ✅ 服务模式说明（auto/mock/production）
+  - ✅ 运维监控端点说明
+  - ✅ 故障排查指南
+  - ✅ 性能优化建议
+  - ✅ 安全配置建议
+  - ✅ 备份和恢复方案
 
 ## 验收标准
 - REST `/api/v1/chat` 在本地 RSSHub 正常启动时命中本地数据，关闭本地服务后自动降级至公共 RSSHub 并返回 `source=fallback`。

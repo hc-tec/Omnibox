@@ -4,7 +4,7 @@ FastAPI应用实例
 """
 
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -14,6 +14,7 @@ from api.controllers.chat_controller import (
     initialize_services,
     shutdown_services,
 )
+from api.controllers.chat_stream import router as chat_stream_router
 from api.middleware.exception_handlers import (
     exception_handler_middleware,
     http_exception_handler,
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
 
     # ========== 注册路由 ==========
     app.include_router(chat_router)
+    app.include_router(chat_stream_router)  # WebSocket流式接口
 
     # ========== 启动和关闭事件 ==========
     @app.on_event("startup")
@@ -97,13 +99,25 @@ def create_app() -> FastAPI:
 
     # ========== 根路径 ==========
     @app.get("/", tags=["root"])
-    async def root():
+    async def root(request: Request):
         """根路径，返回API信息"""
+        base_url = request.base_url
+        ws_scheme = "wss" if base_url.scheme == "https" else "ws"
+
+        if base_url.port:
+            websocket_url = f"{ws_scheme}://{base_url.hostname}:{base_url.port}/api/v1/chat/stream"
+        else:
+            websocket_url = f"{ws_scheme}://{base_url.hostname}/api/v1/chat/stream"
+
         return {
             "name": "RSS聚合API",
             "version": "1.0.0",
             "docs": "/docs",
             "health": "/api/v1/health",
+            "endpoints": {
+                "rest": str(base_url.replace(path="/api/v1/chat")),
+                "websocket": websocket_url,
+            }
         }
 
     return app
