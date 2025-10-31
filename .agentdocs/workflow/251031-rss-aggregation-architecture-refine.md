@@ -67,7 +67,7 @@ CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，�
   - ✅ 更新 `CONFIGURATION.md` 详细说明RSSHub配置和降级机制
   - ✅ 提供完整的 docker-compose 操作指引
 
-### 阶段2：Integration 层
+### 阶段2：Integration 层 ✅
 - [x] 创建 `integration/data_executor.py`，实现同步 `DataExecutor`，支持健康检查、降级与源信息。
   - ✅ 实现FeedItem通用数据模型（支持"万物皆可RSS"）
   - ✅ 本地优先降级机制
@@ -78,8 +78,20 @@ CLAUDE 方案已经梳理出 Controller / Service / Integration 层的目标，�
   - ✅ **关键修复：依赖管理统一**
     - 消除 rag_system/requirements.txt 和 query_processor/requirements.txt 重复维护
     - 子目录改为引用 `-r ../requirements.txt`，保持向后兼容
-- [ ] 实现同步的缓存封装（`integration/cache_service.py`），提供 TTL 缓存。
-- [ ] 覆盖单元测试（本地成功、远端降级、缓存命中/失效、错误处理）。
+  - ✅ **修复：媒体类型处理** - 无媒体时media_type正确返回None而非空字符串
+- [x] 实现同步的缓存封装（`integration/cache_service.py`），提供 TTL 缓存。
+  - ✅ 线程安全的TTL缓存（RSS/RAG/LLM分离）
+  - ✅ 缓存统计和命中率跟踪
+  - ✅ 全局单例模式
+  - ✅ **修复：clear_expired()逻辑** - 正确返回清理数量，调用expire()显式清理
+- [x] 覆盖单元测试（本地成功、远端降级、缓存命中/失效、错误处理）。
+  - ✅ DataExecutor单元测试（17个测试全部通过）
+    - URL编码、查询参数、FeedItem解析、媒体提取、分类处理
+  - ✅ CacheService单元测试（6个测试全部通过）
+    - 基本操作、TTL过期、线程安全、统计、单例模式
+  - ✅ **测试改进：真实RSSHub隔离**
+    - 真实请求测试需要RSSHUB_TEST_REAL=1环境变量
+    - 健康检查失败时自动跳过，避免CI/离线环境失败
 
 ### 阶段3：Service 层
 - [ ] `DataQueryService` 整合 `RAGInAction`、`DataExecutor`、缓存；提供同步方法与可选 `async` 包装。

@@ -56,9 +56,11 @@ class FeedItem:
 
         # 尝试从enclosure提取媒体信息
         enclosure = item.get("enclosure", {})
-        if isinstance(enclosure, dict):
+        if isinstance(enclosure, dict) and enclosure.get("url"):
             media_url = enclosure.get("url")
-            media_type = enclosure.get("type", "").split("/")[0]  # image/jpeg -> image
+            # image/jpeg -> image
+            media_type_full = enclosure.get("type", "")
+            media_type = media_type_full.split("/")[0] if media_type_full else None
 
         # 提取分类
         category = item.get("category")
