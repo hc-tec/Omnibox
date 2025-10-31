@@ -1,11 +1,11 @@
 """
 对话服务
-职责：统一的对话入口，整合意图识别和数据查询
+职责：作为统一入口，整合意图识别、数据查询与智能数据面板输出。
 """
 
 import logging
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, asdict
+from typing import Dict, Any, Optional
+from dataclasses import dataclass, field, asdict
 import sys
 from pathlib import Path
 
@@ -15,7 +15,12 @@ sys.path.insert(0, str(project_root))
 
 from services.intent_service import IntentService, get_intent_service
 from services.data_query_service import DataQueryService, DataQueryResult
-from integration.data_executor import FeedItem
+from api.schemas.panel import PanelPayload, DataBlock, SourceInfo
+from services.panel.panel_generator import (
+    PanelGenerator,
+    PanelBlockInput,
+    PanelGenerationResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,42 +28,44 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChatResponse:
     """
-    对话响应
+    对话响应数据结构。
 
     Attributes:
         success: 是否成功
-        intent_type: 识别的意图类型（data_query/chitchat）
-        message: 响应消息文本
-        data: 数据项列表（仅data_query时有值）
+        intent_type: 意图类型（data_query/chitchat/error）
+        message: 响应消息
+        data: 智能面板载荷（仅数据查询时返回）
+        data_blocks: 数据块字典（id -> DataBlock）
         metadata: 元数据（路径、来源、缓存命中等）
     """
+
     success: bool
     intent_type: str
     message: str
-    data: Optional[List[Dict[str, Any]]] = None
+    data: Optional[PanelPayload] = None
+    data_blocks: Dict[str, DataBlock] = field(default_factory=dict)
     metadata: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
-        return asdict(self)
+        """转换为便于序列化的字典。"""
+        payload = asdict(self)
+        if self.data:
+            payload["data"] = self.data.model_dump()
+        if self.data_blocks:
+            payload["data_blocks"] = {
+                key: block.model_dump() for key, block in self.data_blocks.items()
+            }
+        return payload
 
 
 class ChatService:
     """
-    对话服务（同步实现）
+    对话服务（同步实现）。
 
-    统一的对话入口，负责：
-    1. 意图识别（数据查询 vs 闲聊）
-    2. 根据意图路由到不同的处理服务
-    3. 格式化响应
-
-    使用示例：
-        service = ChatService(data_query_service)
-        response = service.chat("虎扑步行街最新帖子")
-        print(response.message)
-        if response.data:
-            for item in response.data:
-                print(item['title'])
+    统一入口，负责：
+    1. 意图识别（数据查询 / 闲聊）
+    2. 调度数据查询服务
+    3. 生成智能数据面板结构
     """
 
     def __init__(
@@ -68,18 +75,19 @@ class ChatService:
         manage_data_service: bool = False,
     ):
         """
-        初始化对话服务
+        初始化对话服务。
 
         Args:
-            data_query_service: 数据查询服务
-            intent_service: 意图识别服务（可选，None则使用全局单例）
-            manage_data_service: 是否由ChatService负责关闭data_query_service（默认False）
+            data_query_service: 数据查询服务实例
+            intent_service: 意图识别服务（可选，默认使用全局单例）
+            manage_data_service: 是否由ChatService负责关闭 data_query_service
         """
         self.data_query_service = data_query_service
         self.intent_service = intent_service or get_intent_service()
         self._manage_data_service = manage_data_service
+        self.panel_generator = PanelGenerator()
 
-        logger.info("ChatService初始化完成")
+        logger.info("ChatService 初始化完成")
 
     def chat(
         self,
@@ -88,44 +96,48 @@ class ChatService:
         use_cache: bool = True,
     ) -> ChatResponse:
         """
-        处理用户对话
+        处理用户查询。
 
         Args:
-            user_query: 用户查询
+            user_query: 用户输入的自然语言查询
             filter_datasource: 过滤特定数据源（可选）
             use_cache: 是否使用缓存
 
         Returns:
-            ChatResponse: 对话响应
+            ChatResponse 对象
         """
-        logger.info(f"收到用户查询: {user_query}")
+        logger.info("收到对话请求: %s", user_query)
 
         try:
-            # ========== 阶段1: 意图识别 ==========
+            # 阶段1：意图识别
             intent_result = self.intent_service.recognize(user_query)
             logger.debug(
-                f"意图识别: {intent_result.intent_type} "
-                f"(置信度: {intent_result.confidence:.2f})"
+                "意图识别结果: %s (置信度 %.2f)",
+                intent_result.intent_type,
+                intent_result.confidence,
             )
 
-            # ========== 阶段2: 根据意图路由 ==========
+            # 阶段2：根据意图路由
             if intent_result.intent_type == "data_query":
                 return self._handle_data_query(
-                    user_query,
-                    filter_datasource,
-                    use_cache,
-                    intent_result.confidence,
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=intent_result.confidence,
                 )
-            else:
-                return self._handle_chitchat(user_query, intent_result.confidence)
 
-        except Exception as e:
-            logger.error(f"对话处理失败: {e}", exc_info=True)
+            return self._handle_chitchat(
+                user_query=user_query,
+                intent_confidence=intent_result.confidence,
+            )
+
+        except Exception as exc:
+            logger.error("对话处理失败: %s", exc, exc_info=True)
             return ChatResponse(
                 success=False,
                 intent_type="error",
-                message=f"抱歉，处理您的请求时发生了错误：{str(e)}",
-                metadata={"error": str(e)},
+                message=f"抱歉，处理您的请求时发生了错误：{exc}",
+                metadata={"error": str(exc)},
             )
 
     def _handle_data_query(
@@ -135,47 +147,51 @@ class ChatService:
         use_cache: bool,
         intent_confidence: float,
     ) -> ChatResponse:
-        """处理数据查询意图"""
+        """处理数据查询意图。"""
         logger.debug("处理数据查询意图")
 
-        # 调用数据查询服务
         query_result = self.data_query_service.query(
             user_query=user_query,
             filter_datasource=filter_datasource,
             use_cache=use_cache,
         )
 
-        # 根据查询结果生成响应
         if query_result.status == "success":
-            # 成功获取数据
-            data_items = [self._feed_item_to_dict(item) for item in query_result.items]
+            panel_result = self._build_panel(
+                query_result=query_result,
+                intent_confidence=intent_confidence,
+            )
 
             message = self._format_success_message(
-                query_result.feed_title,
-                len(data_items),
-                query_result.source,
+                feed_title=query_result.feed_title,
+                item_count=len(query_result.items),
+                source=query_result.source,
             )
+
+            metadata: Dict[str, Any] = {
+                "generated_path": query_result.generated_path,
+                "source": query_result.source,
+                "cache_hit": query_result.cache_hit,
+                "intent_confidence": intent_confidence,
+                "feed_title": query_result.feed_title,
+                "component_confidence": panel_result.component_confidence,
+                "debug": panel_result.debug,
+            }
 
             return ChatResponse(
                 success=True,
                 intent_type="data_query",
                 message=message,
-                data=data_items,
-                metadata={
-                    "generated_path": query_result.generated_path,
-                    "source": query_result.source,
-                    "cache_hit": query_result.cache_hit,
-                    "intent_confidence": intent_confidence,
-                    "feed_title": query_result.feed_title,
-                },
+                data=panel_result.payload,
+                data_blocks=panel_result.data_blocks,
+                metadata=metadata,
             )
 
-        elif query_result.status == "needs_clarification":
-            # 需要澄清
+        if query_result.status == "needs_clarification":
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
-                message=query_result.clarification_question or "需要更多信息",
+                message=query_result.clarification_question or "需要更多信息以继续处理。",
                 metadata={
                     "status": "needs_clarification",
                     "reasoning": query_result.reasoning,
@@ -183,12 +199,11 @@ class ChatService:
                 },
             )
 
-        elif query_result.status == "not_found":
-            # 未找到匹配
+        if query_result.status == "not_found":
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
-                message=query_result.clarification_question or "抱歉，没有找到相关功能",
+                message=query_result.clarification_question or "抱歉，没有找到相关能力。",
                 metadata={
                     "status": "not_found",
                     "reasoning": query_result.reasoning,
@@ -196,29 +211,26 @@ class ChatService:
                 },
             )
 
-        else:
-            # 错误
-            return ChatResponse(
-                success=False,
-                intent_type="data_query",
-                message=f"查询失败：{query_result.reasoning}",
-                metadata={
-                    "status": "error",
-                    "reasoning": query_result.reasoning,
-                    "intent_confidence": intent_confidence,
-                    "generated_path": query_result.generated_path,
-                },
-            )
+        return ChatResponse(
+            success=False,
+            intent_type="data_query",
+            message=f"查询失败：{query_result.reasoning}",
+            metadata={
+                "status": "error",
+                "reasoning": query_result.reasoning,
+                "intent_confidence": intent_confidence,
+                "generated_path": query_result.generated_path,
+            },
+        )
 
     def _handle_chitchat(
         self,
         user_query: str,
         intent_confidence: float,
     ) -> ChatResponse:
-        """处理闲聊意图"""
+        """处理闲聊意图。"""
         logger.debug("处理闲聊意图")
 
-        # 简单的闲聊响应（后续可接入闲聊LLM）
         chitchat_responses = {
             "你好": "你好！我是RSS数据聚合助手，可以帮你获取各种平台的最新动态。",
             "您好": "您好！有什么我可以帮助您的吗？",
@@ -230,7 +242,6 @@ class ChatService:
             "拜拜": "拜拜！",
         }
 
-        # 查找匹配的响应
         user_query_lower = user_query.lower().strip()
         for keyword, response in chitchat_responses.items():
             if keyword.lower() in user_query_lower:
@@ -238,35 +249,53 @@ class ChatService:
                     success=True,
                     intent_type="chitchat",
                     message=response,
-                    metadata={
-                        "intent_confidence": intent_confidence,
-                    },
+                    metadata={"intent_confidence": intent_confidence},
                 )
 
-        # 默认闲聊响应
         return ChatResponse(
             success=True,
             intent_type="chitchat",
-            message='我是RSS数据聚合助手。您可以问我关于各种平台数据的问题，比如“虎扑步行街最新帖子”、“B站热门视频”等。',
-            metadata={
-                "intent_confidence": intent_confidence,
-            },
+            message="我是RSS数据聚合助手。您可以问我关于各种平台数据的问题，比如“虎扑步行街最新帖子”、“B站热门视频”等。",
+            metadata={"intent_confidence": intent_confidence},
+        )
+
+    def _build_panel(
+        self,
+        query_result: DataQueryResult,
+        intent_confidence: float,
+    ) -> PanelGenerationResult:
+        """将数据查询结果转换为智能面板结构。"""
+        source_info = SourceInfo(
+            datasource=self._guess_datasource(query_result.generated_path),
+            route=query_result.generated_path or "",
+            params={},
+            fetched_at=None,
+            request_id=None,
+        )
+
+        block_input = PanelBlockInput(
+            block_id="data_block_1",
+            records=query_result.items,
+            source_info=source_info,
+            title=query_result.feed_title,
+            stats={"intent_confidence": intent_confidence},
+        )
+
+        return self.panel_generator.generate(
+            mode="append",
+            block_inputs=[block_input],
+            history_token=None,
         )
 
     @staticmethod
-    def _feed_item_to_dict(item: FeedItem) -> Dict[str, Any]:
-        """将FeedItem转换为字典"""
-        return {
-            "title": item.title,
-            "link": item.link,
-            "description": item.description,
-            "pub_date": item.pub_date,
-            "author": item.author,
-            "guid": item.guid,
-            "category": item.category,
-            "media_url": item.media_url,
-            "media_type": item.media_type,
-        }
+    def _guess_datasource(generated_path: Optional[str]) -> str:
+        """通过生成的路径推测数据源标识。"""
+        if not generated_path:
+            return "unknown"
+        stripped = generated_path.strip("/")
+        if not stripped:
+            return "unknown"
+        return stripped.split("/")[0]
 
     @staticmethod
     def _format_success_message(
@@ -274,7 +303,7 @@ class ChatService:
         item_count: int,
         source: Optional[str],
     ) -> str:
-        """格式化成功消息"""
+        """格式化成功消息。"""
         parts = []
 
         if feed_title:
@@ -292,15 +321,16 @@ class ChatService:
         return "".join(parts)
 
     def close(self):
-        """关闭服务，释放资源"""
+        """关闭服务并释放资源。"""
         if self._manage_data_service and self.data_query_service:
             self.data_query_service.close()
-            logger.info("ChatService已关闭（管理DataQueryService资源）")
+            logger.info("ChatService 已关闭（管理 DataQueryService 资源）")
 
     def __enter__(self):
-        """上下文管理器入口"""
+        """上下文管理器入口。"""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """上下文管理器退出"""
+        """上下文管理器退出时自动释放资源。"""
         self.close()
+

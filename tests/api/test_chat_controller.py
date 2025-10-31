@@ -88,6 +88,7 @@ class TestChatEndpoint:
         data = response.json()
         assert "success" in data
         assert "message" in data
+        assert "data_blocks" in data
         assert "metadata" in data
 
         # 检查metadata存在且包含intent_type字段
@@ -111,6 +112,8 @@ class TestChatEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is not None
+        assert data["data"] is not None
+        assert isinstance(data["data_blocks"], dict)
 
     def test_chat_validation_error_empty_query(self, client):
         """测试空查询参数验证错误"""
@@ -177,7 +180,22 @@ class TestResponseFormat:
         assert "success" in data
         assert "message" in data
         assert "data" in data
+        assert "data_blocks" in data
         assert "metadata" in data
+
+        panel = data["data"]
+        assert panel is not None
+        assert panel["mode"] in {"append", "replace", "insert"}
+        assert "layout" in panel
+        assert "blocks" in panel
+        assert isinstance(panel["blocks"], list) and len(panel["blocks"]) >= 1
+        assert isinstance(data["data_blocks"], dict)
+
+        layout_nodes = panel["layout"]["nodes"]
+        assert layout_nodes, "布局节点不能为空"
+        first_props = layout_nodes[0].get("props", {})
+        assert first_props.get("span") is not None, "布局节点应包含span信息"
+        assert first_props.get("min_height") is not None, "布局节点应包含min_height信息"
 
     def test_response_metadata_structure(self, client):
         """测试响应元数据结构"""

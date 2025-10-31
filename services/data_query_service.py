@@ -14,7 +14,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from orchestrator.rag_in_action import RAGInAction
-from integration.data_executor import DataExecutor, FetchResult, FeedItem
+from integration.data_executor import DataExecutor, FetchResult
 from integration.cache_service import CacheService, get_cache_service
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class DataQueryResult:
 
     Attributes:
         status: 状态（success/needs_clarification/not_found/error）
-        items: 数据项列表（FeedItem）
+        items: 数据项列表（原始字典）
         feed_title: Feed标题
         generated_path: 生成的RSS路径
         source: 数据来源（local/fallback）
@@ -36,7 +36,7 @@ class DataQueryResult:
         clarification_question: 需要澄清的问题（可选）
     """
     status: str
-    items: List[FeedItem]
+    items: List[Dict[str, Any]]
     feed_title: Optional[str] = None
     generated_path: Optional[str] = None
     source: Optional[str] = None  # local/fallback

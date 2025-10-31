@@ -6,10 +6,8 @@ WebSocket流式对话控制器
 import logging
 import uuid
 import time
-import json
 from typing import Generator, Optional, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from fastapi.concurrency import run_in_threadpool
 import sys
 from pathlib import Path
 
@@ -145,11 +143,26 @@ def stream_chat_processing(
         )
 
         # 推送数据
+        items_count = 0
+        if getattr(response, "data_blocks", None):
+            for block in response.data_blocks.values():
+                block_total = 0
+                if isinstance(block, dict):
+                    block_total = block.get("stats", {}).get("total") or len(block.get("records", []))
+                else:
+                    block_total = block.stats.get("total") if block.stats else 0
+                    if not block_total:
+                        block_total = len(block.records)
+                items_count += block_total
+
+        panel_block_count = len(response.data.blocks) if response.data else 0
+
         yield DataMessage(
             stream_id=stream_id,
             stage=StreamStage.FETCH,
             data={
-                "items_count": len(response.data) if response.data else 0,
+                "items_count": items_count,
+                "block_count": panel_block_count,
                 "cache_hit": response.metadata.get("cache_hit") if response.metadata else None,
                 "source": response.metadata.get("source") if response.metadata else None,
             }
@@ -164,6 +177,19 @@ def stream_chat_processing(
         ).model_dump()
 
         # 推送最终结果
+        panel_payload = (
+            response.data.model_dump()
+            if response.data and hasattr(response.data, "model_dump")
+            else response.data
+        )
+        panel_blocks_dump = {}
+        if getattr(response, "data_blocks", None):
+            for key, block in response.data_blocks.items():
+                if hasattr(block, "model_dump"):
+                    panel_blocks_dump[key] = block.model_dump()
+                else:
+                    panel_blocks_dump[key] = block
+
         yield DataMessage(
             stream_id=stream_id,
             stage=StreamStage.SUMMARY,
@@ -171,7 +197,8 @@ def stream_chat_processing(
                 "success": response.success,
                 "intent_type": response.intent_type,
                 "message": response.message,
-                "data": response.data,  # 完整数据
+                "data": panel_payload,
+                "data_blocks": panel_blocks_dump,
                 "metadata": response.metadata,
             }
         ).model_dump()

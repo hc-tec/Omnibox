@@ -8,6 +8,9 @@
 - `../README.md` - 项目使用说明和快速开始
 
 ## 技术架构文档
+- `../docs/intelligent-data-panel-design.md` - 智能数据面板后端设计方案（数据→组件→布局全流程）
+- `../docs/frontend-electron-shadcn-design.md` - 前端 Electron + Shadcn UI 实现指南（组件能力、布局渲染、状态管理、交互规范）
+- `../docs/backend-intelligent-panel-overview.md` - 面向前端的后端面板联调指南（数据结构、字段语义、布局约束）
 ### 后端架构（必读）
 - `backend-architecture.md` - 后端（Integration/Service/Controller层）架构设计与技术约束，修改任何后端代码时必读
   - Integration层可复用组件（DataExecutor、CacheService）使用规范
@@ -28,6 +31,7 @@
 ## 当前任务文档
 - `workflow/251031-rss-aggregation-layered-architecture.md` - 实现RSS聚合系统分层架构
 - `workflow/251031-rss-aggregation-architecture-refine.md` - RSS聚合架构落地改进方案，补充本地依赖、同步异步策略与接口设计
+- `workflow/251101-intelligent-panel-backend.md` - 智能数据面板后端整改与质量保障方案
 
 ## 技术使用指南
 - `service-layer-usage.md` - Service层完整使用指南，包含所有服务的创建、使用和扩展方法

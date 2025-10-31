@@ -5,8 +5,8 @@
 
 import logging
 import os
-from typing import List, Optional, Any, Dict
-from dataclasses import dataclass
+from typing import Optional, Any, Dict
+from dataclasses import dataclass, field
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
 import sys
@@ -16,12 +16,16 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from api.schemas.responses import (
-    ChatRequest,
-    ChatResponse,
-    FeedItemSchema,
-    ResponseMetadata,
-    ErrorResponse,
+from api.schemas.responses import ChatRequest, ChatResponse, ResponseMetadata, ErrorResponse
+from api.schemas.panel import (
+    PanelPayload,
+    UIBlock,
+    LayoutTree,
+    LayoutNode,
+    DataBlock,
+    SchemaSummary,
+    SchemaFieldSummary,
+    SourceInfo,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,7 +44,8 @@ class SimpleChatResponse:
     success: bool
     intent_type: str
     message: str
-    data: Optional[List[Dict[str, Any]]] = None
+    data: Optional[PanelPayload] = None
+    data_blocks: Dict[str, DataBlock] = field(default_factory=dict)
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -61,20 +66,71 @@ class MockChatService:
         intent_type = "chitchat" if any(greet in normalized.lower() for greet in greetings) else "data_query"
 
         if intent_type == "data_query":
-            data = [
+            block_records = [
                 {
                     "title": f"模拟数据：{normalized}",
                     "link": "https://example.com/mock",
                     "description": "这是模拟数据，用于本地/测试环境。",
-                    "pub_date": None,
+                    "pubDate": None,
                     "author": "mock",
-                    "guid": None,
-                    "category": ["mock"],
-                    "media_url": None,
-                    "media_type": None,
                 }
             ]
-            message = f"已获取模拟数据「{normalized}」共{len(data)}条（mock）"
+            schema_summary = SchemaSummary(
+                fields=[
+                    SchemaFieldSummary(name="title", type="text", sample=[block_records[0]["title"]]),
+                    SchemaFieldSummary(name="link", type="url", sample=[block_records[0]["link"]]),
+                    SchemaFieldSummary(name="description", type="text", sample=[block_records[0]["description"]]),
+                ],
+                stats={"total": 1},
+                schema_digest="List(title:text/link:url/description:text)",
+            )
+            data_block = DataBlock(
+                id="data_block_mock",
+                source_info=SourceInfo(
+                    datasource="mock",
+                    route="/mock/path",
+                    params={"query": normalized},
+                    fetched_at=None,
+                    request_id="mock-request",
+                ),
+                records=block_records,
+                stats={"total": 1},
+                schema_summary=schema_summary,
+                full_data_ref=None,
+            )
+            ui_block = UIBlock(
+                id="block-mock-1",
+                component="ListPanel",
+                data_ref=data_block.id,
+                data={
+                    "items": block_records,
+                    "schema": schema_summary.model_dump(),
+                    "stats": data_block.stats,
+                },
+                props={
+                    "title_field": "title",
+                    "link_field": "link",
+                    "description_field": "description",
+                },
+                options={"show_description": True, "span": 12},
+                interactions=[],
+                confidence=0.9,
+                title=f"模拟数据：{normalized}",
+            )
+            layout = LayoutTree(
+                mode="append",
+                nodes=[
+                    LayoutNode(
+                        type="row",
+                        id="row-1",
+                        children=[ui_block.id],
+                        props={"span": 12, "min_height": 320},
+                    )
+                ],
+                history_token=None,
+            )
+            panel_payload = PanelPayload(mode="append", layout=layout, blocks=[ui_block])
+            message = f"已获取模拟数据「{normalized}」共{len(block_records)}条（mock）"
             metadata = {
                 "intent_type": intent_type,
                 "intent_confidence": 0.9,
@@ -84,9 +140,12 @@ class MockChatService:
                 "feed_title": "模拟数据源",
                 "status": "success",
                 "reasoning": "mock-service-success",
+                "component_confidence": {"block-mock-1": 0.9},
             }
+            data_blocks = {data_block.id: data_block}
         else:
-            data = None
+            panel_payload = None
+            data_blocks = {}
             message = "你好！这是模拟闲聊响应，我可以在真实模式下帮你获取RSS数据。"
             metadata = {
                 "intent_type": intent_type,
@@ -103,7 +162,8 @@ class MockChatService:
             success=True,
             intent_type=intent_type,
             message=message,
-            data=data,
+            data=panel_payload,
+            data_blocks=data_blocks,
             metadata=metadata,
         )
 
@@ -227,11 +287,6 @@ async def chat(
             use_cache=request.use_cache,
         )
 
-        #转换为API响应格式
-        feed_items = None
-        if response.data:
-            feed_items = [FeedItemSchema(**item) for item in response.data]
-
         metadata = None
         if response.metadata:
             # 确保所有字段都传递，即使是None值
@@ -244,12 +299,15 @@ async def chat(
                 feed_title=response.metadata.get("feed_title"),
                 status=response.metadata.get("status"),
                 reasoning=response.metadata.get("reasoning"),
+                component_confidence=response.metadata.get("component_confidence"),
+                debug=response.metadata.get("debug"),
             )
 
         return ChatResponse(
             success=response.success,
             message=response.message,
-            data=feed_items,
+            data=response.data,
+            data_blocks=response.data_blocks,
             metadata=metadata,
         )
 

@@ -64,10 +64,20 @@ def run_fetch_demo():
             print(f"Feed标题: {result.feed_title}")
             print(f"数据条数: {len(result.items)}")
             for i, item in enumerate(result.items[:3], 1):
-                print(f"\n  {i}. {item.title}")
-                print(f"     链接: {item.link}")
-                print(f"     发布时间: {item.pub_date}")
-                print(f"     描述: {item.description[:100]}...")
+                if isinstance(item, dict):
+                    title = item.get("title") or item.get("name") or "(无标题)"
+                    link = item.get("link") or item.get("url") or "-"
+                    print(f"\n  {i}. {title}")
+                    print(f"     链接: {link}")
+                    for key in ("pubDate", "publishedAt", "updateTime"):
+                        if key in item:
+                            print(f"     时间: {item[key]}")
+                            break
+                    if "description" in item:
+                        desc = str(item["description"])[:100]
+                        print(f"     描述: {desc}...")
+                else:
+                    print(f"  {i}. {item}")
         else:
             print(f"错误信息: {result.error_message}")
 

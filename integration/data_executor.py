@@ -18,72 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class FeedItem:
-    """
-    RSS Feed数据项通用模型（万物皆可RSS）
-
-    适用于各种数据类型：
-    - 视频（B站、YouTube）
-    - 社交动态（微博、推特）
-    - 论坛帖子（虎扑、V2EX）
-    - 商品、天气、股票、GitHub仓库等
-    """
-    title: str                      # 标题（必需）
-    link: str                       # 链接（必需）
-    description: str                # 描述/摘要（必需）
-    pub_date: Optional[str] = None  # 发布时间
-    author: Optional[str] = None    # 作者/发布者
-    guid: Optional[str] = None      # 唯一标识
-
-    # 通用扩展字段
-    category: Optional[List[str]] = None     # 分类/标签
-    media_url: Optional[str] = None          # 媒体URL（图片/视频/音频）
-    media_type: Optional[str] = None         # 媒体类型（image/video/audio）
-
-    # 原始数据（保留RSSHub返回的所有字段）
-    raw_data: Optional[Dict[str, Any]] = None
-
-    @classmethod
-    def from_rsshub_item(cls, item: Dict[str, Any]) -> "FeedItem":
-        """
-        从RSSHub JSON格式创建FeedItem实例
-
-        自动提取常见字段，并保留原始数据供后续使用
-        """
-        # 提取媒体信息（如果有）
-        media_url = None
-        media_type = None
-
-        # 尝试从enclosure提取媒体信息
-        enclosure = item.get("enclosure", {})
-        if isinstance(enclosure, dict) and enclosure.get("url"):
-            media_url = enclosure.get("url")
-            # image/jpeg -> image
-            media_type_full = enclosure.get("type", "")
-            media_type = media_type_full.split("/")[0] if media_type_full else None
-
-        # 提取分类
-        category = item.get("category")
-        if isinstance(category, str):
-            category = [category]
-        elif not isinstance(category, list):
-            category = None
-
-        return cls(
-            title=item.get("title", ""),
-            link=item.get("link", ""),
-            description=item.get("description", ""),
-            pub_date=item.get("pubDate"),
-            author=item.get("author"),
-            guid=item.get("guid"),
-            category=category,
-            media_url=media_url,
-            media_type=media_type,
-            raw_data=item,  # 保留原始数据
-        )
-
-
-@dataclass
 class FetchResult:
     """
     数据获取结果
@@ -91,7 +25,7 @@ class FetchResult:
     包含从RSSHub获取的所有数据项和元信息
     """
     status: Literal["success", "error"]
-    items: List[FeedItem]                    # 数据项列表（原articles）
+    items: List[Dict[str, Any]]              # 原始数据项列表
     source: Literal["local", "fallback"]     # 数据来源
     feed_title: Optional[str] = None         # Feed标题
     feed_link: Optional[str] = None          # Feed链接
@@ -119,7 +53,7 @@ class DataExecutor:
         result = executor.fetch_rss("/bilibili/user/video/2267573")
         if result.status == "success":
             for item in result.items:
-                print(f"{item.title} - {item.media_type}")
+                print(item.get("title"))
     """
 
     def __init__(
@@ -264,24 +198,24 @@ class DataExecutor:
                 feed_link = data.get("link", "")
                 feed_description = data.get("description", "")
 
-                # 提取数据项列表
-                raw_items = data.get("item", [])
-                if not raw_items:
+                raw_items = data.get("item")
+                if isinstance(raw_items, list):
+                    normalized_items = [self._normalize_record(item) for item in raw_items]
+                elif isinstance(raw_items, dict):
+                    normalized_items = [self._normalize_record(raw_items)]
+                else:
+                    normalized_items = [self._normalize_record(data)]
+
+                if not normalized_items:
                     logger.warning(f"RSS数据为空: {url}")
 
-                # 转换为FeedItem对象列表
-                feed_items = [
-                    FeedItem.from_rsshub_item(item)
-                    for item in raw_items
-                ]
-
                 logger.info(
-                    f"✓ 成功获取 {len(feed_items)} 条数据 ({source}): {feed_title}"
+                    f"✓ 成功获取 {len(normalized_items)} 条数据 ({source}): {feed_title}"
                 )
 
                 return FetchResult(
                     status="success",
-                    items=feed_items,
+                    items=normalized_items,
                     source=source,
                     feed_title=feed_title,
                     feed_link=feed_link,
@@ -317,6 +251,22 @@ class DataExecutor:
             source=source,
             error_message=error_msg,
         )
+
+    @staticmethod
+    def _normalize_record(item: Any) -> Dict[str, Any]:
+        if isinstance(item, dict):
+            return item
+        if hasattr(item, "model_dump"):
+            try:
+                return dict(item.model_dump())
+            except Exception:
+                return {"value": item}
+        if hasattr(item, "__dict__"):
+            try:
+                return dict(item.__dict__)
+            except Exception:
+                return {"value": item}
+        return {"value": item}
 
     def _build_request_url(self, base_url: str, path: str) -> str:
         """
