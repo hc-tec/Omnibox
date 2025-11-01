@@ -34,6 +34,7 @@ class DataQueryResult:
         cache_hit: 是否命中缓存（rag_cache/rss_cache/none）
         reasoning: 推理过程或错误信息
         clarification_question: 需要澄清的问题（可选）
+        payload: RSSHub 原始返回（字典格式）
     """
     status: str
     items: List[Dict[str, Any]]
@@ -43,6 +44,7 @@ class DataQueryResult:
     cache_hit: str = "none"  # rag_cache/rss_cache/none
     reasoning: str = ""
     clarification_question: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
 
 
 class DataQueryService:
@@ -212,7 +214,8 @@ class DataQueryService:
                     generated_path=generated_path,
                     source=fetch_result.source,
                     cache_hit=final_cache_hit,
-                    reasoning=f"成功获取{len(fetch_result.items)}条数据",
+                    reasoning="成功获取数据",
+                    payload=fetch_result.payload,
                 )
             else:
                 return DataQueryResult(

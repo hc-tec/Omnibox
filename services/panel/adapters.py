@@ -10,6 +10,7 @@ import re
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
+from services.panel.view_models import validate_records
 
 
 @dataclass
@@ -267,7 +268,9 @@ def _build_list_plan(title: str, component_confidence: float = 0.75) -> AdapterB
 @route_adapter("/hupu", "/hupu/bbs", "/hupu/all")
 def hupu_board_list_adapter(source_info: SourceInfo, records: Sequence[Dict[str, Any]]) -> RouteAdapterResult:
     feed_title, items, feed_stats = _collect_feed_items(records)
-    normalized_items = _build_list_records(items)
+    normalized_items = validate_records(
+        "ListPanel", _build_list_records(items)
+    )
 
     stats = {
         "datasource": source_info.datasource,
@@ -287,7 +290,9 @@ def hupu_board_list_adapter(source_info: SourceInfo, records: Sequence[Dict[str,
 @route_adapter("/bilibili", "/bilibili/user/video", "/bilibili/user/dynamic")
 def bilibili_feed_adapter(source_info: SourceInfo, records: Sequence[Dict[str, Any]]) -> RouteAdapterResult:
     feed_title, items, feed_stats = _collect_feed_items(records)
-    normalized_items = _build_list_records(items)
+    normalized_items = validate_records(
+        "ListPanel", _build_list_records(items)
+    )
 
     for item in normalized_items:
         item["source"] = "bilibili"
@@ -314,7 +319,7 @@ def github_trending_adapter(source_info: SourceInfo, records: Sequence[Dict[str,
     top_stars = 0
     language_counter: Dict[str, int] = {}
 
-    for item in items:
+    for rank, item in enumerate(items, start=1):
         extra = item.get("extra") or {}
         title = item.get("title") or extra.get("repo")
         if not title:
@@ -333,8 +338,11 @@ def github_trending_adapter(source_info: SourceInfo, records: Sequence[Dict[str,
         if stars:
             top_stars = max(top_stars, stars)
 
+        chart_value = float(stars or 0.0)
+
         normalized_items.append(
             {
+                "rank": rank,
                 "id": item.get("id") or link or title,
                 "title": title,
                 "link": link,
@@ -346,6 +354,9 @@ def github_trending_adapter(source_info: SourceInfo, records: Sequence[Dict[str,
                 "forks": forks,
                 "author": (title.split("/", 1)[0].strip() if "/" in title else None),
                 "raw_excerpt_length": len(description) if isinstance(description, str) else 0,
+                "x": rank,
+                "y": chart_value,
+                "series": language,
             }
         )
 
@@ -357,9 +368,26 @@ def github_trending_adapter(source_info: SourceInfo, records: Sequence[Dict[str,
         "top_stars": top_stars,
     }
 
+    validated_list = validate_records("ListPanel", normalized_items)
+    validate_records("LineChart", validated_list)
+
     return RouteAdapterResult(
-        records=normalized_items,
-        block_plans=[_build_list_plan(feed_title or "GitHub Trending", component_confidence=0.74)],
+        records=validated_list,
+        block_plans=[
+            _build_list_plan(feed_title or "GitHub Trending", component_confidence=0.74),
+            AdapterBlockPlan(
+                component_id="LineChart",
+                props={
+                    "x_field": "x",
+                    "y_field": "y",
+                    "series_field": "series",
+                },
+                options={"area_style": False, "span": 12},
+                title=f"{feed_title or 'GitHub Trending'} Stars",
+                layout_hint=LayoutHint(span=12, min_height=280),
+                confidence=0.65,
+            ),
+        ],
         stats=stats,
     )
 
@@ -367,7 +395,9 @@ def github_trending_adapter(source_info: SourceInfo, records: Sequence[Dict[str,
 @route_adapter("/github/issue")
 def github_issue_adapter(source_info: SourceInfo, records: Sequence[Dict[str, Any]]) -> RouteAdapterResult:
     feed_title, items, feed_stats = _collect_feed_items(records)
-    normalized_items = _build_list_records(items)
+    normalized_items = validate_records(
+        "ListPanel", _build_list_records(items)
+    )
 
     stats = {
         "datasource": source_info.datasource or "github",

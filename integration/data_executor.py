@@ -7,7 +7,7 @@
 4. 错误处理和重试
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Literal, Dict, Any, Tuple
 import httpx
 import logging
@@ -32,6 +32,7 @@ class FetchResult:
     feed_description: Optional[str] = None   # Feed描述
     error_message: Optional[str] = None
     fetched_at: Optional[str] = None
+    payload: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.fetched_at is None:
@@ -190,36 +191,34 @@ class DataExecutor:
                 response = self.client.get(url)
                 response.raise_for_status()
 
-                # 解析JSON
+                # 解析 JSON
                 data = response.json()
 
-                # 提取feed信息
-                feed_title = data.get("title", "")
-                feed_link = data.get("link", "")
-                feed_description = data.get("description", "")
-
-                raw_items = data.get("item")
-                if isinstance(raw_items, list):
-                    normalized_items = [self._normalize_record(item) for item in raw_items]
-                elif isinstance(raw_items, dict):
-                    normalized_items = [self._normalize_record(raw_items)]
+                if isinstance(data, dict):
+                    payload = data
+                    feed_title = data.get("title")
+                    feed_link = data.get("link")
+                    feed_description = data.get("description")
                 else:
-                    normalized_items = [self._normalize_record(data)]
-
-                if not normalized_items:
-                    logger.warning(f"RSS数据为空: {url}")
+                    payload = {"value": data}
+                    feed_title = None
+                    feed_link = None
+                    feed_description = None
 
                 logger.info(
-                    f"✓ 成功获取 {len(normalized_items)} 条数据 ({source}): {feed_title}"
+                    "✓ 成功获取数据 (%s): %s",
+                    source,
+                    path,
                 )
 
                 return FetchResult(
                     status="success",
-                    items=normalized_items,
+                    items=[payload],
                     source=source,
                     feed_title=feed_title,
                     feed_link=feed_link,
                     feed_description=feed_description,
+                    payload=payload,
                 )
 
             except httpx.HTTPStatusError as e:
@@ -252,21 +251,6 @@ class DataExecutor:
             error_message=error_msg,
         )
 
-    @staticmethod
-    def _normalize_record(item: Any) -> Dict[str, Any]:
-        if isinstance(item, dict):
-            return item
-        if hasattr(item, "model_dump"):
-            try:
-                return dict(item.model_dump())
-            except Exception:
-                return {"value": item}
-        if hasattr(item, "__dict__"):
-            try:
-                return dict(item.__dict__)
-            except Exception:
-                return {"value": item}
-        return {"value": item}
 
     def _build_request_url(self, base_url: str, path: str) -> str:
         """

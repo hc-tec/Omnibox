@@ -71,21 +71,9 @@ def test_fetch_rss():
             print(f"Feed标题: {result.feed_title}")
             print(f"Feed链接: {result.feed_link}")
             print(f"Feed描述: {result.feed_description}")
-            print(f"数据条数: {len(result.items)}")
-
-            if result.items:
-                print(f"\n前3条数据:")
-                for i, item in enumerate(result.items[:3], 1):
-                    print(f"\n  {i}. {item.title}")
-                    print(f"     链接: {item.link}")
-                    print(f"     发布时间: {item.pub_date}")
-                    print(f"     作者: {item.author}")
-                    if item.media_type:
-                        print(f"     媒体类型: {item.media_type}")
-                        print(f"     媒体URL: {item.media_url}")
-                    if item.category:
-                        print(f"     分类: {', '.join(item.category)}")
-                    print(f"     描述: {item.description[:100]}...")
+            print(f"返回payload类型: {type(result.payload).__name__}")
+            if isinstance(result.payload, dict):
+                print(f"payload键: {list(result.payload.keys())[:10]}")
         else:
             print(f"错误信息: {result.error_message}")
 

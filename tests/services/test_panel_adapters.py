@@ -6,6 +6,7 @@ from api.schemas.panel import SourceInfo
 import services.panel.adapters as adapters
 import services.panel.data_block_builder as data_block_builder
 import services.panel.panel_generator as panel_generator
+from services.panel.view_models import ContractViolation, validate_records
 
 
 HUPU_FEED_SAMPLE = {
@@ -158,7 +159,13 @@ def test_github_trending_adapter_enriches_stats():
     assert first["stars"] == 1234
     assert result.stats["top_language"] == "Python"
     assert result.stats["top_stars"] == 2000
+    assert len(result.block_plans) == 2
     assert result.block_plans[0].component_id == "ListPanel"
+    assert result.block_plans[1].component_id == "LineChart"
+    assert result.block_plans[1].props["x_field"] == "x"
+    assert result.records[0]["rank"] == 1
+    assert result.records[0]["x"] == 1
+    assert result.records[0]["y"] == 1234.0
 
 
 def test_sspai_adapter_falls_back_to_list():
@@ -175,3 +182,8 @@ def test_sspai_adapter_falls_back_to_list():
     assert result.records
     assert result.block_plans[0].component_id == "ListPanel"
     assert result.block_plans[0].confidence == pytest.approx(0.68)
+
+
+def test_contract_violation_raises():
+    with pytest.raises(ContractViolation):
+        validate_records("ListPanel", [{"id": "abc"}])

@@ -164,7 +164,7 @@ class ChatService:
 
             message = self._format_success_message(
                 feed_title=query_result.feed_title,
-                item_count=len(query_result.items),
+                item_count=self._infer_item_count(query_result),
                 source=query_result.source,
             )
 
@@ -275,7 +275,7 @@ class ChatService:
 
         block_input = PanelBlockInput(
             block_id="data_block_1",
-            records=query_result.items,
+            records=[query_result.payload] if query_result.payload else query_result.items,
             source_info=source_info,
             title=query_result.feed_title,
             stats={"intent_confidence": intent_confidence},
@@ -286,6 +286,17 @@ class ChatService:
             block_inputs=[block_input],
             history_token=None,
         )
+
+    @staticmethod
+    def _infer_item_count(query_result: DataQueryResult) -> int:
+        if query_result.payload and isinstance(query_result.payload, dict):
+            payload_items = query_result.payload.get("items")
+            if isinstance(payload_items, list):
+                return len(payload_items)
+            payload_item = query_result.payload.get("item")
+            if isinstance(payload_item, list):
+                return len(payload_item)
+        return len(query_result.items or [])
 
     @staticmethod
     def _guess_datasource(generated_path: Optional[str]) -> str:
@@ -333,4 +344,3 @@ class ChatService:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """上下文管理器退出时自动释放资源。"""
         self.close()
-
