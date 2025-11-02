@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { usePanelStore } from "../../store/panelStore";
 
-export function usePanelActions(initialQuery = "虎扑步行街最新帖子") {
+export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
   const panelStore = usePanelStore();
   const { state, hasPanel } = storeToRefs(panelStore);
   const query = ref(initialQuery);
