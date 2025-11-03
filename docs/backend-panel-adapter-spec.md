@@ -40,7 +40,8 @@ Downstream stages always prefer `payload`; `items` only exists for legacy helper
 ### 3.1 Registration
 
 ```python
-from services.panel.adapters import route_adapter, RouteAdapterResult, AdapterBlockPlan
+from services.panel.adapters import route_adapter
+from services.panel.adapters.registry import RouteAdapterResult, AdapterBlockPlan
 
 @route_adapter("/hupu/bbs", "/hupu/all")
 def hupu_adapter(source_info, records):
@@ -183,9 +184,9 @@ def github_trending_adapter(source_info, records):
             AdapterBlockPlan(
                 component_id="LineChart",
                 props={
-                    "x_field": "rank",
-                    "y_field": "stars",
-                    "series_field": "language",
+                    "x_field": "x",
+                    "y_field": "y",
+                    "series_field": "series",
                 },
                 title=f"{feed.get('title')} Stars",
             ),
@@ -195,7 +196,16 @@ def github_trending_adapter(source_info, records):
 
 A single normalised record structure satisfies both components. If two components require fundamentally different data, consider creating multiple data blocks or including supplementary datasets under `stats`.
 
-## 7. Development Guidelines
+## 7. Module Structure
+
+- Registry and decorator helpers reside in `services/panel/adapters/registry.py`.
+- Common helper utilities（HTML 清洗、List 正常化、契约校验等）位于 `services/panel/adapters/common.py`。
+- 数据源适配器按领域拆分到独立模块：例如 `services/panel/adapters/bilibili.py`、`.../github.py`、`.../hupu.py`。
+- `services/panel/adapters/__init__.py` 负责统一导出并显式导入子模块，确保注册在包导入时完成。
+
+新增路由时，请创建对应的模块文件并在 `__init__.py` 中导入，以便后续维护者快速定位适配逻辑。
+
+## 8. Development Guidelines
 
 - Never assume the presence of `title/link/description` in the payload; always inspect the actual RSSHub response before mapping fields.
 - Prefer converting strings to numeric types within the adapter so components receive consistent data.

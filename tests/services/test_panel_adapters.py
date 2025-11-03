@@ -4,6 +4,11 @@ import pytest
 
 from api.schemas.panel import SourceInfo
 import services.panel.adapters as adapters
+import services.panel.adapters.registry as adapter_registry_module
+import services.panel.adapters.hupu as adapters_hupu_module
+import services.panel.adapters.bilibili as adapters_bilibili_module
+import services.panel.adapters.github as adapters_github_module
+import services.panel.adapters.generic as adapters_generic_module
 import services.panel.data_block_builder as data_block_builder
 import services.panel.panel_generator as panel_generator
 from services.panel.view_models import ContractViolation, validate_records
@@ -73,9 +78,35 @@ SSPAI_FEED_SAMPLE = {
     ],
 }
 
+BILIBILI_FOLLOWINGS_SAMPLE = {
+    "title": "Alice 的 bilibili 关注",
+    "item": [
+        {
+            "title": "Alice 新关注 Bob",
+            "description": "Bob<br>硬核程序员<br>总计42",
+            "pubDate": "Fri, 01 Nov 2024 08:00:00 GMT",
+            "link": "https://space.bilibili.com/1001",
+        },
+        {
+            "title": "Alice 新关注 Carol",
+            "description": "Carol<br>签名很长<br>总计42",
+            "pubDate": "Fri, 01 Nov 2024 07:30:00 GMT",
+            "link": "https://space.bilibili.com/1002",
+        },
+    ],
+}
+
 
 @pytest.fixture(autouse=True)
 def reload_panel_modules():
+    for module in [
+        adapter_registry_module,
+        adapters_hupu_module,
+        adapters_bilibili_module,
+        adapters_github_module,
+        adapters_generic_module,
+    ]:
+        importlib.reload(module)
     importlib.reload(adapters)
     importlib.reload(data_block_builder)
     importlib.reload(panel_generator)
@@ -187,3 +218,24 @@ def test_sspai_adapter_falls_back_to_list():
 def test_contract_violation_raises():
     with pytest.raises(ContractViolation):
         validate_records("ListPanel", [{"id": "abc"}])
+
+
+def test_bilibili_followings_adapter_extracts_count():
+    adapter = adapters.get_route_adapter("/bilibili/user/followings/2267573/3")
+    source_info = SourceInfo(
+        datasource="rsshub",
+        route="/bilibili/user/followings/2267573/3",
+        params={},
+        fetched_at=None,
+        request_id=None,
+    )
+
+    result = adapter(source_info, [BILIBILI_FOLLOWINGS_SAMPLE])
+
+    assert result.records
+    first = result.records[0]
+    assert first["title"].startswith("Alice 新关注")
+    assert first["link"] == "https://space.bilibili.com/1001"
+    assert "总计42" in first["summary"]
+    assert result.block_plans[0].component_id == "ListPanel"
+    assert result.stats["follower_count"] == 42
