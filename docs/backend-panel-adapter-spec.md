@@ -199,8 +199,9 @@ A single normalised record structure satisfies both components. If two component
 ## 7. Module Structure
 
 - Registry and decorator helpers reside in `services/panel/adapters/registry.py`.
-- Common helper utilities（HTML 清洗、List 正常化、契约校验等）位于 `services/panel/adapters/common.py`。
-- 数据源适配器按领域拆分到独立模块：例如 `services/panel/adapters/bilibili.py`、`.../github.py`、`.../hupu.py`。
+- **通用工具函数**位于 `services/panel/adapters/utils.py`，提供HTML清理、文本处理、类型转换等基础功能，所有adapter应优先复用这些工具函数，避免重复实现。
+- 每个数据源适配器都放在单独模块中：例如 `services/panel/adapters/bilibili.py`、`.../github.py`、`.../hupu.py`。
+- 适配器代码应直接展示字段映射逻辑（所见即所得），使用utils中的工具函数处理通用转换，便于使用者对照 RSSHub 返回值理解转换过程。
 - `services/panel/adapters/__init__.py` 负责统一导出并显式导入子模块，确保注册在包导入时完成。
 
 新增路由时，请创建对应的模块文件并在 `__init__.py` 中导入，以便后续维护者快速定位适配逻辑。
