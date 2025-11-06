@@ -21,6 +21,7 @@ from services.panel.panel_generator import (
     PanelBlockInput,
     PanelGenerationResult,
 )
+from services.panel.component_planner import ComponentPlannerConfig, plan_components_for_route
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ class ChatService:
         data_query_service: DataQueryService,
         intent_service: Optional[IntentService] = None,
         manage_data_service: bool = False,
+        component_planner_config: Optional[ComponentPlannerConfig] = None,
     ):
         """
         初始化对话服务。
@@ -86,6 +88,7 @@ class ChatService:
         self.intent_service = intent_service or get_intent_service()
         self._manage_data_service = manage_data_service
         self.panel_generator = PanelGenerator()
+        self.component_planner_config = component_planner_config or ComponentPlannerConfig()
 
         logger.info("ChatService 初始化完成")
 
@@ -175,6 +178,7 @@ class ChatService:
                 "intent_confidence": intent_confidence,
                 "feed_title": query_result.feed_title,
                 "component_confidence": panel_result.component_confidence,
+                "requested_components": block_input.requested_components,
                 "debug": panel_result.debug,
             }
 
@@ -273,12 +277,22 @@ class ChatService:
             request_id=None,
         )
 
+        try:
+            planned_components = plan_components_for_route(
+                source_info.route,
+                config=self.component_planner_config,
+            )
+        except Exception as e:
+            logger.warning(f"组件规划失败，使用默认组件: {e}")
+            planned_components = None  # 降级到默认行为
+
         block_input = PanelBlockInput(
             block_id="data_block_1",
             records=[query_result.payload] if query_result.payload else query_result.items,
             source_info=source_info,
             title=query_result.feed_title,
             stats={"intent_confidence": intent_confidence},
+            requested_components=planned_components,
         )
 
         return self.panel_generator.generate(
