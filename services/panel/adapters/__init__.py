@@ -4,10 +4,14 @@ Route adapter package.
 
 from .registry import (
     AdapterBlockPlan,
+    AdapterExecutionContext,
+    ComponentManifestEntry,
     RouteAdapter,
+    RouteAdapterManifest,
     RouteAdapterResult,
     clear_route_adapters,
     get_route_adapter,
+    get_route_manifest,
     register_route_adapter,
     route_adapter,
 )
@@ -20,10 +24,14 @@ from . import generic  # noqa: F401
 
 __all__ = [
     "AdapterBlockPlan",
+    "AdapterExecutionContext",
+    "ComponentManifestEntry",
     "RouteAdapter",
+    "RouteAdapterManifest",
     "RouteAdapterResult",
     "register_route_adapter",
     "route_adapter",
     "get_route_adapter",
+    "get_route_manifest",
     "clear_route_adapters",
 ]

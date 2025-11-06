@@ -22,6 +22,7 @@ class PanelBlockInput:
     full_data_ref: Optional[str] = None
     stats: Optional[Dict[str, Any]] = None
     user_preferences: Optional[Dict[str, Any]] = None
+    requested_components: Optional[Sequence[str]] = None
 
 
 @dataclass
@@ -59,7 +60,18 @@ class PanelGenerator:
             data_block = result.data_block
             data_blocks[data_block.id] = data_block
 
-            plans = result.block_plans or [self._build_fallback_plan(block_input, data_block)]
+            plans = list(result.block_plans)
+            if not plans:
+                if block_input.requested_components:
+                    debug_info["blocks"].append(
+                        {
+                            "data_block_id": data_block.id,
+                            "planned_components": [],
+                            "skipped": True,
+                        }
+                    )
+                    continue
+                plans = [self._build_fallback_plan(block_input, data_block)]
             for plan_index, plan in enumerate(plans, start=1):
                 block_id = f"block-{block_index}-{plan_index}"
                 ui_block = self._plan_to_ui_block(block_id, data_block, plan)
@@ -99,6 +111,7 @@ class PanelGenerator:
             source_info=block_input.source_info,
             full_data_ref=block_input.full_data_ref,
             stats=block_input.stats,
+            requested_components=block_input.requested_components,
         )
 
     def _plan_to_ui_block(

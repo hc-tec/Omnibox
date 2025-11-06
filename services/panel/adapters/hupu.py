@@ -1,20 +1,57 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
-from .registry import AdapterBlockPlan, RouteAdapterResult, route_adapter
-from .utils import short_text, first_author
+from .registry import (
+    AdapterBlockPlan,
+    AdapterExecutionContext,
+    ComponentManifestEntry,
+    RouteAdapterManifest,
+    RouteAdapterResult,
+    route_adapter,
+)
+from .utils import short_text, first_author, early_return_if_no_match
 
 
-@route_adapter('/hupu', '/hupu/bbs', '/hupu/all')
+HUPU_MANIFEST = RouteAdapterManifest(
+    components=[
+        ComponentManifestEntry(
+            component_id='ListPanel',
+            description='虎扑帖子列表（标题 + 摘要）',
+            cost='low',
+            default_selected=True,
+            required=True,
+        )
+    ],
+    notes='适用于虎扑社区的帖子聚合路由，例如 /hupu/bbs/bxj/1。',
+)
+
+
+@route_adapter('/hupu', '/hupu/bbs', '/hupu/all', manifest=HUPU_MANIFEST)
 def hupu_board_list_adapter(
-    source_info: SourceInfo, records: Sequence[Dict[str, Any]]
+    source_info: SourceInfo,
+    records: Sequence[Dict[str, Any]],
+    context: Optional[AdapterExecutionContext] = None,
 ) -> RouteAdapterResult:
     payload = records[0] if records else {}
     raw_items = payload.get('items') or []
+
+    # 先构建基础stats（无论是否提前返回都需要）
+    stats = {
+        'datasource': source_info.datasource or 'hupu',
+        'route': source_info.route,
+        'feed_title': payload.get('title'),
+        'total_items': len(raw_items),
+        'api_endpoint': source_info.route or '/hupu',
+    }
+
+    # 检查是否需要提前返回
+    early = early_return_if_no_match(context, ['ListPanel'], stats)
+    if early:
+        return early
 
     normalized: list[Dict[str, Any]] = []
     for item in raw_items:
@@ -35,6 +72,7 @@ def hupu_board_list_adapter(
         )
 
     validated = validate_records('ListPanel', normalized)
+    stats['total_items'] = len(validated)
 
     block_plan = AdapterBlockPlan(
         component_id='ListPanel',
@@ -50,14 +88,6 @@ def hupu_board_list_adapter(
         layout_hint=LayoutHint(span=12, min_height=320),
         confidence=0.7,
     )
-
-    stats = {
-        'datasource': source_info.datasource or 'hupu',
-        'route': source_info.route,
-        'feed_title': payload.get('title'),
-        'total_items': len(validated),
-        'api_endpoint': source_info.route or '/hupu',
-    }
 
     return RouteAdapterResult(records=validated, block_plans=[block_plan], stats=stats)
 

@@ -1,13 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest:*)",
-      "Bash(find:*)",
-      "Bash(mkdir:*)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_chat_controller.py -v --tb=short)",
-      "Bash(set CHAT_SERVICE_MODE=mock)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_chat_stream.py -v --tb=short)"
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_panel_adapters.py::test_context_requested_components_empty_list -v --tb=short)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\":*)"
     ],
     "deny": [],
     "ask": []

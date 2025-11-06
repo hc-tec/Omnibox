@@ -1,20 +1,71 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from api.schemas.panel import LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
-from .registry import AdapterBlockPlan, RouteAdapterResult, route_adapter
-from .utils import safe_int, short_text
+from .registry import (
+    AdapterBlockPlan,
+    AdapterExecutionContext,
+    ComponentManifestEntry,
+    RouteAdapterManifest,
+    RouteAdapterResult,
+    route_adapter,
+)
+from .utils import safe_int, short_text, early_return_if_no_match, should_skip_component
 
 
-@route_adapter("/github/trending")
+GITHUB_TRENDING_MANIFEST = RouteAdapterManifest(
+    components=[
+        ComponentManifestEntry(
+            component_id="ListPanel",
+            description="展示热门仓库列表（语言、星标等）",
+            cost="medium",
+            default_selected=True,
+            required=True,
+        ),
+        ComponentManifestEntry(
+            component_id="LineChart",
+            description="按排名绘制 Star 数折线图",
+            cost="medium",
+            default_selected=False,
+            hints={"shared_dataset": True},
+        ),
+    ],
+    notes="基于 RSSHub /github/trending，适用于日/周/月榜单。",
+)
+
+
+@route_adapter("/github/trending", manifest=GITHUB_TRENDING_MANIFEST)
 def github_trending_adapter(
-    source_info: SourceInfo, records: Sequence[Dict[str, Any]]
+    source_info: SourceInfo,
+    records: Sequence[Dict[str, Any]],
+    context: Optional[AdapterExecutionContext] = None,
 ) -> RouteAdapterResult:
     payload = records[0] if records else {}
     raw_items = payload.get("items") or []
+
+    # 先构建基础stats（无论是否提前返回都需要）
+    stats = {
+        "datasource": source_info.datasource or "github",
+        "route": source_info.route,
+        "feed_title": payload.get("title"),
+        "total_items": len(raw_items),
+        "api_endpoint": source_info.route or "/github/trending",
+    }
+
+    # 检查是否需要提前返回
+    early = early_return_if_no_match(context, ["ListPanel", "LineChart"], stats)
+    if early:
+        # 补充额外的stats字段
+        early.stats["top_language"] = None
+        early.stats["top_stars"] = None
+        return early
+
+    # 检查需要生成哪些组件
+    want_list = not should_skip_component(context, "ListPanel")
+    want_chart = not should_skip_component(context, "LineChart")
 
     normalized: List[Dict[str, Any]] = []
     top_stars = 0
@@ -54,40 +105,51 @@ def github_trending_adapter(
             }
         )
 
-    validated = validate_records("ListPanel", normalized)
-    validate_records("LineChart", validated)
+    list_records: List[Dict[str, Any]] = (
+        validate_records("ListPanel", normalized) if want_list else []
+    )
+    chart_records: List[Dict[str, Any]] = (
+        validate_records("LineChart", normalized) if want_chart else []
+    )
 
-    list_plan = AdapterBlockPlan(
-        component_id="ListPanel",
-        props={
-            "title_field": "title",
-            "link_field": "link",
-            "description_field": "summary",
-            "pub_date_field": "published_at",
-        },
-        options={"show_description": True, "span": 12},
-        title=payload.get("title") or "GitHub Trending",
-        layout_hint=LayoutHint(span=12, min_height=320),
-        confidence=0.74,
-    )
-    chart_plan = AdapterBlockPlan(
-        component_id="LineChart",
-        props={
-            "x_field": "x",
-            "y_field": "y",
-            "series_field": "series",
-        },
-        options={"area_style": False, "span": 12},
-        title=f"{payload.get('title') or 'GitHub Trending'} Stars",
-        layout_hint=LayoutHint(span=12, min_height=280),
-        confidence=0.65,
-    )
+    block_plans: List[AdapterBlockPlan] = []
+    if want_list:
+        block_plans.append(
+            AdapterBlockPlan(
+                component_id="ListPanel",
+                props={
+                    "title_field": "title",
+                    "link_field": "link",
+                    "description_field": "summary",
+                    "pub_date_field": "published_at",
+                },
+                options={"show_description": True, "span": 12},
+                title=payload.get("title") or "GitHub Trending",
+                layout_hint=LayoutHint(span=12, min_height=320),
+                confidence=0.74,
+            )
+        )
+    if want_chart:
+        block_plans.append(
+            AdapterBlockPlan(
+                component_id="LineChart",
+                props={
+                    "x_field": "x",
+                    "y_field": "y",
+                    "series_field": "series",
+                },
+                options={"area_style": False, "span": 12},
+                title=f"{payload.get('title') or 'GitHub Trending'} Stars",
+                layout_hint=LayoutHint(span=12, min_height=280),
+                confidence=0.65,
+            )
+        )
 
     stats = {
         "datasource": source_info.datasource or "github",
         "route": source_info.route,
         "feed_title": payload.get("title"),
-        "total_items": len(validated),
+        "total_items": len(list_records or chart_records),
         "top_language": max(language_counter, key=language_counter.get)
         if language_counter
         else None,
@@ -95,4 +157,6 @@ def github_trending_adapter(
         "api_endpoint": source_info.route or "/github/trending",
     }
 
-    return RouteAdapterResult(records=validated, block_plans=[list_plan, chart_plan], stats=stats)
+    records_for_result = list_records if list_records else chart_records
+
+    return RouteAdapterResult(records=records_for_result, block_plans=block_plans, stats=stats)

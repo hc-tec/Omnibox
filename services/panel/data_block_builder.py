@@ -8,7 +8,12 @@ from dataclasses import dataclass, asdict, is_dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from api.schemas.panel import DataBlock, SchemaSummary, SourceInfo
-from services.panel.adapters import AdapterBlockPlan, RouteAdapterResult, get_route_adapter
+from services.panel.adapters import (
+    AdapterBlockPlan,
+    AdapterExecutionContext,
+    RouteAdapterResult,
+    get_route_adapter,
+)
 from services.panel.schema_summary import SchemaSummaryBuilder
 
 
@@ -30,8 +35,9 @@ class DataBlockBuilder:
         source_info: SourceInfo,
         full_data_ref: Optional[str] = None,
         stats: Optional[Dict[str, Any]] = None,
+        requested_components: Optional[Sequence[str]] = None,
     ) -> BlockBuildResult:
-        adapter_result = self._apply_adapter(source_info, records)
+        adapter_result = self._apply_adapter(source_info, records, requested_components)
         normalized_records, canonical_records = self._prepare_records(adapter_result.records)
         schema_summary = self._build_schema_summary(canonical_records)
 
@@ -60,6 +66,7 @@ class DataBlockBuilder:
         fetched_at: Optional[str],
         request_id: Optional[str],
         full_data_ref: Optional[str],
+        requested_components: Optional[Sequence[str]] = None,
     ) -> BlockBuildResult:
         source_info = SourceInfo(
             datasource=datasource,
@@ -74,12 +81,19 @@ class DataBlockBuilder:
             source_info=source_info,
             full_data_ref=full_data_ref,
             stats={"source": datasource},
+            requested_components=requested_components,
         )
 
-    def _apply_adapter(self, source_info: SourceInfo, records: Sequence[Any]) -> RouteAdapterResult:
+    def _apply_adapter(
+        self,
+        source_info: SourceInfo,
+        records: Sequence[Any],
+        requested_components: Optional[Sequence[str]] = None,
+    ) -> RouteAdapterResult:
         adapter = get_route_adapter(source_info.route or "")
         record_dicts = [self._record_to_dict(record) for record in records]
-        return adapter(source_info, record_dicts)
+        context = AdapterExecutionContext(requested_components=requested_components)
+        return adapter(source_info, record_dicts, context)
 
     def _prepare_records(self, records: Sequence[Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         trimmed = list(records)[: self.max_records]

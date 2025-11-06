@@ -21,24 +21,37 @@ class ListPanelRecord(BaseModel):
     categories: Optional[List[str]] = Field(None, description="Tags/categories")
 
 
-class NumberViewDelta(BaseModel):
+class StatisticCardRecord(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    value: float = Field(..., description="Delta numeric value")
-    label: Optional[str] = Field(None, description="Display label for delta")
-    trend: Optional[str] = Field(
-        None, description="Trend indicator", pattern="^(up|down|flat)$"
+    id: str = Field(..., description="Unique record identifier")
+    metric_title: str = Field(..., description="Metric title to display")
+    metric_value: float = Field(..., description="Metric numeric value")
+    metric_unit: Optional[str] = Field(None, description="Unit label displayed next to the value")
+    metric_delta_text: Optional[str] = Field(
+        None, description="Human readable delta, e.g. '+12% vs yesterday'"
     )
+    metric_delta_value: Optional[float] = Field(
+        None, description="Raw numeric delta for downstream calculations"
+    )
+    metric_trend: Optional[str] = Field(
+        None,
+        description="Semantic trend indicator used by the frontend to decide colours/icons",
+        pattern="^(up|down|flat)$",
+    )
+    description: Optional[str] = Field(None, description="Optional supporting text shown under the value")
 
 
 class NumberViewRecord(BaseModel):
+    """Deprecated alias kept for backwards compatibility with existing adapters."""
+
     model_config = ConfigDict(extra="allow")
 
     id: str = Field(..., description="Unique record identifier")
     label: str = Field(..., description="Metric label")
     value: float = Field(..., description="Metric value")
     unit: Optional[str] = Field(None, description="Unit label")
-    delta: Optional[NumberViewDelta] = Field(None, description="Delta information")
+    delta: Optional[Dict[str, Any]] = Field(None, description="Delta information payload")
     description: Optional[str] = Field(None, description="Additional text")
 
 
@@ -90,6 +103,10 @@ def ensure_number_view(records: Sequence[Dict[str, Any]]) -> List[NumberViewReco
     return [NumberViewRecord.model_validate(record) for record in records]
 
 
+def ensure_statistic_card(records: Sequence[Dict[str, Any]]) -> List[StatisticCardRecord]:
+    return [StatisticCardRecord.model_validate(record) for record in records]
+
+
 def ensure_table_view(model: TableViewModel) -> TableViewModel:
     return TableViewModel.model_validate(model.model_dump())
 
@@ -114,6 +131,8 @@ def validate_records(component_id: str, records: Sequence[Dict[str, Any]]) -> Li
             return [model.model_dump() for model in ensure_list_panel(records)]
         if component_id == "LineChart":
             return [model.model_dump() for model in ensure_line_chart(records)]
+        if component_id == "StatisticCard":
+            return [model.model_dump() for model in ensure_statistic_card(records)]
         if component_id == "NumberView":
             return [model.model_dump() for model in ensure_number_view(records)]
         if component_id == "FallbackRichText":
