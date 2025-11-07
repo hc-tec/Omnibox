@@ -193,3 +193,9 @@ AdapterBlockPlan(
 6. **发布**：在提交信息中说明契约变更点，便于后续追溯。
 
 > 契约既是文档也是约束。请在编写适配器、组件、测试前先阅读本文件，确保面板渲染所见即所得。***
+
+## 附录：Stats / Metrics
+
+- 后端适配器在 `stats` 中附带 `metrics` 字典，键使用 `snake_case`，例如 `follower_count`、`total_stars`；Planner 与前端根据这些指标决定是否展示 `StatisticCard` 等组件。
+- `sample_titles` 便于调试，前端亦可用于兜底展示。
+

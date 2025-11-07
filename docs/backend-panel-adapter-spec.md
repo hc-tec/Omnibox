@@ -178,3 +178,10 @@ def bilibili_followings_adapter(
 - `frontend/src/shared/types/panelContracts.ts`：前端对组件数据结构的 TypeScript 定义。
 
 > 完整遵守上述规范，即可在确保性能和契约一致性的前提下，逐步扩展智能面板的路由适配器矩阵。只要 Manifest 与测试同步更新，Planner 就能在生成阶段精准选择所需组件，避免“算了但不展示”的浪费。***
+
+## 9. Stats & Metadata
+
+- `stats` 必须包含 `total_items`、`api_endpoint`，推荐统一注入 `sample_titles`（示例标题）以及 `metrics`（统一格式的指标字典），方便 Planner 与前端消费。
+- Planner 决策会输出 `PlannerDecision(components, reasons)`，ChatService 会把 `requested_components` 与 `planner_reasons` 写入 metadata，便于排查“为何某组件被选/被跳过”。
+- 当 `requested_components` 与适配器支持列表不重合时，应调用 `early_return_if_no_match` 提前结束，PanelGenerator 会在 debug 中记录 `skipped=True`。
+

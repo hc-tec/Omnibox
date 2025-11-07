@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from api.schemas.panel import LayoutHint, SourceInfo
 
+from services.panel.analytics import summarize_payload
 from services.panel.view_models import validate_records
 from .registry import (
     AdapterBlockPlan,
@@ -20,20 +21,20 @@ GITHUB_TRENDING_MANIFEST = RouteAdapterManifest(
     components=[
         ComponentManifestEntry(
             component_id="ListPanel",
-            description="展示热门仓库列表（语言、星标等）",
+            description="展示热门仓库列表与语言/星标等信息",
             cost="medium",
             default_selected=True,
             required=True,
         ),
         ComponentManifestEntry(
             component_id="LineChart",
-            description="按排名绘制 Star 数折线图",
+            description="按排名绘制 Star 数趋势",
             cost="medium",
             default_selected=False,
             hints={"shared_dataset": True, "min_items": 3},
         ),
     ],
-    notes="基于 RSSHub /github/trending，适用于日/周/月榜单。",
+    notes="基于 /github/trending，可覆盖 day/week/month 榜单。",
 )
 
 
@@ -45,25 +46,24 @@ def github_trending_adapter(
 ) -> RouteAdapterResult:
     payload = records[0] if records else {}
     raw_items = payload.get("items") or []
+    summary = summarize_payload(source_info.route or "", payload)
 
-    # 先构建基础stats（无论是否提前返回都需要）
     stats = {
         "datasource": source_info.datasource or "github",
         "route": source_info.route,
         "feed_title": payload.get("title"),
-        "total_items": len(raw_items),
+        "total_items": summary.get("item_count", len(raw_items)),
         "api_endpoint": source_info.route or "/github/trending",
+        "sample_titles": summary.get("sample_titles"),
+        "metrics": summary.get("metrics", {}),
     }
 
-    # 检查是否需要提前返回
     early = early_return_if_no_match(context, ["ListPanel", "LineChart"], stats)
     if early:
-        # 补充额外的stats字段
-        early.stats["top_language"] = None
-        early.stats["top_stars"] = None
+        early.stats.setdefault("top_language", None)
+        early.stats.setdefault("top_stars", None)
         return early
 
-    # 检查需要生成哪些组件
     want_list = not should_skip_component(context, "ListPanel")
     want_chart = not should_skip_component(context, "LineChart")
 
@@ -145,17 +145,15 @@ def github_trending_adapter(
             )
         )
 
-    stats = {
-        "datasource": source_info.datasource or "github",
-        "route": source_info.route,
-        "feed_title": payload.get("title"),
-        "total_items": len(list_records or chart_records),
-        "top_language": max(language_counter, key=language_counter.get)
-        if language_counter
-        else None,
-        "top_stars": top_stars,
-        "api_endpoint": source_info.route or "/github/trending",
-    }
+    stats.update(
+        {
+            "total_items": len(list_records or chart_records),
+            "top_language": max(language_counter, key=language_counter.get)
+            if language_counter
+            else None,
+            "top_stars": top_stars,
+        }
+    )
 
     records_for_result = list_records if list_records else chart_records
 

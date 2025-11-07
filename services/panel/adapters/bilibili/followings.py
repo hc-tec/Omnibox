@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
+from services.panel.analytics import summarize_payload
 from services.panel.view_models import validate_records
 from ..registry import (
     AdapterBlockPlan,
@@ -46,6 +47,8 @@ def bilibili_followings_adapter(
     if isinstance(raw_items, dict):
         raw_items = [raw_items]
 
+    summary = summarize_payload(source_info.route or "", payload)
+
     follower_count = _extract_follower_count(payload, raw_items)
 
     # 先构建基础stats（无论是否提前返回都需要）
@@ -53,8 +56,10 @@ def bilibili_followings_adapter(
         "datasource": source_info.datasource or "bilibili",
         "route": source_info.route,
         "feed_title": payload.get("title"),
-        "total_items": len(raw_items),
+        "total_items": summary.get("item_count", len(raw_items)),
         "api_endpoint": source_info.route or "/bilibili/user/followings",
+        "sample_titles": summary.get("sample_titles", []),
+        "metrics": summary.get("metrics", {}),
     }
     if follower_count is not None:
         stats["follower_count"] = follower_count

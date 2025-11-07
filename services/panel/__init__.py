@@ -14,7 +14,12 @@ from .adapters import (
 from .component_registry import ComponentDefinition, ComponentRegistry
 from .data_block_builder import BlockBuildResult, DataBlockBuilder
 from .layout_engine import LayoutEngine
-from .component_planner import ComponentPlannerConfig, PlannerContext, plan_components_for_route
+from .component_planner import (
+    ComponentPlannerConfig,
+    PlannerContext,
+    PlannerDecision,
+    plan_components_for_route,
+)
 from .panel_generator import PanelBlockInput, PanelGenerator, PanelGenerationResult
 from .schema_summary import SchemaSummaryBuilder
 
@@ -36,6 +41,7 @@ __all__ = [
     "PanelGenerationResult",
     "ComponentPlannerConfig",
     "PlannerContext",
+    "PlannerDecision",
     "plan_components_for_route",
     "SchemaSummaryBuilder",
 ]

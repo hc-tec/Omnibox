@@ -4,7 +4,7 @@
 """
 
 import logging
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional
 from dataclasses import dataclass, field, asdict
 import sys
 from pathlib import Path
@@ -21,7 +21,10 @@ from services.panel.panel_generator import (
     PanelBlockInput,
     PanelGenerationResult,
 )
-from services.panel.component_planner import ComponentPlannerConfig, plan_components_for_route
+from services.panel.analytics import summarize_payload
+from services.panel.component_planner import ComponentPlannerConfig, PlannerContext, plan_components_for_route
+from services.panel.llm_component_planner import LLMComponentPlanner
+from services.panel.adapters import get_route_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +86,20 @@ class ChatService:
             data_query_service: 数据查询服务实例
             intent_service: 意图识别服务（可选，默认使用全局单例）
             manage_data_service: 是否由ChatService负责关闭 data_query_service
+            component_planner_config: 组件规划器配置（可选）
         """
         self.data_query_service = data_query_service
         self.intent_service = intent_service or get_intent_service()
         self._manage_data_service = manage_data_service
         self.panel_generator = PanelGenerator()
         self.component_planner_config = component_planner_config or ComponentPlannerConfig()
+
+        # 初始化 LLM 组件规划器（作为规则引擎的备选方案）
+        try:
+            self.llm_planner = LLMComponentPlanner()
+        except Exception as exc:
+            logger.warning(f"LLM 组件规划器初始化失败，将仅使用规则引擎: {exc}")
+            self.llm_planner = None
 
         logger.info("ChatService 初始化完成")
 
@@ -165,6 +176,7 @@ class ChatService:
             panel_result = self._build_panel(
                 query_result=query_result,
                 intent_confidence=intent_confidence,
+                user_query=user_query,
                 item_count=item_count,
             )
 
@@ -181,7 +193,9 @@ class ChatService:
                 "intent_confidence": intent_confidence,
                 "feed_title": query_result.feed_title,
                 "component_confidence": panel_result.component_confidence,
-                "requested_components": block_input.requested_components,
+                "requested_components": panel_result.debug.get("requested_components"),
+                "planner_reasons": panel_result.debug.get("planner_reasons"),
+                "planner_engine": panel_result.debug.get("planner_engine"),
                 "debug": panel_result.debug,
             }
 
@@ -270,6 +284,7 @@ class ChatService:
         self,
         query_result: DataQueryResult,
         intent_confidence: float,
+        user_query: str,
         item_count: Optional[int] = None,
     ) -> PanelGenerationResult:
         """将数据查询结果转换为智能面板结构。"""
@@ -281,20 +296,41 @@ class ChatService:
             request_id=None,
         )
 
+        summary = summarize_payload(source_info.route or "", query_result.payload or {})
+
         try:
-            available_metrics = self._collect_available_metrics(query_result.payload)
             planner_context = PlannerContext(
-                item_count=item_count,
-                available_metrics=available_metrics,
+                item_count=summary.get("item_count", item_count),
+                user_preferences=(),
+                raw_query=user_query,
+                layout_mode=None,
             )
-            planned_components = plan_components_for_route(
-                source_info.route,
-                config=self.component_planner_config,
-                context=planner_context,
-            )
-        except Exception as e:
-            logger.warning(f"组件规划失败，使用默认组件: {e}")
-            planned_components = None  # 降级到默认行为
+            manifest = get_route_manifest(source_info.route)
+            decision = None
+            planner_engine = "rule"
+            if self.llm_planner and self.llm_planner.is_available():
+                decision = self.llm_planner.plan(
+                    route=source_info.route,
+                    manifest=manifest,
+                    summary=summary,
+                    context=planner_context,
+                    config=self.component_planner_config,
+                )
+                if decision:
+                    planner_engine = "llm"
+            if decision is None:
+                decision = plan_components_for_route(
+                    source_info.route,
+                    config=self.component_planner_config,
+                    context=planner_context,
+                )
+            planner_reasons = decision.reasons if decision else []
+            planner_reasons.insert(0, f"engine: {planner_engine}")
+            planned_components = decision.components if decision else None
+        except Exception as exc:
+            logger.warning(f"组件规划失败，使用默认策略: {exc}")
+            planner_reasons = [f"planner_error: {exc}"]
+            planned_components = None
 
         block_input = PanelBlockInput(
             block_id="data_block_1",
@@ -305,11 +341,18 @@ class ChatService:
             requested_components=planned_components,
         )
 
-        return self.panel_generator.generate(
+        result = self.panel_generator.generate(
             mode="append",
             block_inputs=[block_input],
             history_token=None,
         )
+        # 设置调试信息（用于追踪规划决策）
+        result.debug.setdefault("planner_reasons", planner_reasons)
+        result.debug.setdefault("planner_engine", planner_engine)  # 直接使用变量，不从字符串解析
+        result.debug.setdefault("requested_components", planned_components)
+        return result
+
+
 
     @staticmethod
     def _infer_item_count(query_result: DataQueryResult) -> int:
@@ -321,40 +364,6 @@ class ChatService:
             if isinstance(payload_item, list):
                 return len(payload_item)
         return len(query_result.items or [])
-
-    @staticmethod
-    def _collect_available_metrics(payload: Optional[Dict[str, Any]]) -> Optional[Set[str]]:
-        """
-        从 payload 中提取可用的指标字段
-
-        识别规则：
-        - 字段名以指标关键词结尾（如 _count, _total, _sum 等）
-        - 字段值必须是数字类型（int 或 float）
-        """
-        if not isinstance(payload, dict):
-            return None
-
-        metrics: Set[str] = set()
-        # 指标关键词（作为后缀匹配）
-        metric_suffixes = ("_count", "_total", "_sum", "_value", "_metric", "_num", "_number")
-        # 或者作为独立关键词
-        metric_keywords = ("count", "total", "sum", "value", "metric", "number")
-
-        for key, value in payload.items():
-            if not isinstance(key, str):
-                continue
-            if not isinstance(value, (int, float)):  # 只接受数字类型
-                continue
-
-            lowered = key.lower()
-            # 检查是否以指标后缀结尾
-            if any(lowered.endswith(suffix) for suffix in metric_suffixes):
-                metrics.add(lowered)
-            # 或者完全匹配指标关键词
-            elif lowered in metric_keywords:
-                metrics.add(lowered)
-
-        return metrics or None
 
     @staticmethod
     def _guess_datasource(generated_path: Optional[str]) -> str:

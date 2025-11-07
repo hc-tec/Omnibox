@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
+from services.panel.analytics import summarize_payload
 from services.panel.view_models import validate_records
 from ..registry import (
     AdapterBlockPlan,
@@ -59,6 +60,10 @@ def bilibili_feed_adapter(
     early = early_return_if_no_match(context, ["ListPanel"], stats)
     if early:
         return early
+
+    summary = summarize_payload(source_info.route or "", payload)
+    stats["sample_titles"] = summary.get("sample_titles")
+    stats["metrics"] = summary.get("metrics", {})
 
     normalized: list[Dict[str, Any]] = []
     for item in raw_items:
