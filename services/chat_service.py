@@ -4,7 +4,7 @@
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set
 from dataclasses import dataclass, field, asdict
 import sys
 from pathlib import Path
@@ -160,14 +160,17 @@ class ChatService:
         )
 
         if query_result.status == "success":
+            item_count = self._infer_item_count(query_result)
+
             panel_result = self._build_panel(
                 query_result=query_result,
                 intent_confidence=intent_confidence,
+                item_count=item_count,
             )
 
             message = self._format_success_message(
                 feed_title=query_result.feed_title,
-                item_count=self._infer_item_count(query_result),
+                item_count=item_count,
                 source=query_result.source,
             )
 
@@ -267,6 +270,7 @@ class ChatService:
         self,
         query_result: DataQueryResult,
         intent_confidence: float,
+        item_count: Optional[int] = None,
     ) -> PanelGenerationResult:
         """将数据查询结果转换为智能面板结构。"""
         source_info = SourceInfo(
@@ -278,9 +282,15 @@ class ChatService:
         )
 
         try:
+            available_metrics = self._collect_available_metrics(query_result.payload)
+            planner_context = PlannerContext(
+                item_count=item_count,
+                available_metrics=available_metrics,
+            )
             planned_components = plan_components_for_route(
                 source_info.route,
                 config=self.component_planner_config,
+                context=planner_context,
             )
         except Exception as e:
             logger.warning(f"组件规划失败，使用默认组件: {e}")
@@ -311,6 +321,40 @@ class ChatService:
             if isinstance(payload_item, list):
                 return len(payload_item)
         return len(query_result.items or [])
+
+    @staticmethod
+    def _collect_available_metrics(payload: Optional[Dict[str, Any]]) -> Optional[Set[str]]:
+        """
+        从 payload 中提取可用的指标字段
+
+        识别规则：
+        - 字段名以指标关键词结尾（如 _count, _total, _sum 等）
+        - 字段值必须是数字类型（int 或 float）
+        """
+        if not isinstance(payload, dict):
+            return None
+
+        metrics: Set[str] = set()
+        # 指标关键词（作为后缀匹配）
+        metric_suffixes = ("_count", "_total", "_sum", "_value", "_metric", "_num", "_number")
+        # 或者作为独立关键词
+        metric_keywords = ("count", "total", "sum", "value", "metric", "number")
+
+        for key, value in payload.items():
+            if not isinstance(key, str):
+                continue
+            if not isinstance(value, (int, float)):  # 只接受数字类型
+                continue
+
+            lowered = key.lower()
+            # 检查是否以指标后缀结尾
+            if any(lowered.endswith(suffix) for suffix in metric_suffixes):
+                metrics.add(lowered)
+            # 或者完全匹配指标关键词
+            elif lowered in metric_keywords:
+                metrics.add(lowered)
+
+        return metrics or None
 
     @staticmethod
     def _guess_datasource(generated_path: Optional[str]) -> str:

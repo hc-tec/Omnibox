@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_panel_adapters.py::test_context_requested_components_empty_list -v --tb=short)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\":*)"
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\":*)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest:*)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -c \"from services.panel.adapters import get_route_manifest; m = get_route_manifest(''/github/trending/daily''); print(''Components:''); [print(f''  {c.component_id}: required={c.required}, default_selected={c.default_selected}, cost={c.cost}'') for c in m.components]\")",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_component_planner.py -v --tb=short)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_panel_adapters.py -v --tb=short)"
     ],
     "deny": [],
     "ask": []

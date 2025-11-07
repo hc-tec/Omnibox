@@ -30,7 +30,7 @@ GITHUB_TRENDING_MANIFEST = RouteAdapterManifest(
             description="按排名绘制 Star 数折线图",
             cost="medium",
             default_selected=False,
-            hints={"shared_dataset": True},
+            hints={"shared_dataset": True, "min_items": 3},
         ),
     ],
     notes="基于 RSSHub /github/trending，适用于日/周/月榜单。",

@@ -16,21 +16,6 @@ pip install -r requirements.txt
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-**方式2：按模块安装**
-
-```bash
-# RAG系统依赖
-cd rag_system
-pip install -r requirements.txt
-
-# 查询处理器依赖
-cd ../query_processor
-pip install -r requirements.txt
-
-# API服务器依赖
-pip install fastapi uvicorn httpx feedparser cachetools
-```
-
 ### 2. 启动本地RSSHub服务
 
 **重要：本系统默认使用本地RSSHub，需先启动Docker服务**

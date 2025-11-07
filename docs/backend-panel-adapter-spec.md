@@ -142,7 +142,7 @@ def bilibili_followings_adapter(
 3. **按需生成**：`PanelGenerator` 将 `requested_components` 注入 `AdapterExecutionContext`，适配器只生成被请求的组件；若结果为空且存在请求，则不会回退到兜底组件。  
 4. **统计透出**：即使某组件被跳过，也应在 `stats` 中保留关键指标，便于后续计算或提示。  
 5. **前端渲染**：UI 层仅渲染返回的 `AdapterBlockPlan`，无需额外判断哪些组件可用。  
-6. **Planner 实现**：默认提供 `services.panel.component_planner.plan_components_for_route`，支持 `ComponentPlannerConfig(max_components=2, preferred_components=(), allow_optional=True)` 等配置，可在 `ChatService` 中通过构造参数覆盖。
+6. **Planner 实现**：默认提供 `services.panel.component_planner.plan_components_for_route`，支持 `ComponentPlannerConfig(max_components=2, preferred_components=(), allow_optional=True)` 以及运行时 `PlannerContext(item_count, available_metrics, user_preferences)`。例如，当 item 数 <3 时自动跳过 `LineChart`，若组件 `hints.metrics` 与 `available_metrics` 不相交则不推荐对应指标卡片。可在 `ChatService` 构造器传入自定义配置。
 
 ---
 

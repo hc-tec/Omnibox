@@ -30,7 +30,7 @@
 ### 2. `/bilibili/user/followings/:uid/:loginUid`
 - **模块**：`followings.py` 中的 `bilibili_followings_adapter`  
 - **Manifest**：
-  - `ListPanel`（cost=`low`，default=`True`，required，hints=`{"metrics": ["follower_count"]}`）  
+  - `ListPanel`（cost=`low`，default=`True`，required，hints=`{"metrics": ["follower_count"]}`）——Planner 会在检测到 `count/total` 字段时保留该组件  
 - **字段映射**：
 
   | RSSHub 字段 | Adapter 字段 | 说明 |
