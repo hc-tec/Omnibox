@@ -1,368 +1,756 @@
-# 智能API调用系统
+# Omnibox（万界）
 
-基于RAG + LLM的自然语言到API调用转换系统
+**一句话介绍**：用自然语言获取和可视化网络数据，无需记忆复杂 API。
 
-## 快速开始
+---
 
-### 1. 安装依赖
+## ✨ 它能做什么？
 
-**方式1：一次性安装（推荐）**
+### 示例 1：查看 GitHub 热门项目
 
-```bash
-# 使用根目录统一的 requirements.txt
-pip install -r requirements.txt
-
-# 国内用户推荐使用清华镜像加速
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+**💬 你说**：
+```
+我想看看 GitHub 今日热门项目
 ```
 
-### 2. 启动本地RSSHub服务
+**📊 Omnibox 返回**：
+- **热门仓库列表**：项目名称、描述、Star 数、主要语言
+- **趋势图表**：Star 数随排名的分布
+- **统计摘要**：最热门语言、最高 Star 数
+- **数据量**：25 个热门项目
 
-**重要：本系统默认使用本地RSSHub，需先启动Docker服务**
+### 示例 2：追踪 B 站动态
+
+**💬 你说**：
+```
+帮我看看 B 站热搜榜
+```
+
+**📊 Omnibox 返回**：
+- **热搜列表**：热搜标题、热度值、分类
+- **热度统计**：平均热度、最高热度
+- **实时更新**：自动缓存，避免频繁请求
+
+### 示例 3：关注虎扑论坛
+
+**💬 你说**：
+```
+虎扑步行街最近在聊什么
+```
+
+**📊 Omnibox 返回**：
+- **帖子列表**：标题、作者、回复数、发布时间
+- **热度指标**：总回复数、平均回复数
+- **内容清洗**：自动过滤 HTML 标签和无用字符
+
+---
+
+## 🎯 核心特性
+
+### 🗣️ 智能理解需求
+
+不需要记住复杂的 API 路径，用自然语言描述想看什么：
+
+- ❌ **不用这样**：`GET /api/rsshub/github/trending?language=python&since=daily`
+- ✅ **只需说**："查看 Python 今日热门项目"
+
+Omnibox 会自动：
+- 理解你的意图（查看热门项目）
+- 识别数据源（GitHub）
+- 提取参数（语言=Python，时间=今日）
+- 调用正确的 RSSHub 路由
+
+### 📊 自适应可视化
+
+根据数据特点自动选择最佳展示方式：
+
+| 数据特征 | 自动选择 | 示例 |
+|---------|---------|------|
+| 数据量少（<3条） | 只显示列表 | GitHub 今日只有 2 个新项目 |
+| 有数值趋势 | 列表 + 折线图 | GitHub 热门项目的 Star 数分布 |
+| 有统计指标 | 列表 + 统计卡片 | B 站 UP 主的粉丝数、视频总数 |
+| 需要详细信息 | 卡片式展示 | 单个项目的详细介绍 |
+
+**智能决策原理**：
+- 基于组件清单（Manifest）声明每个数据源支持的可视化组件
+- 根据运行时上下文（数据量、可用指标）动态选择组件
+- 只生成需要的数据，避免无效计算
+
+### 🌐 多数据源支持
+
+整合主流平台数据，基于 [RSSHub](https://docs.rsshub.app/)：
+
+- **开发者平台**：GitHub、GitLab、Stack Overflow
+- **社交媒体**：微博、知乎、豆瓣
+- **视频平台**：B 站、YouTube、抖音
+- **新闻资讯**：虎扑、少数派、V2EX
+- **更多**：支持 300+ 数据源和路由
+
+### 🔄 智能缓存
+
+- **自动缓存**：相同查询 5 分钟内直接返回缓存
+- **后台更新**：缓存过期时自动刷新
+- **降级策略**：RSSHub 服务不可用时切换到备用源
+
+---
+
+## 🚀 快速开始（5 分钟��手）
+
+### 环境要求
+
+- Python 3.10+
+- Docker & Docker Compose
+- OpenAI API Key（或兼容的 API）
+
+### 第一步：克隆项目
 
 ```bash
-# 进入部署目录
-cd deploy
+git clone https://github.com/hc-tec/omnibox.git
+cd omnibox
+```
 
-# 启动RSSHub服务（包含Redis和Browserless）
+### 第二步：安装依赖
+
+```bash
+# 使用国内镜像加速（可选）
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 或使用默认源
+pip install -r requirements.txt
+```
+
+### 第三步：启动 RSSHub 服务
+
+```bash
+cd deploy
 docker-compose up -d
 
-# 验证RSSHub启动成功
-curl http://localhost:1200/
-# 看到欢迎页面表示成功
-
-# 查看服务状态
+# 验证服务启动
 docker-compose ps
-
-# 停止服务（如需）
-# docker-compose down
+# 应该看到 rsshub、redis、browserless 三个服务都在运行
 ```
 
-### 3. 配置环境变量
+### 第四步：配置 API 密钥
 
 ```bash
-# 复制环境变量模板
+# 复制配置模板
 cp .env.example .env
 
-# 编辑配置文件，至少填写 OPENAI_API_KEY
-nano .env  # 或使用其他编辑器
-
-# 主要配置项：
-# - OPENAI_API_KEY: OpenAI API密钥（必填）
-# - RSSHUB_BASE_URL: 本地RSSHub地址（默认 http://localhost:1200）
-# - RSSHUB_FALLBACK_URL: 降级地址（默认 https://rsshub.app）
+# 编辑 .env 文件，填写必要的配置
+# 最重要的是 OPENAI_API_KEY
 ```
 
-### 4. 构建向量索引
+`.env` 示例配置：
+```bash
+# OpenAI API 配置
+OPENAI_API_KEY=sk-your-api-key-here
+OPENAI_BASE_URL=https://api.openai.com/v1  # 或其他兼容服务
+
+# RSSHub 配置（通常使用默认值即可）
+RSSHUB_BASE_URL=http://localhost:1200
+RSSHUB_FALLBACK_URL=https://rsshub.app
+```
+
+### 第五步：构建知识库
 
 ```bash
 cd rag_system
 python quick_start.py
+
+# 这一步会：
+# 1. 下载 RSSHub 路由文档
+# 2. 使用 bge-m3 模型构建向量索引
+# 3. 存储到 ChromaDB（大约需要 2-3 分钟）
 ```
 
-### 5. 运行示例
+### 第六步：运行示例
 
 ```bash
 cd ../orchestrator
 python example_usage.py
+
+# 你会看到类似这样的输出：
+# ✅ 查询成功！
+# 📊 获取了 25 条数据
+# 🎨 生成了 2 个可视化组件（ListPanel + LineChart）
 ```
 
-**详细配置说明**：详见 [CONFIGURATION.md](CONFIGURATION.md)
+---
 
-## 架构说明
+## 💡 使用示例
 
-本项目采用**分层架构**，严格遵循单一职责原则：
-
-```
-用户查询 "虎扑步行街最新帖子"
-    ↓
-┌─────────────────────────────┐
-│  Orchestrator (编排层)       │  协调所有模块
-└─────────────────────────────┘
-    ↓                    ↓
-┌─────────────┐    ┌────────────────┐
-│ RAG System  │    │ Query Processor│
-│ 向量检索    │    │ LLM解析        │
-└─────────────┘    └────────────────┘
-    ↓                    ↓
-  相关路由           结构化指令
-    └────────┬────────┘
-             ↓
-    "/hupu/bbs/bxj/1"
-```
-
-### 模块职责
-
-| 模块 | 职责 | 技术栈 |
-|-----|------|--------|
-| **rag_system** | 向量检索 | bge-m3 + ChromaDB |
-| **query_processor** | 查询解析 | LLM (GPT-4/Claude) |
-| **orchestrator** | 流程编排 | Python |
-
-详细架构说明：[ARCHITECTURE.md](ARCHITECTURE.md)
-
-## 使用示例
-
-### 方式1：一键调用（推荐）
+### 基础用法
 
 ```python
-from orchestrator.rag_in_action import create_rag_in_action
+from orchestrator.chat_orchestrator import ChatOrchestrator
 
-# 创建实例
-ria = create_rag_in_action(
-    llm_provider="openai",
-    llm_config={"model": "gpt-4"}
-)
+# 初始化
+orchestrator = ChatOrchestrator()
 
-# 处理查询
-result = ria.process("虎扑步行街最新帖子")
+# 查询数据
+result = orchestrator.process_query("我��看看 GitHub 今日热门项目")
 
-# 使用结果
-if result["status"] == "success":
-    print(f"API路径: {result['generated_path']}")
-    print(f"参数: {result['parameters_filled']}")
+# 查看结果
+print(result["message"])  # 用户友好的消息
+print(result["data"])     # 结构化数据
+print(result["panels"])   # 可视化组件配置
 ```
 
-### 方式2：分步调用（了解流程）
+### 输出示例
 
 ```python
-from rag_system.rag_pipeline import RAGPipeline
-from query_processor import *
-
-# 步骤1: RAG检索
-rag = RAGPipeline()
-results = rag.search("虎扑步行街", top_k=3)
-
-# 步骤2: 构建Prompt
-from query_processor.prompt_builder import build_prompt
-prompt = build_prompt("虎扑步行街", retrieved_tools)
-
-# 步骤3: LLM解析
-from query_processor.llm_client import create_llm_client
-from query_processor.parser import QueryParser
-
-llm = create_llm_client("openai", model="gpt-4")
-parser = QueryParser(llm)
-result = parser.parse(prompt)
-```
-
-### 方式3：使用自定义LLM
-
-```python
-def my_llm_generate(prompt: str) -> str:
-    # 调用你自己的LLM服务
-    return your_llm_service.generate(prompt)
-
-from query_processor.llm_client import create_llm_client
-
-llm = create_llm_client(
-    provider="custom",
-    generate_func=my_llm_generate
-)
-```
-
-## 项目结构
-
-```
-D:\AIProject\omni/
-│
-├── rag_system/              # 向量检索模块
-│   ├── embedding_model.py   # bge-m3向量化
-│   ├── vector_store.py      # ChromaDB存储
-│   ├── rag_pipeline.py      # 检索管道
-│   └── README.md
-│
-├── query_processor/         # 查询解析模块
-│   ├── llm_client.py        # LLM客户端抽象
-│   ├── prompt_builder.py    # Prompt构建
-│   ├── parser.py            # 结果解析
-│   └── path_builder.py      # 路径构建
-│
-├── orchestrator/            # 编排模块
-│   ├── rag_in_action.py     # 主流程
-│   └── example_usage.py     # 使用示例
-│
-├── route_process/           # 数据源
-│   └── datasource_definitions.json
-│
-├── ARCHITECTURE.md          # 架构文档
-└── README.md                # 本文档
-```
-
-## 核心特性
-
-### 1. 向量检索（RAG System）
-
-- ✅ 使用bge-m3模型（最佳中英文性能）
-- ✅ ModelScope国内镜像加速
-- ✅ ChromaDB向量数据库
-- ✅ 语义理解和相似度匹配
-
-### 2. 查询解析（Query Processor）
-
-- ✅ 支持多种LLM（OpenAI、Anthropic、自定义）
-- ✅ 基于 LangChain 的成熟聊天模型封装
-- ✅ 智能参数提取
-- ✅ 自动路径构建
-- ✅ 错误处理和重试机制
-
-### 3. 流程编排（Orchestrator）
-
-- ✅ 端到端处理
-- ✅ 详细日志记录
-- ✅ 多种状态处理（success/needs_clarification/not_found/error）
-
-## 配置说明
-
-### 环境变量配置（推荐方式 - Pydantic Settings）
-
-**创建 .env 文件**：
-
-```bash
-cp .env.example .env
-```
-
-**编辑 .env**：
-
-```env
-# 最少只需要这一个
-OPENAI_API_KEY=sk-your-key-here
-
-# 可选配置
-OPENAI_MODEL=gpt-4o-mini
-LLM_TEMPERATURE=0.1
-PROMPT_MAX_TOOLS=3
-```
-
-**优势**：
-- ✅ 类型验证（Pydantic）
-- ✅ 环境分离（开发/生产）
-- ✅ 密钥安全（不提交到Git）
-- ✅ 自动加载（无需手动读取）
-
-详见：[CONFIGURATION.md](CONFIGURATION.md)
-
-### RAG配置（rag_system/config.py）
-
-```python
-EMBEDDING_MODEL_CONFIG = {
-    "model_name": "BAAI/bge-m3",
-    "device": "cuda",
-    "use_modelscope": True,  # 国内镜像
+{
+  "status": "success",
+  "message": "为您找到了 GitHub 热门项目（25条数据）",
+  "data": {
+    "records": [
+      {
+        "title": "microsoft/TypeChat",
+        "description": "TypeChat is a library that makes it easy to build natural language interfaces using types.",
+        "link": "https://github.com/microsoft/TypeChat",
+        "stars": 8234,
+        "language": "TypeScript"
+      },
+      # ... 更多数据
+    ],
+    "stats": {
+      "total": 25,
+      "top_language": "Python",
+      "top_stars": 8234,
+      "datasource": "GitHub"
+    }
+  },
+  "panels": {
+    "ui_blocks": [
+      {
+        "component": "ListPanel",
+        "props": {
+          "title_field": "title",
+          "link_field": "link",
+          "description_field": "description",
+          "meta_fields": ["stars", "language"]
+        }
+      },
+      {
+        "component": "LineChart",
+        "props": {
+          "x_field": "rank",
+          "y_field": "stars",
+          "title": "Star 数分布"
+        }
+      }
+    ]
+  }
 }
 ```
 
-## 环境要求
+### 高级用法：自定义组件选择
 
-- Python 3.8+
-- 内存：16GB+ （推荐64GB）
-- 显存：8GB （可选，CPU模式也可运行）
-- LLM API Key（OpenAI或其他）
+```python
+from services.chat_service import ChatService
+from services.panel.component_planner import ComponentPlannerConfig
 
-## 安装
+# 自定义组件选择策略
+config = ComponentPlannerConfig(
+    max_components=3,              # 最多生成 3 个组件
+    preferred_components=["LineChart"],  # 优先生成图表
+    allow_optional=True            # 允许可选组件
+)
+
+# 使用自定义配置
+chat_service = ChatService(
+    data_query_service=...,
+    component_planner_config=config
+)
+```
+
+### 使用缓存
+
+```python
+from services.cache_service import CacheService
+
+# 查询会自动使用缓存
+result1 = orchestrator.process_query("GitHub 热门项目")  # 首次查询，调用 API
+result2 = orchestrator.process_query("GitHub 热门项目")  # 5分钟内，返回缓存
+
+# 手动清除缓存
+cache = CacheService()
+cache.clear("github_trending")
+```
+
+---
+
+## 🔧 技术架构
+
+<details>
+<summary><b>点击展开查看技术实现细节</b></summary>
+
+### 工作流程
+
+```
+用户输入 "GitHub 热门项目"
+    ↓
+┌─────────────────────────────────────┐
+│  1. RAG 检索                         │
+│  - 使用 bge-m3 模型理解用户意图      │
+│  - 在 ChromaDB 中检索相关路由        │
+│  - 返回: /github/trending/daily      │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  2. 参数提取                         │
+│  - LLM 解析自然语言中的参数         │
+│  - 提取: language=None, since=daily  │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  3. 数据获取                         │
+│  - 调用 RSSHub API                  │
+│  - 获取 RSS/JSON 数据               │
+│  - 自动缓存结果                     │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  4. 组件规划                         │
+│  - 分析数据特征（数量、指标）        │
+│  - 查询组件清单（Manifest）         │
+│  - 决定生成哪些组件                 │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  5. 数据适配                         │
+│  - 路由适配器转换数据格式            │
+│  - 生成可视化组件配置                │
+│  - Pydantic 校验数据契约             │
+└─────────────────────────────────────┘
+    ↓
+返回结构化结果给前端
+```
+
+### 核心技术栈
+
+| 模块 | 技术选型 | 说明 |
+|------|---------|------|
+| **向量检索** | bge-m3 + ChromaDB | 多语言语义检索模型 |
+| **LLM 理解** | OpenAI API / 兼容服务 | 参数提取和意图理解 |
+| **数据源** | RSSHub | 统一的 RSS 数据接口 |
+| **缓存** | Redis / 本地缓存 | 避免重复请求 |
+| **数据校验** | Pydantic | 前后端契约一致性 |
+| **组件规划** | 自研 Component Planner | 自适应可视化决策 |
+
+### 关键设计模式
+
+#### 1. 路由适配器模式
+
+每个数据源都有对应的适配器，负责：
+- 将 RSSHub 原始数据转换为标准格式
+- 声明支持的可视化组件（Manifest）
+- 根据运行时上��文生成组件
+
+```python
+@route_adapter("/github/trending", manifest=GITHUB_MANIFEST)
+def github_trending_adapter(
+    source_info: SourceInfo,
+    records: Sequence[Dict[str, Any]],
+    context: Optional[AdapterExecutionContext] = None,
+) -> RouteAdapterResult:
+    # 数据转换逻辑
+    normalized = [normalize_record(r) for r in records]
+
+    # 根据 context 决定生成哪些组件
+    block_plans = []
+    if context.wants("ListPanel"):
+        block_plans.append(create_list_panel(...))
+    if context.wants("LineChart"):
+        block_plans.append(create_line_chart(...))
+
+    return RouteAdapterResult(
+        records=normalized,
+        block_plans=block_plans,
+        stats={"total": len(normalized)}
+    )
+```
+
+#### 2. 组件清单（Manifest）
+
+每个适配器声明它支持的组件及元信息：
+
+```python
+GITHUB_MANIFEST = RouteAdapterManifest(
+    components=[
+        ComponentManifestEntry(
+            component_id="ListPanel",
+            description="展示热门仓库列表",
+            cost="medium",           # 计算成本
+            default_selected=True,   # 是否默认选中
+            required=True,           # 是否必需
+        ),
+        ComponentManifestEntry(
+            component_id="LineChart",
+            description="Star 数趋势图",
+            cost="medium",
+            default_selected=False,
+            hints={"min_items": 3},  # 至少需要 3 条数据
+        ),
+    ]
+)
+```
+
+#### 3. 智能组件规划
+
+根据数据特征动态选择组件：
+
+```python
+# 运行时上下文
+context = PlannerContext(
+    item_count=25,                    # 数据项数量
+    available_metrics={"stars", "forks"},  # 可用的统计指标
+    user_preferences=[]               # 用户偏好（可选）
+)
+
+# 自动决策
+components = plan_components_for_route(
+    route="/github/trending",
+    context=context
+)
+# 返回: ["ListPanel", "LineChart"]
+# - ListPanel: 必需组件，总是包含
+# - LineChart: 数据量 >= 3，符合 min_items 要求
+```
+
+### 架构图
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Orchestrator                         │
+│  ┌───────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ IntentService │  │ ChatService  │  │ DataQuery    │ │
+│  └───────┬───────┘  └──────┬───────┘  └──────┬───────┘ │
+└──────────┼──────────────────┼──────────────────┼─────────┘
+           │                  │                  │
+    ┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐
+    │ RAG System  │   │   Panel     │   │   RSSHub    │
+    │ (bge-m3 +   │   │  Generator  │   │   Executor  │
+    │  ChromaDB)  │   │             │   │             │
+    └─────────────┘   └──────┬──────┘   └─────────────┘
+                             │
+                   ┌─────────▼─────────┐
+                   │ Component Planner │
+                   │   + Adapters      │
+                   └───────────────────┘
+```
+
+</details>
+
+---
+
+## 📁 项目结构
+
+```
+omnibox/
+├── rag_system/              # RAG 向量检索系统
+│   ├── quick_start.py      # 构建知识库脚本
+│   ├── indexer.py          # 索引构建器
+│   └── retriever.py        # 向量检索器
+│
+├── services/               # 核心服务模块
+│   ├── panel/             # 面板生成相关
+│   │   ├── adapters/      # 路由适配器
+│   │   │   ├── github.py  # GitHub 适配器
+│   │   │   ├── bilibili/  # B 站适配器
+│   │   │   ├── hupu.py    # 虎扑适配器
+│   │   │   └── utils.py   # 通用工具
+│   │   ├── component_planner.py   # 组件规划器
+│   │   ├── panel_generator.py     # 面板生成器
+│   │   └── registry.py            # 适配器注册表
+│   │
+│   ├── chat_service.py    # 对话服务（整合 RAG + Panel）
+│   ├── data_query_service.py  # 数据查询服务
+│   └── cache_service.py   # 缓存服务
+│
+├── orchestrator/          # 对外 API 层
+│   ├── chat_orchestrator.py  # 主编排器
+│   └── example_usage.py       # 使用示例
+│
+├── query_processor/       # 查询处理
+│   ├── intent_parser.py   # 意图解析
+│   └── param_extractor.py # 参数提取
+│
+├── tests/                 # 测试用例
+│   └── services/
+│       ├── test_component_planner.py
+│       └── test_panel_adapters.py
+│
+├── docs/                  # 文档
+│   ├── adapters/         # 适配器文档
+│   │   └── overview.md   # 路由映射说明
+│   ├── backend-panel-adapter-spec.md    # 适配器规范
+│   └── backend-panel-view-models.md     # 视图模型契约
+│
+├── deploy/               # 部署配置
+│   └── docker-compose.yml  # RSSHub + Redis
+│
+├── .env.example          # 环境变量模板
+├── requirements.txt      # Python 依赖
+└── README.md            # 本文档
+```
+
+### 关键目录说明
+
+| 目录 | 职责 |
+|------|------|
+| `rag_system/` | 负责将自然语言映射到 RSSHub 路由 |
+| `services/panel/adapters/` | 各数据源的适配器（数据转换 + 组件生成） |
+| `services/panel/component_planner.py` | 智能决策生成哪些可视化组件 |
+| `orchestrator/` | 对外暴露的统一 API，封装内部复杂度 |
+| `docs/` | 前后端契约、适配器规范等文档 |
+
+---
+
+## 🧪 运行测试
+
+### 运行所有测试
 
 ```bash
-# 安装RAG依赖
-cd rag_system
-pip install -r requirements.txt
+# 运行所有测试
+python -m pytest tests/ -v
 
-# 安装查询解析模块依赖（包含 LangChain + OpenAI/Anthropic SDK）
-cd ../query_processor
-pip install -r requirements.txt
+# 运行特定模块测试
+python -m pytest tests/services/test_component_planner.py -v
+python -m pytest tests/services/test_panel_adapters.py -v
+
+# 查看测试覆盖率
+python -m pytest tests/ --cov=services --cov-report=html
 ```
 
-## 设计原则
+### 测试说明
 
-1. **单一职责**：每个模块只负责一件事
-2. **依赖倒置**：依赖抽象接口，不依赖具体实现
-3. **开闭原则**：对扩展开放，对修改关闭
-4. **接口隔离**：提供最小化的接口
+| 测试文件 | 覆盖内容 | 测试数量 |
+|---------|---------|---------|
+| `test_component_planner.py` | 组件规划逻辑、边界情况 | 11 个 |
+| `test_panel_adapters.py` | 各路由适配器、数据转换 | 15 个 |
 
-## 扩展性
+**重要**：修改适配器或 Planner 时，请务必运行测试并补充新的测试用例。
 
-### 添加新的LLM提供商
+---
+
+## 📚 更多文档
+
+### 开发文档
+
+- **[适配器开发指南](docs/adapters/overview.md)** - 如何添加新的数据源适配器
+- **[组件规范](docs/backend-panel-adapter-spec.md)** - 适配器开发规范和最佳实践
+- **[视图模型契约](docs/backend-panel-view-models.md)** - 前后端数据契约定义
+- **[配置说明](CONFIGURATION.md)** - 详细的环境配置说明
+
+### 架构文档
+
+- **[整体架构](ARCHITECTURE.md)** - 系统架构和模块交互
+- **[RAG 系统说明](rag_system/README.md)** - 向量检索系统的实现细节
+
+### API 文档
 
 ```python
-from query_processor.llm_client import LLMClient
+# 核心 API 参考
+from orchestrator.chat_orchestrator import ChatOrchestrator
 
-class MyLLMClient(LLMClient):
-    def generate(self, prompt: str, **kwargs) -> str:
-        # 实现你的LLM调用逻辑
-        pass
+orchestrator = ChatOrchestrator()
+
+# process_query - 主要接口
+result = orchestrator.process_query(
+    query: str,                    # 用户自然语言查询
+    context: Optional[dict] = None # 可选的上下文信息
+) -> dict
+
+# 返回结构
+{
+    "status": "success" | "error",
+    "message": str,               # 用户友好的消息
+    "data": {...},               # 结构化数据
+    "panels": {...},             # 可视化组件配置
+    "debug": {...}               # 调试信息（可选）
+}
 ```
 
-### 添加缓存
+---
+
+## ❓ 常见问题
+
+### Q1: 如何添加新的数据源？
+
+**A**: 创建新的适配器并注册即可：
+
+1. 在 `services/panel/adapters/` 下创建适配器文件
+2. 使用 `@route_adapter` 装饰器注册路由
+3. 实现数据转换和组件生成逻辑
+4. 在 `docs/adapters/overview.md` 中补充文档
+
+参考示例：
+```python
+from services.panel.adapters import route_adapter, RouteAdapterManifest
+
+MANIFEST = RouteAdapterManifest(
+    components=[...]
+)
+
+@route_adapter("/your/route", manifest=MANIFEST)
+def your_adapter(source_info, records, context=None):
+    # 实现转换逻辑
+    return RouteAdapterResult(...)
+```
+
+### Q2: 为什么有些组件没有生成？
+
+**A**: 可能的原因：
+1. **数据量不足** - 例如 LineChart 需要至少 3 条数据（`min_items: 3`）
+2. **缺少必需指标** - 某些组件依赖特定的统计指标
+3. **max_components 限制** - 默认最多生成 2 个组件
+
+解决方法：
+```python
+# 方法 1: 调整配置
+config = ComponentPlannerConfig(
+    max_components=5,
+    allow_optional=True
+)
+
+# 方法 2: 明确指定用户偏好
+context = PlannerContext(
+    user_preferences=["LineChart", "StatisticCard"]
+)
+```
+
+### Q3: 如何调试 RAG 检索不准确的问题？
+
+**A**: 启用调试模式查看检索过程：
 
 ```python
-from functools import lru_cache
+from rag_system.retriever import RAGRetriever
 
-@lru_cache(maxsize=1000)
-def cached_search(query):
-    return ria.process(query)
+retriever = RAGRetriever(debug=True)
+results = retriever.retrieve("GitHub 热门项目", top_k=5)
+
+# 查看检索到的路由和相似度分数
+for result in results:
+    print(f"路由: {result.route}, 分数: {result.score}")
 ```
 
-### 添加监控
+如果检索不准确：
+1. **重建索引** - `cd rag_system && python quick_start.py --rebuild`
+2. **调整 top_k** - 增加候选路由数量
+3. **补充语料** - 在 RAG 语料库中添加更多描述
 
-```python
-import time
+### Q4: RSSHub 服务连接失败怎么办？
 
-def process_with_metrics(query):
-    start = time.time()
-    result = ria.process(query)
-    duration = time.time() - start
-    log_metrics(query, duration, result["status"])
-    return result
-```
-
-## 测试
+**A**: 检查以下几点：
 
 ```bash
-# RAG系统测试
-cd rag_system
-python example_usage.py
+# 1. 确认 Docker 服务运行中
+docker-compose ps
 
-# 完整流程测试
-cd orchestrator
-python example_usage.py
+# 2. 查看 RSSHub 日志
+docker-compose logs rsshub
+
+# 3. 测试连接
+curl http://localhost:1200/github/trending
+
+# 4. 如果本地服务不可用，会自动切换到公共服务
+# 在 .env 中配置备用地址
+RSSHUB_FALLBACK_URL=https://rsshub.app
 ```
 
-## 文档
+### Q5: 如何自定义可视化组件？
 
-- [架构设计](ARCHITECTURE.md) - 详细的架构说明
-- [RAG系统文档](rag_system/README.md) - 向量检索详解
-- [ModelScope指南](rag_system/MODELSCOPE_GUIDE.md) - 国内镜像使用
+**A**: 修改适配器的组件生成逻辑：
 
-## 常见问题
+```python
+# 在适配器中自定义组件配置
+block_plans.append(
+    AdapterBlockPlan(
+        component_id="ListPanel",
+        props={
+            "title_field": "custom_title",
+            "link_field": "custom_link",
+            "meta_fields": ["field1", "field2"]  # 自定义显示字段
+        },
+        layout_hint=LayoutHint(
+            span=12,        # 占据 12 列（全宽）
+            min_height=400  # 最小高度
+        )
+    )
+)
+```
 
-### Q: 为什么要分这么多模块？
+---
 
-A: 遵循单一职责原则，每个模块独立开发、测试、维护。修改LLM不影响RAG，修改向量模型不影响查询解析。
+## 🤝 贡献指南
 
-### Q: 可以只用RAG不用LLM吗？
+欢迎贡献代码、文档或提出建议！
 
-A: 可以。RAG System是独立的，可以单独使用进行语义检索。
+### 贡献流程
 
-### Q: 可以使用本地LLM吗？
+1. **Fork 项目** - 点击右上角 Fork 按钮
+2. **创建分支** - `git checkout -b feature/your-feature`
+3. **提交代码** - `git commit -m "feat: add your feature"`
+4. **运行测试** - `python -m pytest tests/`
+5. **推送分支** - `git push origin feature/your-feature`
+6. **创建 PR** - 提交 Pull Request
 
-A: 可以。使用自定义LLM客户端，集成任何LLM服务。
+### 代码规范
 
-### Q: 性能如何？
+- 遵循 PEP 8 编码规范
+- 使用中文注释（与用户沟通语言一致）
+- 所有公共 API 必须有文档字符串
+- 新功能必须补充测试用例
+- 提交前运行 `pytest` 确保测试通过
 
-A:
-- RAG检索：<50ms
-- LLM调用：1-3秒（取决于LLM服务）
-- 总耗时：1-5秒
+### 提交信息规范
 
-## 贡献
+```bash
+# 功能开发
+git commit -m "feat: 添加 Twitter 数据源适配器"
 
-欢迎提交Issue和Pull Request！
+# Bug 修复
+git commit -m "fix: 修复缓存键冲突问题"
 
-## 许可证
+# 文档更新
+git commit -m "docs: 更新适配器开发指南"
 
-MIT License
+# 测试补充
+git commit -m "test: 添加组件规划器边界测试"
+```
 
-## 致谢
+---
 
-- 向量模型：BAAI/bge-m3
-- 向量数据库：ChromaDB
-- LLM：OpenAI/Anthropic
+## 🌟 致谢
+
+本项目基于以下优秀开源项目：
+
+- **[RSSHub](https://github.com/DIYgod/RSSHub)** - 万物皆可 RSS
+- **[ChromaDB](https://github.com/chroma-core/chroma)** - 向量数据库
+- **[bge-m3](https://huggingface.co/BAAI/bge-m3)** - 多语言语义检索模型
+- **[Pydantic](https://github.com/pydantic/pydantic)** - 数据校验库
+
+---
+
+## 📄 许可证
+
+本项目采用 [MIT License](LICENSE) 许可证。
+
+---
+
+## 💬 联系方式
+
+- **Issues**: [GitHub Issues](https://github.com/hc-tec/omnibox/issues)
+- **讨论**: [GitHub Discussions](https://github.com/hc-tec/omnibox/discussions)
+
+---
+
+<p align="center">
+  <b>Omnibox（万界）</b> - 让数据获取和可视化像说话一样简单
+</p>
+
+<p align="center">
+  ⭐ 如果这个项目对你有帮助，欢迎 Star 支持！
+</p>
+
