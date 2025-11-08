@@ -35,6 +35,7 @@
 
 ## 技术使用指南
 - `service-layer-usage.md` - Service层完整使用指南，包含所有服务的创建、使用和扩展方法
+- `adapter-codegen-prompt.md` - 路由适配器代码生成提示词模板，用于根据RSSHub TypeScript路由文件自动生成Python adapter代码
 
 ## 全局重要记忆
 
