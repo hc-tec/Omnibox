@@ -21,6 +21,7 @@ from .component_planner import (
     plan_components_for_route,
 )
 from .panel_generator import PanelBlockInput, PanelGenerator, PanelGenerationResult
+from .llm_component_planner import LLMComponentPlanner
 from .schema_summary import SchemaSummaryBuilder
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "PanelGenerationResult",
     "ComponentPlannerConfig",
     "PlannerContext",
+    "LLMComponentPlanner",
     "PlannerDecision",
     "plan_components_for_route",
     "SchemaSummaryBuilder",

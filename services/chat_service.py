@@ -22,7 +22,11 @@ from services.panel.panel_generator import (
     PanelGenerationResult,
 )
 from services.panel.analytics import summarize_payload
-from services.panel.component_planner import ComponentPlannerConfig, PlannerContext, plan_components_for_route
+from services.panel.component_planner import (
+    ComponentPlannerConfig,
+    PlannerContext,
+    plan_components_for_route,
+)
 from services.panel.llm_component_planner import LLMComponentPlanner
 from services.panel.adapters import get_route_manifest
 
@@ -196,6 +200,7 @@ class ChatService:
                 "requested_components": panel_result.debug.get("requested_components"),
                 "planner_reasons": panel_result.debug.get("planner_reasons"),
                 "planner_engine": panel_result.debug.get("planner_engine"),
+                "data_summary": panel_result.debug.get("data_summary"),
                 "debug": panel_result.debug,
             }
 
@@ -297,6 +302,7 @@ class ChatService:
         )
 
         summary = summarize_payload(source_info.route or "", query_result.payload or {})
+        planner_engine = "rule"  # 默认使用规则引擎
 
         try:
             planner_context = PlannerContext(
@@ -307,7 +313,6 @@ class ChatService:
             )
             manifest = get_route_manifest(source_info.route)
             decision = None
-            planner_engine = "rule"
             if self.llm_planner and self.llm_planner.is_available():
                 decision = self.llm_planner.plan(
                     route=source_info.route,
@@ -325,12 +330,12 @@ class ChatService:
                     context=planner_context,
                 )
             planner_reasons = decision.reasons if decision else []
-            planner_reasons.insert(0, f"engine: {planner_engine}")
             planned_components = decision.components if decision else None
         except Exception as exc:
             logger.warning(f"组件规划失败，使用默认策略: {exc}")
             planner_reasons = [f"planner_error: {exc}"]
             planned_components = None
+            planner_engine = "error"
 
         block_input = PanelBlockInput(
             block_id="data_block_1",
@@ -348,8 +353,9 @@ class ChatService:
         )
         # 设置调试信息（用于追踪规划决策）
         result.debug.setdefault("planner_reasons", planner_reasons)
-        result.debug.setdefault("planner_engine", planner_engine)  # 直接使用变量，不从字符串解析
+        result.debug.setdefault("planner_engine", planner_engine)
         result.debug.setdefault("requested_components", planned_components)
+        result.debug.setdefault("data_summary", summary)  # 新增数据摘要信息
         return result
 
 

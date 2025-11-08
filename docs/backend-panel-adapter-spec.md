@@ -185,3 +185,8 @@ def bilibili_followings_adapter(
 - Planner 决策会输出 `PlannerDecision(components, reasons)`，ChatService 会把 `requested_components` 与 `planner_reasons` 写入 metadata，便于排查“为何某组件被选/被跳过”。
 - 当 `requested_components` 与适配器支持列表不重合时，应调用 `early_return_if_no_match` 提前结束，PanelGenerator 会在 debug 中记录 `skipped=True`。
 
+## 10. 调试工具
+
+- `scripts/plan_components_cli.py`：可指定 `--route`、`--payload`、`--user-query` 观察 Manifest + Planner 的决策，支持 `--llm` 开关以验证 LLM Planner 输出。
+- metadata 中的 `planner_engine`、`planner_reasons`、`data_summary` 也会同步透出，便于前端或后台面板直接展示。
+
