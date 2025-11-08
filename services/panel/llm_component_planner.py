@@ -2,24 +2,23 @@
 LLM 组件规划器（LLM Component Planner）
 
 职责：
-  使用大语言模型（LLM）进行智��组件选择，作为规则引擎的备选方案。
+  使用大语言模型（LLM）进行智能组件选择，作为规则引擎的备选方案。
 
 适用场景：
   1. 复杂的用户查询，规则引擎难以准确判断
   2. 需要理解用户意图的场景（如"帮我分析一下"）
   3. 作为规则引擎的兜底方案
 
-新增特性：
+特性：
   - 缓存机制：避免重复调用 LLM（默认缓存 32 条决策）
-  - 结构化 prompt：包含完整的上下文和约束信息
-  - 类型验证：确保 LLM 返回的 JSON 格式正确
+  - 结构化 prompt：包含 manifest、用户查询、配置约束
+  - JSON 验证：确保 LLM 返回格式正确
 
 输出格式：
-  LLM 返回 JSON 格式的决策：
-    {
-      "selected": ["ListPanel", "LineChart"],
-      "reasons": ["用户明确要求看趋势", "数据量足够绘制图表"]
-    }
+  {
+    "selected": ["ListPanel", "LineChart"],
+    "reasons": ["用户明确要求看趋势", "数据量足够绘制图表"]
+  }
 """
 
 from __future__ import annotations
@@ -46,9 +45,9 @@ class LLMComponentPlanner:
     基于 LLM 的组件规划器（带缓存）。
 
     功能：
-      - 使用 LLM 分析用户查询和数据摘要
+      - 使用 LLM 分析用户查询和 manifest
       - 返回 JSON 格式的组件选择决策
-      - ���动验证组件有效性和必选组件
+      - 自动验证组件有效性和必选组件
       - 缓存决策结果，避免重复调用
     """
 
@@ -72,7 +71,7 @@ class LLMComponentPlanner:
                 if llm_settings.llm_provider == "openai"
                 else None,
             )
-        except Exception as exc:  # pragma: no cover - configuration failure
+        except Exception as exc:  # pragma: no cover - config failure
             logger.warning("LLM planner unavailable: %s", exc)
             self.client = None
 
@@ -91,7 +90,6 @@ class LLMComponentPlanner:
         *,
         route: str,
         manifest: Optional[RouteAdapterManifest],
-        summary: Dict[str, Any],
         context: PlannerContext,
         config: ComponentPlannerConfig,
     ) -> Optional[PlannerDecision]:
@@ -101,8 +99,7 @@ class LLMComponentPlanner:
         Args:
             route: 路由标识
             manifest: 组件清单
-            summary: 数据摘要（来自 analytics 模块）
-            context: 规划上下文
+            context: 规划上下文（包含 item_count, user_query, layout_mode 等）
             config: 规划配置
 
         Returns:
@@ -111,7 +108,7 @@ class LLMComponentPlanner:
 
         处理流程：
             1. 检查缓存，命中则直接返回
-            2. 构建 prompt（包含 manifest, summary, context）
+            2. 构建 prompt（包含 manifest + context + config）
             3. 调用 LLM 生成 JSON 响应
             4. 解析并验证组件有效性
             5. 自动补充必选组件
@@ -122,12 +119,12 @@ class LLMComponentPlanner:
             return None
 
         # 检查缓存
-        cache_key = self._cache_key(route, summary, context, config)
+        cache_key = self._cache_key(route, manifest, context, config)
         if cache_key in self._cache:
             return self._cache[cache_key]
 
         # 构建 prompt 并调用 LLM
-        prompt = self._build_prompt(route, manifest, summary, context, config)
+        prompt = self._build_prompt(route, manifest, context, config)
         try:
             # 使用较低的 temperature 确保输出稳定性
             raw = self.client.generate(
@@ -135,7 +132,7 @@ class LLMComponentPlanner:
                 temperature=min(llm_settings.llm_temperature, 0.5),
                 max_tokens=min(llm_settings.llm_max_tokens, 800),
             )
-        except Exception as exc:  # pragma: no cover - LLM failure
+        except Exception as exc:  # pragma: no cover - network failure
             logger.warning("LLM planner call failed: %s", exc)
             return None
 
@@ -173,7 +170,6 @@ class LLMComponentPlanner:
         self,
         route: str,
         manifest: RouteAdapterManifest,
-        summary: Dict[str, Any],
         context: PlannerContext,
         config: ComponentPlannerConfig,
     ) -> str:
@@ -183,7 +179,6 @@ class LLMComponentPlanner:
         Args:
             route: 路由标识
             manifest: 组件清单
-            summary: 数据摘要
             context: 规划上下文
             config: 规划配置
 
@@ -201,38 +196,35 @@ class LLMComponentPlanner:
                     "default_selected": entry.default_selected,
                     "required": entry.required,
                     "hints": entry.hints,
+                    "field_requirements": entry.field_requirements,
                 }
             )
 
-        # 构建结构化 payload
         payload = {
             "instruction": (
-                "You are a UI component planner. Based on the manifest, data summary, "
-                "and user request, choose the best components. Output valid JSON."
+                "You are a UI component planner. Based on the manifest and user intent, "
+                "choose the best components. Output valid JSON."
             ),
+            "route": route,
             "constraints": {
                 "max_components": config.max_components,
                 "allow_optional": config.allow_optional,
                 "preferred_components": list(config.preferred_components),
             },
+            "contract_notes": manifest.notes,
             "context": {
                 "user_query": context.raw_query,
                 "layout_mode": context.layout_mode,
                 "user_preferences": list(context.user_preferences),
+                "item_count": context.item_count,
             },
-            "route": route,
             "manifest": component_lines,
-            "data_summary": {
-                "item_count": summary.get("item_count"),
-                "metrics": summary.get("metrics"),
-                "sample_titles": summary.get("sample_titles"),
-            },
         }
 
         return (
-            "Decide which components to render. Output JSON with fields "
-            '`selected` (array of component ids in order) and `reasons` (array of strings). '
-            "Manifest and data summary:\n"
+            "Decide which components to render. Return JSON with keys "
+            '`selected` (array of component ids) and `reasons` (same length array). '
+            "Use only the manifest contract and planner context; ignore runtime payload details.\n"
             f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
 
@@ -267,16 +259,12 @@ class LLMComponentPlanner:
             start = raw.find("```")
             end = raw.rfind("```")
             snippet = raw[start + 3 : end]
-            # 移除 "json" 语言标识符
             if snippet.strip().startswith("json"):
                 snippet = snippet.strip()[4:]
             raw = snippet.strip()
-
-        # 尝试直接解析 JSON
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            # 兜底：提取第一个 JSON 对象
             start = raw.find("{")
             end = raw.rfind("}")
             if start == -1 or end == -1:
@@ -285,8 +273,6 @@ class LLMComponentPlanner:
                 data = json.loads(raw[start : end + 1])
             except json.JSONDecodeError:
                 return None
-
-        # 验证数据结构和类型
         if not isinstance(data, dict):
             return None
         selected = data.get("selected")
@@ -295,13 +281,12 @@ class LLMComponentPlanner:
             return None
         if not isinstance(reasons, list) or not all(isinstance(r, str) for r in reasons):
             return None
-
         return {"selected": selected, "reasons": reasons}
 
     def _cache_key(
         self,
         route: str,
-        summary: Dict[str, Any],
+        manifest: RouteAdapterManifest,
         context: PlannerContext,
         config: ComponentPlannerConfig,
     ) -> str:
@@ -310,13 +295,13 @@ class LLMComponentPlanner:
 
         缓存键包含所有影响决策的因素：
             - route: 路由标识
-            - summary: 数据摘要（item_count, metrics, sample_titles）
+            - manifest: 组件清单的指纹（component_ids）
             - context: 用户查询、布局模式、用户偏好
             - config: max_components, allow_optional, preferred_components
 
         Args:
             route: 路由标识
-            summary: 数据摘要
+            manifest: 组件清单
             context: 规划上下文
             config: 规划配置
 
@@ -326,18 +311,47 @@ class LLMComponentPlanner:
         return json.dumps(
             {
                 "route": route,
-                "item_count": summary.get("item_count"),
-                "metrics": summary.get("metrics"),
-                "samples": summary.get("sample_titles"),
+                "manifest": self._manifest_fingerprint(manifest),
                 "user_query": context.raw_query,
                 "layout_mode": context.layout_mode,
                 "user_preferences": list(context.user_preferences),
                 "max_components": config.max_components,
                 "allow_optional": config.allow_optional,
-                "preferred": list(config.preferred_components),
+                "preferred_components": list(config.preferred_components),
             },
             ensure_ascii=False,
-            sort_keys=True,  # 确保键顺序一致
+            sort_keys=True,
+        )
+
+    @staticmethod
+    def _manifest_fingerprint(manifest: RouteAdapterManifest) -> str:
+        """
+        生成 manifest 的指纹（用于缓存键）。
+
+        Args:
+            manifest: 组件清单
+
+        Returns:
+            manifest 的 JSON 字符串表示
+        """
+        return json.dumps(
+            {
+                "notes": manifest.notes,
+                "components": [
+                    {
+                        "component_id": entry.component_id,
+                        "description": entry.description,
+                        "cost": entry.cost,
+                        "default_selected": entry.default_selected,
+                        "required": entry.required,
+                        "hints": entry.hints,
+                        "field_requirements": entry.field_requirements,
+                    }
+                    for entry in manifest.components
+                ],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
         )
 
     def _store_cache(self, key: str, decision: PlannerDecision) -> None:
@@ -345,7 +359,7 @@ class LLMComponentPlanner:
         存储缓存决策（LRU 淘汰策略）。
 
         策略说明：
-            - 如果键已存在，先删除再插入（实现 LRU）
+            - 如果键已存在，先删除再插入（实现 LRU：最近使用的移到最后）
             - 超过容量时淘汰最早的条目（Python 3.7+ dict 保持插入顺序）
 
         Args:

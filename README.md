@@ -373,7 +373,7 @@ def github_trending_adapter(
 
 #### 2. 组件清单（Manifest）
 
-每个适配器声明它支持的组件及元信息：
+每个适配器声明它支持的组件及元信息。Manifest 也是前后端共享的“组件契约”，例如 ListPanel 需要的 `link`/`summary`/`published_at` 字段必须通过 `field_requirements` 说明；Planner（包括 LLM）只会依据 manifest + hints + 用户上下文决策，而不会去解析 payload：
 
 ```python
 GITHUB_MANIFEST = RouteAdapterManifest(
@@ -753,4 +753,3 @@ git commit -m "test: 添加组件规划器边界测试"
 <p align="center">
   ⭐ 如果这个项目对你有帮助，欢迎 Star 支持！
 </p>
-

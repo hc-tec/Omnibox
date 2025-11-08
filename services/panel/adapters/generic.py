@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
-from services.panel.analytics import summarize_payload
 from services.panel.view_models import validate_records
 from .registry import (
     AdapterBlockPlan,
@@ -60,16 +59,13 @@ def _build_simple_list(
     raw_items = payload.get('items') or payload.get('item') or []
     if isinstance(raw_items, dict):
         raw_items = [raw_items]
-    summary = summarize_payload(source_info.route or "", payload)
-
     stats = {
         'datasource': source_info.datasource,
         'route': source_info.route,
         'feed_title': payload.get('title'),
-        'total_items': summary.get('item_count', len(raw_items)),
+        'total_items': len(raw_items),
         'api_endpoint': source_info.route,
-        'sample_titles': summary.get('sample_titles'),
-        'metrics': summary.get('metrics', {}),
+        'metrics': {},
     }
 
     early = early_return_if_no_match(context, ['ListPanel'], stats)

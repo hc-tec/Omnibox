@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
-from services.panel.analytics import summarize_payload
 from services.panel.view_models import validate_records
 from ..registry import (
     AdapterBlockPlan,
@@ -25,6 +24,12 @@ FEED_MANIFEST = RouteAdapterManifest(
             cost="low",
             default_selected=True,
             required=True,
+            field_requirements=[
+                {"field": "title", "description": "Record title"},
+                {"field": "link", "description": "Hyperlink to the original page"},
+                {"field": "summary", "description": "Short text summary or preview"},
+                {"field": "published_at", "description": "Publish time (ISO8601)"},
+            ],
         )
     ],
     notes="适用于 B 站用户投稿、动态等内容型数据。",
@@ -60,10 +65,6 @@ def bilibili_feed_adapter(
     early = early_return_if_no_match(context, ["ListPanel"], stats)
     if early:
         return early
-
-    summary = summarize_payload(source_info.route or "", payload)
-    stats["sample_titles"] = summary.get("sample_titles")
-    stats["metrics"] = summary.get("metrics", {})
 
     normalized: list[Dict[str, Any]] = []
     for item in raw_items:

@@ -311,7 +311,7 @@ def test_bilibili_followings_adapter_extracts_count():
     assert first["link"] == "https://space.bilibili.com/1001"
     assert "总计42" in first["summary"]
     assert result.block_plans[0].component_id == "ListPanel"
-    assert result.stats["follower_count"] == 42
+    assert result.stats["metrics"]["follower_count"] == 42  # follower_count 现在在 metrics 中
     assert result.stats["api_endpoint"] == "/bilibili/user/followings/2267573/3"
 
 

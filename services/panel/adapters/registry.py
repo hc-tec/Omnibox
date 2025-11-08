@@ -85,7 +85,7 @@ RouteAdapter = Callable[
 @dataclass(frozen=True)
 class ComponentManifestEntry:
     """
-    组件清单条目
+    组件清单条目。
 
     描述 adapter 支持的一个组件，包括描述、成本、默认选中状态等元信息。
     """
@@ -94,11 +94,13 @@ class ComponentManifestEntry:
     cost: Literal["low", "medium", "high"] = "medium"  # 生成成本（影响是否默认启用）
     default_selected: bool = True  # 是否默认选中
     required: bool = False  # 是否为必需组件（必需组件永远不会被跳过）
-    hints: Dict[str, Any] = field(default_factory=dict)  # 额外提示（如依赖的统计指标）
+    hints: Dict[str, Any] = field(default_factory=dict)  # 额外提示（如依赖的统计指标、min_items 等）
+    field_requirements: List[Dict[str, str]] = field(default_factory=list)  # 组件必需的字段声明（如 link, summary, published_at）
 
 
 @dataclass(frozen=True)
 class RouteAdapterManifest:
+
     """
     路由适配器清单
 

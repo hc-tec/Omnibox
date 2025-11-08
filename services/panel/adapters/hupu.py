@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
-from services.panel.analytics import summarize_payload
 from services.panel.view_models import validate_records
 from .registry import (
     AdapterBlockPlan,
@@ -39,16 +38,13 @@ def hupu_board_list_adapter(
 ) -> RouteAdapterResult:
     payload = records[0] if records else {}
     raw_items = payload.get("items") or []
-    summary = summarize_payload(source_info.route or "", payload)
 
     stats = {
         "datasource": source_info.datasource or "hupu",
         "route": source_info.route,
         "feed_title": payload.get("title"),
-        "total_items": summary.get("item_count", len(raw_items)),
+        "total_items": len(raw_items),
         "api_endpoint": source_info.route or "/hupu",
-        "sample_titles": summary.get("sample_titles"),
-        "metrics": summary.get("metrics", {}),
     }
 
     early = early_return_if_no_match(context, ["ListPanel"], stats)

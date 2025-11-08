@@ -21,7 +21,6 @@ from services.panel.panel_generator import (
     PanelBlockInput,
     PanelGenerationResult,
 )
-from services.panel.analytics import summarize_payload
 from services.panel.component_planner import (
     ComponentPlannerConfig,
     PlannerContext,
@@ -200,7 +199,6 @@ class ChatService:
                 "requested_components": panel_result.debug.get("requested_components"),
                 "planner_reasons": panel_result.debug.get("planner_reasons"),
                 "planner_engine": panel_result.debug.get("planner_engine"),
-                "data_summary": panel_result.debug.get("data_summary"),
                 "debug": panel_result.debug,
             }
 
@@ -301,12 +299,11 @@ class ChatService:
             request_id=None,
         )
 
-        summary = summarize_payload(source_info.route or "", query_result.payload or {})
-        planner_engine = "rule"  # 默认使用规则引擎
+        planner_engine = "rule"
 
         try:
             planner_context = PlannerContext(
-                item_count=summary.get("item_count", item_count),
+                item_count=item_count,
                 user_preferences=(),
                 raw_query=user_query,
                 layout_mode=None,
@@ -317,7 +314,6 @@ class ChatService:
                 decision = self.llm_planner.plan(
                     route=source_info.route,
                     manifest=manifest,
-                    summary=summary,
                     context=planner_context,
                     config=self.component_planner_config,
                 )
@@ -328,6 +324,7 @@ class ChatService:
                     source_info.route,
                     config=self.component_planner_config,
                     context=planner_context,
+                    manifest=manifest,
                 )
             planner_reasons = decision.reasons if decision else []
             planned_components = decision.components if decision else None
@@ -351,14 +348,10 @@ class ChatService:
             block_inputs=[block_input],
             history_token=None,
         )
-        # 设置调试信息（用于追踪规划决策）
         result.debug.setdefault("planner_reasons", planner_reasons)
         result.debug.setdefault("planner_engine", planner_engine)
         result.debug.setdefault("requested_components", planned_components)
-        result.debug.setdefault("data_summary", summary)  # 新增数据摘要信息
         return result
-
-
 
     @staticmethod
     def _infer_item_count(query_result: DataQueryResult) -> int:
