@@ -20,6 +20,13 @@
   - shadcn-vue 使用规范（安装配置、主题、组件使用）
   - ECharts 集成规范（按需引入、响应式调整）
   - 禁止事项（React 语法、其他 UI 库、其他图表库）
+  - **已实现组件清单**（8个组件全部完成）
+
+- `frontend-panel-components.md` - **前端面板组件实现指南**（开发面板组件时必读）
+  - 8个已实现组件的详细实现说明（ListPanel、StatisticCard、LineChart、BarChart、PieChart、Table、ImageGallery、FallbackRichText）
+  - 每个组件的核心功能、关键代码、配置项、数据契约
+  - 通用模式（Props接口、数据获取、字段映射、响应式调整）
+  - 组件注册机制（DynamicBlockRenderer、ComponentManifest）
 
 ### 后端架构（必读）
 - `backend-architecture.md` - 后端（Integration/Service/Controller层）架构设计与技术约束，修改任何后端代码时必读
@@ -92,3 +99,13 @@
 - RSSHub支持"万物皆可RSS"（视频/社交/论坛/商品等），使用FeedItem通用模型
 - 不要将FeedItem改名为Article或Post
 - `media_type`无媒体时为`None`，不是空字符串
+
+### 前端面板组件
+- **已实现 8 个组件**：ListPanelBlock、StatisticCardBlock、LineChartBlock、BarChartBlock、PieChartBlock、TableBlock、ImageGalleryBlock、FallbackRichTextBlock
+- **技术栈铁律**：所有组件必须使用 shadcn-vue + ECharts，禁止使用 React 语法或其他 UI 库
+- **组件路径**：`frontend/src/features/panel/components/blocks/`
+- **组件注册**：通过 `DynamicBlockRenderer.vue` 动态路由，通过 `componentManifest.ts` 声明能力
+- **数据契约**：前端 TypeScript 类型必须与后端 Pydantic 模型一致（定义在 `docs/backend-panel-view-models.md`）
+- **嵌套支持**：所有组件支持 `UIBlock.children` 嵌套架构
+- **响应式图表**：ECharts 组件使用 ResizeObserver 实现响应式调整
+- **依赖状态**：shadcn-vue（8个组件）、ECharts、TanStack Table、marked 均已安装

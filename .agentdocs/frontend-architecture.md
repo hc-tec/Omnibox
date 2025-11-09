@@ -21,31 +21,36 @@
 
 | 技术 | 用途 | 状态 |
 |------|------|------|
-| **shadcn-vue** | UI 组件库（Card, Table, Button 等） | ⏳ 待安装 |
-| **Radix Vue** | shadcn-vue 底层无障碍组件 | ⏳ 自动安装 |
-| **Tailwind CSS** | 样式工具库 | ⏳ shadcn-vue 依赖 |
+| **shadcn-vue** | UI 组件库（Card, Table, Button 等） | ✅ 已安装 |
+| **Radix Vue** | shadcn-vue 底层无障碍组件 | ✅ 已安装 |
+| **Tailwind CSS** | 样式工具库 | ✅ 已安装 |
+| **@tailwindcss/typography** | Markdown 渲染样式 | ✅ 已安装 |
 
-**安装命令**：
-```bash
-cd frontend
-npx shadcn-vue@latest init
-npx shadcn-vue@latest add card
-npx shadcn-vue@latest add table
-npx shadcn-vue@latest add badge
-# 根据需要添加更多组件
-```
+**已安装的 shadcn-vue 组件**：
+- Card（卡片）
+- Badge（徽章）
+- Separator（分隔符）
+- Alert（警告提示）
+- Table（表格）
+- Button（按钮）
+- Progress（进度条）
+- Dialog（对话框）
 
 ### 1.3 图表可视化库
 
 | 技术 | 用途 | 状态 |
 |------|------|------|
-| **ECharts** | 图表可视化（柱状图、折线图、饼图等） | ⏳ 待安装 |
-| **vue-echarts** | ECharts 的 Vue 3 封装 | ⏳ 待安装 |
+| **ECharts** | 图表可视化（柱状图、折线图、饼图等） | ✅ 已安装 |
+| **vue-echarts** | ECharts 的 Vue 3 封装 | ✅ 已安装 |
 
-**安装命令**：
-```bash
-npm install echarts vue-echarts
-```
+### 1.4 其他关键依赖
+
+| 技术 | 用途 | 状态 |
+|------|------|------|
+| **@tanstack/vue-table** | 高级表格功能（排序、分页） | ✅ 已安装 |
+| **marked** | Markdown 渲染 | ✅ 已安装 |
+
+**完整安装指南**：参见 `frontend/SETUP.md`
 
 ---
 
@@ -471,9 +476,55 @@ export const PanelComponents = {
 
 ---
 
-## 11. 参考资源
+## 11. 已实现组件清单
 
-### 11.1 官方文档
+### 11.1 面板组件实现状态
+
+| 组件名称 | 文件路径 | 使用技术 | 状态 | 备注 |
+|---------|---------|---------|------|------|
+| **ListPanelBlock** | `features/panel/components/blocks/ListPanelBlock.vue` | shadcn-vue (Card, Badge, Separator) | ✅ 已实现 | 列表展示，支持标题、描述、元数据 |
+| **StatisticCardBlock** | `features/panel/components/blocks/StatisticCardBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 指标卡片，支持趋势指示器、数字格式化 |
+| **LineChartBlock** | `features/panel/components/blocks/LineChartBlock.vue` | shadcn-vue (Card) + ECharts | ✅ 已实现 | 折线图/面积图，支持多系列、时间轴 |
+| **BarChartBlock** | `features/panel/components/blocks/BarChartBlock.vue` | shadcn-vue (Card) + ECharts | ✅ 已实现 | 柱状图，支持纵向/横向、堆叠模式 |
+| **PieChartBlock** | `features/panel/components/blocks/PieChartBlock.vue` | shadcn-vue (Card) + ECharts | ✅ 已实现 | 饼图/环形图，支持南丁格尔图、可滚动图例 |
+| **TableBlock** | `features/panel/components/blocks/TableBlock.vue` | shadcn-vue (Table, Button) + TanStack Table | ✅ 已实现 | 表格，支持排序、分页、自动列检测 |
+| **ImageGalleryBlock** | `features/panel/components/blocks/ImageGalleryBlock.vue` | shadcn-vue (Card, Dialog, Button) | ✅ 已实现 | 图片画廊，支持网格布局、Lightbox 灯箱 |
+| **FallbackRichTextBlock** | `features/panel/components/blocks/FallbackRichTextBlock.vue` | shadcn-vue (Card, Alert) + marked | ✅ 已实现 | 兜底渲染，支持 Markdown、XSS 防护 |
+
+### 11.2 组件特性对照表
+
+| 组件 | 数据契约 | 响应式图表 | 嵌套支持 | 自定义样式 | 交互功能 |
+|-----|---------|----------|---------|-----------|---------|
+| ListPanelBlock | ✅ `ListPanelRecord` | N/A | ✅ 支持 children | ❌ 无需 | ✅ 点击跳转 |
+| StatisticCardBlock | ✅ `StatisticCardRecord` | N/A | ✅ 支持 children | ❌ 无需 | - |
+| LineChartBlock | ✅ `LineChartRecord` | ✅ ResizeObserver | ✅ 支持 children | ✅ 颜色、区域填充 | ✅ Tooltip |
+| BarChartBlock | ✅ `BarChartRecord` | ✅ ResizeObserver | ✅ 支持 children | ✅ 颜色、方向、堆叠 | ✅ Tooltip |
+| PieChartBlock | ✅ `PieChartRecord` | ✅ ResizeObserver | ✅ 支持 children | ✅ 颜色、环形、玫瑰图 | ✅ Tooltip |
+| TableBlock | ✅ `TableViewModel` | N/A | ✅ 支持 children | ❌ 无需 | ✅ 排序、分页 |
+| ImageGalleryBlock | ✅ `ImageGalleryRecord` | N/A | ✅ 支持 children | ✅ 列数、宽高比 | ✅ Lightbox 查看 |
+| FallbackRichTextBlock | ✅ `FallbackRichTextRecord` | N/A | ✅ 支持 children | ❌ 无需 | - |
+
+### 11.3 组件嵌套架构
+
+所有组件均支持 `UIBlock.children` 嵌套架构，可实现以下组合：
+- Card 容器包含多个 StatisticCard
+- Tabs 容器包含多个 Chart/Table
+- Grid 布局容器包含混合组件
+
+详见 `.agentdocs/panel-nested-components-design.md`
+
+### 11.4 组件注册
+
+所有组件已在以下位置注册：
+- **前端清单**：`frontend/src/shared/componentManifest.ts`
+- **前端路由器**：`frontend/src/features/panel/components/blocks/DynamicBlockRenderer.vue`
+- **后端验证器**：`services/panel/view_models.py` 的 `validate_records()`
+
+---
+
+## 12. 参考资源
+
+### 12.1 官方文档
 
 - **Vue 3**: https://vuejs.org/
 - **Vite**: https://vitejs.dev/
@@ -483,16 +534,16 @@ export const PanelComponents = {
 - **vue-echarts**: https://github.com/ecomfe/vue-echarts
 - **Tailwind CSS**: https://tailwindcss.com/
 
-### 11.2 项目内文档
+### 12.2 项目内文档
 
 - `docs/backend-panel-view-models.md` - 数据契约文档
-- `docs/frontend-barchart-implementation.md` - BarChart 实现指南
-- `docs/frontend-table-implementation.md` - Table 实现指南
+- `frontend/SETUP.md` - 前端依赖安装指南
+- `.agentdocs/panel-nested-components-design.md` - 组件嵌套架构设计
 - `.agentdocs/backend-architecture.md` - 后端架构文档
 
 ---
 
-## 12. 全局重要记忆
+## 13. 全局重要记忆
 
 **技术栈铁律**：
 - ✅ 前端框架：**Vue 3 + TypeScript**

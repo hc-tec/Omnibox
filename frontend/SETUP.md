@@ -154,14 +154,47 @@ frontend/src/components/ui/
 
 ---
 
-## 10. 下一步
+## 10. 组件实现状态
 
-安装完成后，重写以下组件：
-1. ✅ ListPanelBlock.vue
-2. ✅ StatisticCardBlock.vue
-3. ✅ LineChartBlock.vue
-4. ✅ FallbackRichTextBlock.vue
-5. ➕ BarChartBlock.vue (新增)
-6. ➕ PieChartBlock.vue (新增)
-7. ➕ TableBlock.vue (新增)
-8. ➕ ImageGalleryBlock.vue (新增)
+✅ **所有 8 个组件已完成实现**：
+
+1. ✅ ListPanelBlock.vue - 列表展示（shadcn-vue Card + Badge + Separator）
+2. ✅ StatisticCardBlock.vue - 指标卡片（shadcn-vue Card）
+3. ✅ LineChartBlock.vue - 折线图（shadcn-vue Card + ECharts）
+4. ✅ BarChartBlock.vue - 柱状图（shadcn-vue Card + ECharts）
+5. ✅ PieChartBlock.vue - 饼图（shadcn-vue Card + ECharts）
+6. ✅ TableBlock.vue - 表格（shadcn-vue Table + TanStack Table）
+7. ✅ ImageGalleryBlock.vue - 图片画廊（shadcn-vue Card + Dialog）
+8. ✅ FallbackRichTextBlock.vue - 兜底渲染（shadcn-vue Card + Alert + marked）
+
+所有组件位于 `frontend/src/features/panel/components/blocks/` 目录。
+
+---
+
+## 11. 下一步
+
+### 11.1 启动开发服务器
+
+```bash
+cd frontend
+npm run dev
+```
+
+### 11.2 测试组件
+
+通过后端 API 返回不同的 `component_id` 来测试各个组件：
+- `ListPanel` → ListPanelBlock.vue
+- `StatisticCard` → StatisticCardBlock.vue
+- `LineChart` → LineChartBlock.vue
+- `BarChart` → BarChartBlock.vue
+- `PieChart` → PieChartBlock.vue
+- `Table` → TableBlock.vue
+- `ImageGallery` → ImageGalleryBlock.vue
+- （兜底）→ FallbackRichTextBlock.vue
+
+### 11.3 参考文档
+
+- **组件实现指南**：`.agentdocs/frontend-panel-components.md`
+- **前端架构文档**：`.agentdocs/frontend-architecture.md`
+- **数据契约文档**：`docs/backend-panel-view-models.md`
+- **嵌套架构设计**：`.agentdocs/panel-nested-components-design.md`
