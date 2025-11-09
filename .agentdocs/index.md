@@ -111,3 +111,7 @@
 - **依赖状态**：shadcn-vue（8个组件）、ECharts、TanStack Table、marked 均已安装
 - **配置预设系统**：`services/panel/adapters/config_presets.py` 提供标准化尺寸预设（compact/normal/large/full），让 AI planner 灵活控制组件大小
 - **ListPanel 配置**：支持 compact 模式、max_items、show_description、show_metadata、show_categories 等配置项
+- **数据追加模式**：
+  - 前端 `panelStore.ts` 正确处理后端返回的 `mode` 字段（append/replace/insert），支持多轮对话时数据追加显示
+  - 后端 `layout_engine.py` 使用 UUID 生成唯一 node id（`row-{batch_id}-{index}`），确保 append 模式下布局节点不重复
+  - 前端包含详细的 console.log 调试日志，可查看数据合并过程

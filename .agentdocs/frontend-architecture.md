@@ -522,9 +522,83 @@ export const PanelComponents = {
 
 ---
 
-## 12. 参考资源
+## 12. 状态管理与数据追加
 
-### 12.1 官方文档
+### 12.1 Panel Store 状态管理
+
+**位置**：`frontend/src/store/panelStore.ts`
+
+Panel 数据通过 Pinia store 统一管理，核心状态包括：
+
+```typescript
+interface PanelState {
+  layout: PanelPayload["layout"] | null;  // 布局树
+  blocks: PanelPayload["blocks"];          // UI 组件块
+  dataBlocks: Record<string, DataBlock>;   // 数据块
+  metadata: PanelResponse["metadata"];     // 元数据
+  message: string;                         // 提示消息
+  loading: boolean;                        // 加载状态
+  streamLoading: boolean;                  // 流式加载状态
+  streamLog: StreamMessage[];              // 流式日志
+  fetchSnapshot: PanelStreamFetchPayload | null;  // 抓取快照
+}
+```
+
+### 12.2 数据追加模式支持
+
+后端通过 `PanelPayload.mode` 字段指定数据合并方式，前端 `applyPanelPayload` 函数根据 mode 处理：
+
+**支持的模式**：
+- **`append`**：追加新数据到现有数据后面（多轮对话）
+- **`replace`**：完全替换所有现有数据（刷新）
+- **`insert`**：插入数据（暂时按 append 处理）
+
+**实现逻辑**（`panelStore.ts:61-105`）：
+
+```typescript
+function applyPanelPayload(response: PanelResponse) {
+  if (!response.data) return;
+
+  const mode = response.data.mode || response.data.layout.mode;
+
+  if (mode === "append" || mode === "insert") {
+    // 追加模式：合并布局节点，追加 blocks 和 dataBlocks
+    mergeLayoutNodes(response.data.layout);
+    state.value.blocks = [...state.value.blocks, ...response.data.blocks];
+    state.value.dataBlocks = {
+      ...state.value.dataBlocks,
+      ...(response.data_blocks ?? {}),
+    };
+  } else {
+    // replace 模式：完全替换
+    state.value.layout = response.data.layout;
+    state.value.blocks = response.data.blocks;
+    state.value.dataBlocks = response.data_blocks ?? {};
+  }
+}
+```
+
+**布局节点合并**：
+- 避免重复节点（通过 node.id 去重）
+- 保留现有布局树结构
+- 追加新节点到末尾
+
+**关键记忆**：
+- ✅ 后端默认使用 `append` 模式（`chat_service.py:376`）
+- ✅ 前端正确处理 mode 字段，支持多轮对话数据追加
+- ✅ REST 和 WebSocket 流式接口统一使用 `applyPanelPayload` 逻辑
+- ✅ 后端 `layout_engine.py` 使用 UUID 生成唯一 node id（`row-{batch_id}-{index}`，batch_id 为 8 位十六进制），确保 append 模式下不会重复
+- ⚠️ 用户提交新问题时不会清空现有数据，而是追加显示（符合多轮对话场景）
+
+**调试日志**：
+- 前端 `panelStore.ts` 包含详细的 console.log，可在浏览器控制台查看数据合并过程
+- 日志包括：mode、blocks 数量、layout nodes 数量、节点 ID 等
+
+---
+
+## 13. 参考资源
+
+### 13.1 官方文档
 
 - **Vue 3**: https://vuejs.org/
 - **Vite**: https://vitejs.dev/
@@ -534,7 +608,7 @@ export const PanelComponents = {
 - **vue-echarts**: https://github.com/ecomfe/vue-echarts
 - **Tailwind CSS**: https://tailwindcss.com/
 
-### 12.2 项目内文档
+### 13.2 项目内文档
 
 - `docs/backend-panel-view-models.md` - 数据契约文档
 - `frontend/SETUP.md` - 前端依赖安装指南
@@ -543,7 +617,7 @@ export const PanelComponents = {
 
 ---
 
-## 13. 全局重要记忆
+## 14. 全局重要记忆
 
 **技术栈铁律**：
 - ✅ 前端框架：**Vue 3 + TypeScript**

@@ -2,6 +2,7 @@
 根据UI块生成布局树的简单布局引擎。
 """
 
+import uuid
 from typing import Dict, List, Optional
 
 from api.schemas.panel import LayoutHint, LayoutNode, LayoutTree, UIBlock
@@ -19,8 +20,10 @@ class LayoutEngine:
     ) -> LayoutTree:
         layout_hints = layout_hints or {}
         nodes: List[LayoutNode] = []
+        # 使用 UUID 确保每次生成的 node id 唯一，支持 append 模式
+        batch_id = uuid.uuid4().hex[:8]
         for index, block in enumerate(blocks, start=1):
-            node_id = f"row-{index}"
+            node_id = f"row-{batch_id}-{index}"
             hint = layout_hints.get(block.id)
             props: Dict[str, object] = {}
 
