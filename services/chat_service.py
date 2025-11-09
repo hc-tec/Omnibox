@@ -202,6 +202,32 @@ class ChatService:
                 "debug": panel_result.debug,
             }
 
+            # 提取并暴露适配器/渲染警告信息到顶层 metadata
+            blocks_debug = panel_result.debug.get("blocks", [])
+            warnings = []
+            for block in blocks_debug:
+                if block.get("using_default_adapter"):
+                    warnings.append({
+                        "type": "missing_adapter",
+                        "message": block.get("adapter_warning", "No adapter registered"),
+                        "block_id": block.get("data_block_id"),
+                    })
+                if block.get("using_fallback"):
+                    warnings.append({
+                        "type": "fallback_rendering",
+                        "message": block.get("fallback_reason", "Using fallback component"),
+                        "block_id": block.get("data_block_id"),
+                    })
+                if block.get("skipped"):
+                    warnings.append({
+                        "type": "component_skipped",
+                        "message": block.get("skip_reason", "Component generation skipped"),
+                        "block_id": block.get("data_block_id"),
+                    })
+
+            if warnings:
+                metadata["warnings"] = warnings
+
             return ChatResponse(
                 success=True,
                 intent_type="data_query",
@@ -328,6 +354,9 @@ class ChatService:
                 )
             planner_reasons = decision.reasons if decision else []
             planned_components = decision.components if decision else None
+            if planned_components is not None and len(planned_components) == 0:
+                # 将空列表视为“未指定”，以免误触发 PanelGenerator 的跳过逻辑
+                planned_components = None
         except Exception as exc:
             logger.warning(f"组件规划失败，使用默认策略: {exc}")
             planner_reasons = [f"planner_error: {exc}"]

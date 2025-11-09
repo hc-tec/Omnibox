@@ -2,6 +2,8 @@
 智能数据面板相关Schema定义。
 """
 
+from __future__ import annotations
+
 from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
@@ -138,6 +140,9 @@ class UIBlock(BaseModel):
         None, ge=0.0, le=1.0, description="Confidence score for recommendation"
     )
     title: Optional[str] = Field(None, description="Display title")
+    children: Optional[List["UIBlock"]] = Field(
+        None, description="Nested child blocks for container components"
+    )
 
 
 class PanelPayload(BaseModel):
@@ -148,3 +153,6 @@ class PanelPayload(BaseModel):
     )
     layout: LayoutTree = Field(..., description="Layout tree for the UI")
     blocks: List[UIBlock] = Field(..., description="Renderable UI blocks")
+
+
+UIBlock.model_rebuild()

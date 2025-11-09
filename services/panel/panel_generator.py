@@ -61,17 +61,35 @@ class PanelGenerator:
             data_blocks[data_block.id] = data_block
 
             plans = list(result.block_plans)
+            block_debug: Dict[str, Any] = {
+                "data_block_id": data_block.id,
+                "planned_components": [plan.component_id for plan in plans],
+            }
+
+            # 检查是否使用了默认适配器
+            if data_block.stats.get("using_default_adapter"):
+                block_debug["using_default_adapter"] = True
+                block_debug["adapter_warning"] = data_block.stats.get("warning")
+
             if not plans:
-                if block_input.requested_components:
-                    debug_info["blocks"].append(
-                        {
-                            "data_block_id": data_block.id,
-                            "planned_components": [],
-                            "skipped": True,
-                        }
+                # 情况1: 明确请求了组件但适配器未返回任何计划（提前返回）
+                if block_input.requested_components is not None:
+                    block_debug["skipped"] = True
+                    block_debug["skip_reason"] = (
+                        "No matching components"
+                        if block_input.requested_components
+                        else "Empty requested_components list"
                     )
+                    debug_info["blocks"].append(block_debug)
                     continue
+
+                # 情况2: 未指定 requested_components，使用兜底渲染
+                block_debug["using_fallback"] = True
+                block_debug["fallback_reason"] = (
+                    "Adapter returned no block_plans and no requested_components specified"
+                )
                 plans = [self._build_fallback_plan(block_input, data_block)]
+
             for plan_index, plan in enumerate(plans, start=1):
                 block_id = f"block-{block_index}-{plan_index}"
                 ui_block = self._plan_to_ui_block(block_id, data_block, plan)
@@ -80,12 +98,8 @@ class PanelGenerator:
                 if plan.layout_hint:
                     layout_hints[ui_block.id] = plan.layout_hint
 
-            debug_info["blocks"].append(
-                {
-                    "data_block_id": data_block.id,
-                    "planned_components": [plan.component_id for plan in plans],
-                }
-            )
+            block_debug["planned_components"] = [plan.component_id for plan in plans]
+            debug_info["blocks"].append(block_debug)
 
         layout: LayoutTree = self.layout_engine.build(
             mode=mode,
@@ -124,6 +138,14 @@ class PanelGenerator:
         if plan.layout_hint and plan.layout_hint.span is not None:
             options.setdefault("span", plan.layout_hint.span)
 
+        children_blocks: Optional[List[UIBlock]] = None
+        if plan.children:
+            children_blocks = []
+            for child_index, child_plan in enumerate(plan.children, start=1):
+                child_id = f"{block_id}-child-{child_index}"
+                child_block = self._plan_to_ui_block(child_id, data_block, child_plan)
+                children_blocks.append(child_block)
+
         return UIBlock(
             id=block_id,
             component=plan.component_id,
@@ -138,6 +160,7 @@ class PanelGenerator:
             interactions=plan.interactions,
             confidence=plan.confidence,
             title=plan.title,
+            children=children_blocks,
         )
 
     def _build_fallback_plan(self, block_input: PanelBlockInput, data_block: Any) -> AdapterBlockPlan:

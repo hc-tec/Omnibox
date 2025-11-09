@@ -65,6 +65,8 @@ export interface UIBlock {
   interactions?: InteractionDefinition[];
   confidence?: number | null;
   title?: string | null;
+  // 支持嵌套 ✨
+  children?: UIBlock[] | null;
 }
 
 export interface PanelPayload {

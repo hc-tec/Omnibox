@@ -12,7 +12,7 @@ frontend/
   │   ├─ store/                    # Pinia 状态管理
   │   └─ utils/                    # 数据解析辅助
   ├─ package.json
-  └─ vite.config.ts
+  └─ vite.config.mts
 ```
 
 ### 命令

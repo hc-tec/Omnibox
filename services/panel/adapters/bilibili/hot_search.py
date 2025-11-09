@@ -73,7 +73,7 @@ def bilibili_hot_search_adapter(
             continue
 
         keyword = item.get("title") or ""
-        link = item.get("link") or ""
+        link = item.get("url") or ""
         description = short_text(item.get("description"))
 
         normalized.append(

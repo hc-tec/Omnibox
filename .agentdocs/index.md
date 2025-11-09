@@ -11,6 +11,16 @@
 - `../docs/intelligent-data-panel-design.md` - 智能数据面板后端设计方案（数据→组件→布局全流程）
 - `../docs/frontend-electron-shadcn-design.md` - 前端 Electron + Shadcn UI 实现指南（组件能力、布局渲染、状态管理、交互规范）
 - `../docs/backend-intelligent-panel-overview.md` - 面向前端的后端面板联调指南（数据结构、字段语义、布局约束）
+- `panel-nested-components-design.md` - **面板组件嵌套架构设计**（支持 Card、Tabs 等容器组件嵌套子组件）
+
+### 前端架构（必读）
+- `frontend-architecture.md` - 前端架构与技术约束，修改任何前端代码时必读
+  - **技术栈铁律**：Vue 3 + shadcn-vue + ECharts（不是 React！）
+  - 组件开发规范（Composition API、TypeScript、数据契约一致性）
+  - shadcn-vue 使用规范（安装配置、主题、组件使用）
+  - ECharts 集成规范（按需引入、响应式调整）
+  - 禁止事项（React 语法、其他 UI 库、其他图表库）
+
 ### 后端架构（必读）
 - `backend-architecture.md` - 后端（Integration/Service/Controller层）架构设计与技术约束，修改任何后端代码时必读
   - Integration层可复用组件（DataExecutor、CacheService）使用规范

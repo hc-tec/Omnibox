@@ -22,6 +22,18 @@
       />
     </section>
 
+    <div
+      v-if="resolved.block.children && resolved.block.children.length > 0"
+      class="panel-block__children"
+    >
+      <DynamicBlockRenderer
+        v-for="child in resolved.block.children"
+        :key="child.id"
+        :block="child"
+        :data-blocks="dataBlocks"
+      />
+    </div>
+
     <footer v-if="resolved.warnings.length > 0" class="panel-block__footer">
       <p v-for="warning in resolved.warnings" :key="warning">{{ warning }}</p>
     </footer>
@@ -36,20 +48,40 @@ import ListPanelBlock from "./ListPanelBlock.vue";
 import LineChartBlock from "./LineChartBlock.vue";
 import StatisticCardBlock from "./StatisticCardBlock.vue";
 import FallbackBlock from "./FallbackRichTextBlock.vue";
+import BarChartBlock from "./BarChartBlock.vue";
+import PieChartBlock from "./PieChartBlock.vue";
+import TableBlock from "./TableBlock.vue";
+import ImageGalleryBlock from "./ImageGalleryBlock.vue";
+
+defineOptions({
+  name: "DynamicBlockRenderer",
+});
 
 const props = defineProps<{
-  blockId: string;
-  blockMap: Map<string, UIBlock>;
+  blockId?: string;
+  block?: UIBlock;
+  blockMap?: Map<string, UIBlock>;
   dataBlocks: Record<string, DataBlock>;
 }>();
 
+const targetBlock = computed<UIBlock | null>(() => {
+  if (props.block) {
+    return props.block;
+  }
+  if (props.blockId && props.blockMap) {
+    return props.blockMap.get(props.blockId) ?? null;
+  }
+  return null;
+});
+
 const resolved = computed(() => {
-  const block = props.blockMap.get(props.blockId);
+  const block = targetBlock.value;
   if (!block) {
+    const fallbackId = props.blockId ?? "unknown";
     return {
       ability: null,
       block: {
-        id: props.blockId,
+        id: fallbackId,
         component: "Unknown",
         props: {},
         options: {},
@@ -57,7 +89,7 @@ const resolved = computed(() => {
       data: null,
       dataBlock: null,
       interactions: [],
-      warnings: [`无法找到 block: ${props.blockId}`],
+      warnings: [`无法找到 block: ${fallbackId}`],
     };
   }
   return resolveBlock(block, props.dataBlocks);
@@ -71,6 +103,14 @@ const resolvedComponent = computed(() => {
       return LineChartBlock;
     case "StatisticCard":
       return StatisticCardBlock;
+    case "BarChart":
+      return BarChartBlock;
+    case "PieChart":
+      return PieChartBlock;
+    case "Table":
+      return TableBlock;
+    case "ImageGallery":
+      return ImageGalleryBlock;
     case "FallbackRichText":
     default:
       return FallbackBlock;
@@ -133,6 +173,13 @@ const styleVars = computed(() => {
 .panel-block__body {
   flex: 1;
   overflow: hidden;
+}
+
+.panel-block__children {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .panel-block__footer {

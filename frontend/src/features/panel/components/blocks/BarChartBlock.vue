@@ -28,7 +28,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import VChart from 'vue-echarts';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart } from 'echarts/charts';
+import { BarChart } from 'echarts/charts';
 import {
   GridComponent,
   TooltipComponent,
@@ -46,7 +46,7 @@ import type { UIBlock, DataBlock } from '@/shared/types/panel';
 import type { EChartsOption } from 'echarts';
 
 // 注册 ECharts 组件
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent]);
+use([CanvasRenderer, BarChart, GridComponent, TooltipComponent, LegendComponent]);
 
 const props = defineProps<{
   block: UIBlock;
@@ -68,9 +68,21 @@ function getProp(key: string, fallback: string): string {
   return (props.block.props[camel] ?? props.block.props[key] ?? fallback) as string;
 }
 
+function getOption<T>(key: string, fallback: T): T {
+  const camel = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+  return (props.block.options?.[camel] ?? props.block.options?.[key] ?? fallback) as T;
+}
+
 const xField = getProp('x_field', 'x');
 const yField = getProp('y_field', 'y');
 const seriesField = getProp('series_field', 'series');
+
+// 图表选项
+const orientation = getOption('orientation', 'vertical'); // vertical | horizontal
+const stacked = getOption('stacked', false);
+const showLabel = getOption('show_label', false);
+const barWidth = getOption('bar_width', null);
+const colors = getOption<string[] | null>('colors', null);
 
 const chartOption = computed<EChartsOption>(() => {
   if (isEmpty.value) return {};
@@ -78,25 +90,32 @@ const chartOption = computed<EChartsOption>(() => {
   // 转换数据
   const { xAxisData, seriesData, seriesList } = transformData();
 
-  // 判断是否为时间轴
-  const isTime = isTimeAxis(xAxisData);
+  const isHorizontal = orientation === 'horizontal';
 
   const series = seriesList.map((seriesName) => ({
     name: seriesName,
-    type: 'line' as const,
+    type: 'bar' as const,
     data: seriesData[seriesName],
-    smooth: true,
-    areaStyle: props.block.options?.area_style ? {} : undefined,
+    stack: stacked ? 'total' : undefined,
+    barWidth: barWidth || undefined,
+    label: {
+      show: showLabel,
+      position: stacked ? 'inside' : 'top',
+      formatter: (params: any) => {
+        return params.value.toLocaleString();
+      },
+    },
     emphasis: {
       focus: 'series' as const,
     },
   }));
 
-  return {
+  const baseOption: EChartsOption = {
+    color: colors || undefined,
     tooltip: {
       trigger: 'axis',
       axisPointer: {
-        type: 'cross',
+        type: 'shadow',
       },
       formatter: (params: any) => {
         if (!Array.isArray(params)) params = [params];
@@ -117,24 +136,46 @@ const chartOption = computed<EChartsOption>(() => {
       bottom: '3%',
       containLabel: true,
     },
-    xAxis: {
-      type: isTime ? 'time' : 'category',
-      data: isTime ? undefined : xAxisData,
-      boundaryGap: false,
-      axisLabel: {
-        rotate: xAxisData.length > 10 ? 45 : 0,
-      },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: {
-        formatter: (value: number) => {
-          return value.toLocaleString();
-        },
-      },
-    },
     series,
   };
+
+  if (isHorizontal) {
+    // 横向柱状图
+    return {
+      ...baseOption,
+      xAxis: {
+        type: 'value',
+        axisLabel: {
+          formatter: (value: number) => value.toLocaleString(),
+        },
+      },
+      yAxis: {
+        type: 'category',
+        data: xAxisData,
+        axisLabel: {
+          rotate: xAxisData.length > 10 ? 45 : 0,
+        },
+      },
+    };
+  } else {
+    // 纵向柱状图
+    return {
+      ...baseOption,
+      xAxis: {
+        type: 'category',
+        data: xAxisData,
+        axisLabel: {
+          rotate: xAxisData.length > 10 ? 45 : 0,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: {
+          formatter: (value: number) => value.toLocaleString(),
+        },
+      },
+    };
+  }
 });
 
 function transformData() {
@@ -155,13 +196,8 @@ function transformData() {
     dataMap.get(seriesName)!.set(xValue, yValue);
   }
 
-  // 按时间或数值排序 x 轴
+  // 按类目或数值排序 x 轴
   const xAxisData = Array.from(xAxisSet).sort((a, b) => {
-    const dateA = new Date(a);
-    const dateB = new Date(b);
-    if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
-      return dateA.getTime() - dateB.getTime();
-    }
     if (typeof a === 'number' && typeof b === 'number') {
       return a - b;
     }
@@ -176,23 +212,6 @@ function transformData() {
   }
 
   return { xAxisData, seriesData, seriesList };
-}
-
-function isTimeAxis(xAxisData: Array<string | number>): boolean {
-  if (xAxisData.length === 0) return false;
-
-  const sampleSize = Math.min(5, xAxisData.length);
-  let validDateCount = 0;
-
-  for (let i = 0; i < sampleSize; i++) {
-    const value = xAxisData[i];
-    const date = new Date(value);
-    if (!isNaN(date.getTime())) {
-      validDateCount++;
-    }
-  }
-
-  return validDateCount / sampleSize > 0.8;
 }
 
 // 响应式调整

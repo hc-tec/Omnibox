@@ -30,6 +30,49 @@ export interface LineChartRecord {
   [key: string]: unknown;
 }
 
+export interface BarChartRecord {
+  id: string;
+  x: string;
+  y: number;
+  series?: string | null;
+  color?: string | null;
+  tooltip?: string | null;
+  [key: string]: unknown;
+}
+
+export interface PieChartRecord {
+  id: string;
+  name: string;
+  value: number;
+  color?: string | null;
+  tooltip?: string | null;
+  [key: string]: unknown;
+}
+
+export interface ImageGalleryRecord {
+  id: string;
+  image_url: string;
+  title?: string | null;
+  description?: string | null;
+  link?: string | null;
+  thumbnail_url?: string | null;
+  [key: string]: unknown;
+}
+
+export interface TableColumn {
+  key: string;
+  label: string;
+  type?: "text" | "number" | "date" | "currency" | "tag" | null;
+  sortable?: boolean;
+  align?: "left" | "center" | "right" | null;
+  width?: number | null;
+}
+
+export interface TableViewModel {
+  columns: TableColumn[];
+  rows: Record<string, any>[];
+}
+
 export interface FallbackRichTextRecord {
   id: string;
   title?: string | null;
@@ -41,11 +84,19 @@ export type PanelComponentRecord =
   | ListPanelRecord
   | StatisticCardRecord
   | LineChartRecord
+  | BarChartRecord
+  | PieChartRecord
+  | ImageGalleryRecord
+  | TableViewModel
   | FallbackRichTextRecord;
 
 export interface PanelComponentDatasets {
   ListPanel: ListPanelRecord[];
   StatisticCard: StatisticCardRecord[];
   LineChart: LineChartRecord[];
+  BarChart: BarChartRecord[];
+  PieChart: PieChartRecord[];
+  ImageGallery: ImageGalleryRecord[];
+  Table: TableViewModel[];
   FallbackRichText: FallbackRichTextRecord[];
 }

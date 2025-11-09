@@ -23,14 +23,17 @@ class AdapterBlockPlan:
 
     描述如何渲染一个前端组件，包括组件类型、数据绑定、交互配置等。
     Adapter 返回多个 BlockPlan 时，前端会按顺序渲染这些组件。
+
+    支持嵌套：通过 children 字段可以构建组件树，例如 Card 包含多个 StatisticCard。
     """
-    component_id: str  # 组件ID，如 "ListPanel", "LineChart"
+    component_id: str  # 组件ID，如 "ListPanel", "LineChart", "Card"
     props: Dict[str, Any]  # 组件属性，如字段映射 {"title_field": "title"}
     options: Dict[str, Any] = field(default_factory=dict)  # 组件选项，如样式配置
     interactions: List[ComponentInteraction] = field(default_factory=list)  # 交互行为
     title: Optional[str] = None  # 组件标题
     layout_hint: Optional[LayoutHint] = None  # 布局提示
     confidence: float = 0.6  # 渲染置信度（0-1），前端可据此排序或过滤
+    children: Optional[List[AdapterBlockPlan]] = None  # 子组件列表，用于容器组件（如 Card、Tabs）✨
 
 
 @dataclass
@@ -110,9 +113,26 @@ class RouteAdapterManifest:
     notes: Optional[str] = None  # 适配器说明
 
 
-def _default_adapter(_: SourceInfo, records: Sequence[Dict[str, Any]]) -> RouteAdapterResult:
-    """默认适配器：直接返回原始记录，不做任何处理"""
-    return RouteAdapterResult(records=list(records))
+def _default_adapter(
+    source_info: SourceInfo,
+    records: Sequence[Dict[str, Any]],
+    context: Optional[AdapterExecutionContext] = None,
+) -> RouteAdapterResult:
+    """
+    默认适配器：直接返回原始记录，不做任何处理
+
+    当路由没有注册专用适配器时使用此兜底适配器。
+    这通常意味着该路由缺少适配器实现，应该引起开发者注意。
+    """
+    return RouteAdapterResult(
+        records=list(records),
+        block_plans=[],  # 不提供任何组件计划
+        stats={
+            "using_default_adapter": True,
+            "route": source_info.route if source_info else None,
+            "warning": f"No adapter registered for route: {source_info.route if source_info else 'unknown'}",
+        }
+    )
 
 
 class RouteAdapterRegistry:

@@ -84,6 +84,38 @@ class LineChartRecord(BaseModel):
     tooltip: Optional[str] = Field(None, description="Tooltip text")
 
 
+class BarChartRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(..., description="Unique record identifier")
+    x: str = Field(..., description="X axis category (e.g., language name, user name)")
+    y: float = Field(..., description="Y axis numeric value")
+    series: Optional[str] = Field(None, description="Series identifier for grouping")
+    color: Optional[str] = Field(None, description="Custom bar color (hex, e.g., #3776ab)")
+    tooltip: Optional[str] = Field(None, description="Custom tooltip text")
+
+
+class PieChartRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(..., description="Unique record identifier")
+    name: str = Field(..., description="Category name")
+    value: float = Field(..., description="Numeric value")
+    color: Optional[str] = Field(None, description="Custom slice color (hex, e.g., #3776ab)")
+    tooltip: Optional[str] = Field(None, description="Custom tooltip text")
+
+
+class ImageGalleryRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(..., description="Unique record identifier")
+    image_url: str = Field(..., description="Image full URL")
+    title: Optional[str] = Field(None, description="Image title")
+    description: Optional[str] = Field(None, description="Image description")
+    link: Optional[str] = Field(None, description="Click target URL")
+    thumbnail_url: Optional[str] = Field(None, description="Thumbnail URL for performance")
+
+
 class FallbackRecord(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -99,6 +131,18 @@ def ensure_line_chart(records: Sequence[Dict[str, Any]]) -> List[LineChartRecord
     return [LineChartRecord.model_validate(record) for record in records]
 
 
+def ensure_bar_chart(records: Sequence[Dict[str, Any]]) -> List[BarChartRecord]:
+    return [BarChartRecord.model_validate(record) for record in records]
+
+
+def ensure_pie_chart(records: Sequence[Dict[str, Any]]) -> List[PieChartRecord]:
+    return [PieChartRecord.model_validate(record) for record in records]
+
+
+def ensure_image_gallery(records: Sequence[Dict[str, Any]]) -> List[ImageGalleryRecord]:
+    return [ImageGalleryRecord.model_validate(record) for record in records]
+
+
 def ensure_number_view(records: Sequence[Dict[str, Any]]) -> List[NumberViewRecord]:
     return [NumberViewRecord.model_validate(record) for record in records]
 
@@ -109,6 +153,20 @@ def ensure_statistic_card(records: Sequence[Dict[str, Any]]) -> List[StatisticCa
 
 def ensure_table_view(model: TableViewModel) -> TableViewModel:
     return TableViewModel.model_validate(model.model_dump())
+
+
+def ensure_table(records: Sequence[Dict[str, Any]]) -> List[TableViewModel]:
+    """
+    验证 Table 组件数据。
+
+    由于 Table 的数据结构特殊（包含 columns 和 rows），
+    records 应该是一个包含单个 TableViewModel 字典的列表。
+    """
+    if not records:
+        return []
+    # Table 通常只有一个 TableViewModel，取第一个元素验证
+    table_model = TableViewModel.model_validate(records[0])
+    return [table_model]
 
 
 def ensure_fallback(records: Sequence[Dict[str, Any]]) -> List[FallbackRecord]:
@@ -131,10 +189,18 @@ def validate_records(component_id: str, records: Sequence[Dict[str, Any]]) -> Li
             return [model.model_dump() for model in ensure_list_panel(records)]
         if component_id == "LineChart":
             return [model.model_dump() for model in ensure_line_chart(records)]
+        if component_id == "BarChart":
+            return [model.model_dump() for model in ensure_bar_chart(records)]
+        if component_id == "PieChart":
+            return [model.model_dump() for model in ensure_pie_chart(records)]
+        if component_id == "ImageGallery":
+            return [model.model_dump() for model in ensure_image_gallery(records)]
         if component_id == "StatisticCard":
             return [model.model_dump() for model in ensure_statistic_card(records)]
         if component_id == "NumberView":
             return [model.model_dump() for model in ensure_number_view(records)]
+        if component_id == "Table":
+            return [model.model_dump() for model in ensure_table(records)]
         if component_id == "FallbackRichText":
             return [model.model_dump() for model in ensure_fallback(records)]
     except ValidationError as exc:

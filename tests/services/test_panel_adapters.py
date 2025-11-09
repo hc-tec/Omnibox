@@ -109,16 +109,19 @@ BILIBILI_HOT_SEARCH_SAMPLE = {
             "title": "原神新版本",
             "description": "原神新版本<br><img src=\"https://i0.hdslb.com/bfs/activity-plat/static/20220614/eaf2dd8cbe7f8fa78dda480a44a4d86b/icon.png\">",
             "link": "https://search.bilibili.com/all?keyword=%E5%8E%9F%E7%A5%9E%E6%96%B0%E7%89%88%E6%9C%AC",
+            "url": "https://search.bilibili.com/all?keyword=%E5%8E%9F%E7%A5%9E%E6%96%B0%E7%89%88%E6%9C%AC",
         },
         {
             "title": "新番推荐",
             "description": "新番推荐",
             "link": "https://search.bilibili.com/all?keyword=%E6%96%B0%E7%95%AA%E6%8E%A8%E8%8D%90",
+            "url": "https://search.bilibili.com/all?keyword=%E6%96%B0%E7%95%AA%E6%8E%A8%E8%8D%90",
         },
         {
             "title": "技术分享",
             "description": "技术分享<br>",
             "link": "https://search.bilibili.com/all?keyword=%E6%8A%80%E6%9C%AF%E5%88%86%E4%BA%AB",
+            "url": "https://search.bilibili.com/all?keyword=%E6%8A%80%E6%9C%AF%E5%88%86%E4%BA%AB",
         },
     ],
 }
@@ -480,4 +483,244 @@ def test_bilibili_hot_search_manifest():
     assert list_panel.required is True
     assert list_panel.cost == "low"
     assert list_panel.default_selected is True
+
+
+def test_default_adapter_warning():
+    """测试默认适配器会返回警告信息"""
+    adapter = adapters.get_route_adapter("/nonexistent/route")
+    source_info = SourceInfo(
+        datasource="test",
+        route="/nonexistent/route",
+        params={},
+        fetched_at=None,
+        request_id=None,
+    )
+
+    result = adapter(source_info, [{"title": "test"}])
+
+    # 验证返回了警告信息
+    assert result.stats.get("using_default_adapter") is True
+    assert "warning" in result.stats
+    assert "/nonexistent/route" in result.stats["warning"]
+    assert result.block_plans == []
+
+
+def test_panel_generator_fallback_with_debug():
+    """测试 PanelGenerator 在使用兜底渲染时的 debug 信息"""
+    generator = panel_generator.PanelGenerator()
+    source_info = SourceInfo(
+        datasource="test",
+        route="/nonexistent/route",
+        params={},
+        fetched_at=None,
+        request_id=None,
+    )
+
+    block_input = panel_generator.PanelBlockInput(
+        block_id="test_block",
+        records=[{"title": "test data"}],
+        source_info=source_info,
+        title="Test Block",
+        requested_components=None,  # 未指定，会触发 fallback
+    )
+
+    result = generator.generate(mode="append", block_inputs=[block_input])
+
+    # 验证生成了 fallback 组件
+    assert len(result.payload.blocks) == 1
+    assert result.payload.blocks[0].component == "FallbackRichText"
+
+    # 验证 debug 信息
+    blocks_debug = result.debug["blocks"]
+    assert len(blocks_debug) == 1
+    block_debug = blocks_debug[0]
+    assert block_debug.get("using_default_adapter") is True
+    assert block_debug.get("using_fallback") is True
+    assert "adapter_warning" in block_debug
+    assert "fallback_reason" in block_debug
+
+
+def test_panel_generator_skip_with_empty_requested_components():
+    """测试明确请求空组件列表时跳过渲染"""
+    generator = panel_generator.PanelGenerator()
+    source_info = SourceInfo(
+        datasource="test",
+        route="/nonexistent/route",
+        params={},
+        fetched_at=None,
+        request_id=None,
+    )
+
+    block_input = panel_generator.PanelBlockInput(
+        block_id="test_block",
+        records=[{"title": "test data"}],
+        source_info=source_info,
+        title="Test Block",
+        requested_components=[],  # 明确请求空列表
+    )
+
+    result = generator.generate(mode="append", block_inputs=[block_input])
+
+    # 验证没有生成任何组件
+    assert len(result.payload.blocks) == 0
+
+    # 验证 debug 信息
+    blocks_debug = result.debug["blocks"]
+    assert len(blocks_debug) == 1
+    block_debug = blocks_debug[0]
+    assert block_debug.get("skipped") is True
+    assert "skip_reason" in block_debug
+    assert "Empty requested_components list" in block_debug["skip_reason"]
+
+
+def test_bar_chart_contract():
+    """测试 BarChart 组件契约"""
+    record = {
+        "id": "python-stars",
+        "x": "Python",
+        "y": 1234.0,
+        "series": "Languages",
+        "color": "#3776ab",
+        "tooltip": "Python: 1,234 stars",
+    }
+    validated = validate_records("BarChart", [record])
+    assert validated[0]["x"] == "Python"
+    assert validated[0]["y"] == 1234.0
+    assert validated[0]["color"] == "#3776ab"
+
+    # 测试缺少必填字段
+    with pytest.raises(ContractViolation):
+        validate_records("BarChart", [{"id": "broken", "y": 100}])  # 缺少 x 字段
+
+
+def test_pie_chart_contract():
+    """测试 PieChart 组件契约"""
+    record = {
+        "id": "python-projects",
+        "name": "Python",
+        "value": 1234.0,
+        "color": "#3776ab",
+        "tooltip": "Python: 1,234 projects (34.5%)",
+    }
+    validated = validate_records("PieChart", [record])
+    assert validated[0]["name"] == "Python"
+    assert validated[0]["value"] == 1234.0
+    assert validated[0]["color"] == "#3776ab"
+    assert validated[0]["tooltip"] == "Python: 1,234 projects (34.5%)"
+
+    # 测试最小必填字段
+    minimal_record = {
+        "id": "js-projects",
+        "name": "JavaScript",
+        "value": 2100.0,
+    }
+    validated_minimal = validate_records("PieChart", [minimal_record])
+    assert validated_minimal[0]["name"] == "JavaScript"
+    assert validated_minimal[0]["value"] == 2100.0
+    assert validated_minimal[0].get("color") is None
+    assert validated_minimal[0].get("tooltip") is None
+
+    # 测试缺少必填字段
+    with pytest.raises(ContractViolation):
+        validate_records("PieChart", [{"id": "broken", "value": 100}])  # 缺少 name 字段
+
+    with pytest.raises(ContractViolation):
+        validate_records("PieChart", [{"id": "broken", "name": "Test"}])  # 缺少 value 字段
+
+
+def test_table_contract():
+    """测试 Table 组件契约"""
+    # 正确的 TableViewModel 数据
+    table_data = {
+        "columns": [
+            {
+                "key": "name",
+                "label": "项目名称",
+                "type": "text",
+                "sortable": True,
+                "align": "left",
+                "width": 0.4,
+            },
+            {
+                "key": "stars",
+                "label": "Stars",
+                "type": "number",
+                "sortable": True,
+                "align": "right",
+                "width": 0.2,
+            },
+            {
+                "key": "language",
+                "label": "语言",
+                "type": "tag",
+                "sortable": False,
+                "align": "center",
+                "width": 0.2,
+            },
+            {
+                "key": "updated_at",
+                "label": "更新时间",
+                "type": "date",
+                "sortable": True,
+                "align": "left",
+                "width": 0.2,
+            },
+        ],
+        "rows": [
+            {
+                "name": "octocat/hello-world",
+                "stars": 12345,
+                "language": "Python",
+                "updated_at": "2024-01-15T10:30:00Z",
+            },
+            {
+                "name": "user/awesome",
+                "stars": 9876,
+                "language": "JavaScript",
+                "updated_at": "2024-01-14T08:20:00Z",
+            },
+        ],
+    }
+
+    validated = validate_records("Table", [table_data])
+    assert len(validated) == 1
+    assert len(validated[0]["columns"]) == 4
+    assert len(validated[0]["rows"]) == 2
+    assert validated[0]["columns"][0]["key"] == "name"
+    assert validated[0]["columns"][0]["label"] == "项目名称"
+    assert validated[0]["rows"][0]["name"] == "octocat/hello-world"
+    assert validated[0]["rows"][0]["stars"] == 12345
+
+    # 测试缺少必填字段 - columns
+    with pytest.raises(ContractViolation):
+        validate_records("Table", [{"rows": [{"name": "test"}]}])  # 缺少 columns
+
+    # 测试缺少必填字段 - rows
+    with pytest.raises(ContractViolation):
+        validate_records("Table", [{"columns": [{"key": "name", "label": "Name"}]}])  # 缺少 rows
+
+    # 测试列定义缺少必填字段
+    with pytest.raises(ContractViolation):
+        validate_records(
+            "Table",
+            [
+                {
+                    "columns": [{"label": "Name"}],  # 缺少 key 字段
+                    "rows": [],
+                }
+            ],
+        )
+
+    # 测试空表格（有列定义但无数据行）
+    empty_table = {
+        "columns": [
+            {"key": "name", "label": "Name"},
+            {"key": "value", "label": "Value"},
+        ],
+        "rows": [],
+    }
+    validated_empty = validate_records("Table", [empty_table])
+    assert len(validated_empty) == 1
+    assert len(validated_empty[0]["columns"]) == 2
+    assert len(validated_empty[0]["rows"]) == 0
 

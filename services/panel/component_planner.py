@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional, Sequence, Set, Tuple
 
@@ -22,6 +23,8 @@ from services.panel.adapters import (
     RouteAdapterManifest,
     get_route_manifest,
 )
+
+logger = logging.getLogger(__name__)
 
 # 组件成本排序（用于优先选择低成本组件）
 _COST_ORDER = {"low": 0, "medium": 1, "high": 2}
@@ -111,6 +114,10 @@ def plan_components_for_route(
     """
     manifest = manifest or get_route_manifest(route)
     if manifest is None:
+        logger.warning(
+            f"组件规划失败：路由 '{route}' 没有注册 RouteAdapterManifest。"
+            "这通常意味着该路由缺少适配器实现或 manifest 声明。"
+        )
         return None
 
     config = config or ComponentPlannerConfig()
