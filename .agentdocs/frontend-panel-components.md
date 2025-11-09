@@ -78,8 +78,35 @@ frontend/src/features/panel/components/blocks/
 ```
 
 **配置项**：
+- `compact`: 紧凑模式（默认 `false`）- 减小内边距（p-2）和字体（text-sm）
+- `max_items`: 最大显示条目数（默认 `20`）
 - `show_description`: 是否显示描述（默认 `true`）
-- `max_items`: 最大显示条目数（默认无限制）
+- `show_metadata`: 是否显示作者/时间（默认 `true`）
+- `show_categories`: 是否显示标签（默认 `true`）
+- `span`: 栅格占位（1-12）
+
+**尺寸预设**（后端配置）：
+使用 `services/panel/adapters/config_presets.py` 中的预设函数：
+
+```python
+from services.panel.adapters.config_presets import list_panel_size_preset
+
+# 紧凑模式（5条，占1/3行）
+compact_config = list_panel_size_preset("compact")
+# -> {compact: True, max_items: 5, span: 4, show_*: False}
+
+# 标准模式（10条，占半行）
+normal_config = list_panel_size_preset("normal")
+# -> {compact: False, max_items: 10, span: 6, show_*: True}
+
+# 大型模式（20条，占全行）
+large_config = list_panel_size_preset("large")
+# -> {compact: False, max_items: 20, span: 12, show_*: True}
+
+# 完整模式（50条，占全行）
+full_config = list_panel_size_preset("full")
+# -> {compact: False, max_items: 50, span: 12, show_*: True}
+```
 
 ---
 
@@ -599,3 +626,260 @@ npm run dev
 - 数据契约：`docs/backend-panel-view-models.md`
 - 嵌套架构：`.agentdocs/panel-nested-components-design.md`
 - 安装指南：`frontend/SETUP.md`
+
+---
+
+## 8. 组件尺寸配置系统
+
+### 8.1 配置预设工具
+
+位置：`services/panel/adapters/config_presets.py`
+
+提供标准化的尺寸预设函数，让 AI planner 能够灵活控制组件大小。
+
+#### ListPanel 尺寸预设
+
+```python
+from services.panel.adapters.config_presets import list_panel_size_preset
+
+# 参数：size = "compact" | "normal" | "large" | "full"
+config = list_panel_size_preset(
+    size="compact",
+    show_description=True,   # 可选覆盖
+    show_metadata=True,      # 可选覆盖
+    show_categories=True,    # 可选覆盖
+)
+```
+
+**预设对照表**：
+
+| 预设 | max_items | span | compact | 描述/元数据/标签 | 适用场景 |
+|------|-----------|------|---------|----------------|---------|
+| `"compact"` | 5 | 4 | ✅ | ❌ 强制隐藏 | 热搜榜单、侧边栏、导航 |
+| `"normal"` | 10 | 6 | ❌ | ✅ 可配置 | 文章列表、帖子列表 |
+| `"large"` | 20 | 12 | ❌ | ✅ 可配置 | 详细列表、主内容区 |
+| `"full"` | 50 | 12 | ❌ | ✅ 可配置 | 完整目录、归档页 |
+
+#### Chart 尺寸预设
+
+```python
+from services.panel.adapters.config_presets import chart_size_preset
+
+config = chart_size_preset("normal")
+# -> {span: 6}
+```
+
+| 预设 | span | 高度建议 | 适用场景 |
+|------|------|---------|---------|
+| `"compact"` | 4 | 200px | 小型仪表盘、多图并排 |
+| `"normal"` | 6 | 280px | 标准图表、两图并排 |
+| `"large"` | 12 | 320px | 主要图表、单图展示 |
+| `"full"` | 12 | 400px | 详细图表、大屏展示 |
+
+#### StatisticCard 尺寸预设
+
+```python
+from services.panel.adapters.config_presets import statistic_card_size_preset
+
+config = statistic_card_size_preset("normal")
+# -> {span: 3}
+```
+
+| 预设 | span | 每行数量 | 适用场景 |
+|------|------|---------|---------|
+| `"compact"` | 2 | 6个 | 密集仪表盘 |
+| `"normal"` | 3 | 4个 | 标准仪表盘 |
+| `"large"` | 4 | 3个 | 突出关键指标 |
+| `"full"` | 6 | 2个 | 大型指标卡 |
+
+### 8.2 使用示例
+
+#### 基础使用
+
+```python
+from services.panel.adapters.config_presets import list_panel_size_preset
+
+# 紧凑模式
+compact = list_panel_size_preset("compact")
+# 输出：{compact: True, max_items: 5, span: 4, show_description: False, ...}
+
+# 标准模式（可覆盖部分配置）
+normal = list_panel_size_preset("normal", show_description=False)
+# 输出：{compact: False, max_items: 10, span: 6, show_description: False, ...}
+```
+
+#### 动态选择（AI planner）
+
+```python
+def determine_size(context: AdapterExecutionContext) -> str:
+    """AI planner 根据上下文动态选择尺寸"""
+    if context.requested_components and len(context.requested_components) > 3:
+        # 页面组件多，使用紧凑模式
+        return "compact"
+    elif context.is_mobile_view:
+        # 移动端，使用标准模式
+        return "normal"
+    else:
+        # 桌面端，使用大型模式
+        return "large"
+
+size_config = list_panel_size_preset(determine_size(context))
+```
+
+### 8.3 前端组件配置支持
+
+所有配置项都会传递到前端 Vue 组件的 `block.options`：
+
+```vue
+<!-- ListPanelBlock.vue -->
+<script setup>
+const compact = props.block.options?.compact === true;
+const maxItems = Number(props.block.options?.maxItems ?? 20);
+const showDescription = props.block.options?.showDescription !== false;
+const showMetadata = props.block.options?.showMetadata !== false;
+const showCategories = props.block.options?.showCategories !== false;
+</script>
+
+<template>
+  <div :class="compact ? 'space-y-1' : 'space-y-4'">
+    <div :class="compact ? 'p-2' : 'p-4'">
+      <h3 :class="compact ? 'text-sm' : 'text-base'">{{ title }}</h3>
+      <p v-if="showDescription">{{ description }}</p>
+      <div v-if="showMetadata">{{ metadata }}</div>
+    </div>
+  </div>
+</template>
+```
+
+---
+
+## 9. 最佳实践案例
+
+### 9.1 热搜榜单优化（B 站热搜）- 使用配置预设
+
+**问题**：默认配置下热搜榜单占据空间过大。
+
+**解决方案：使用紧凑模式预设**
+```python
+# services/panel/adapters/bilibili/hot_search.py
+from services.panel.adapters.config_presets import list_panel_size_preset
+
+# 使用紧凑模式预设
+size_config = list_panel_size_preset("compact")
+
+AdapterBlockPlan(
+    component_id="ListPanel",
+    props={
+        "title_field": "title",
+        "link_field": "link",
+        "description_field": "summary",
+        "pub_date_field": "published_at",
+    },
+    options=size_config,  # 自动配置：compact=True, max_items=5, span=4, show_*=False
+    title="B站热搜",
+    layout_hint=LayoutHint(span=size_config["span"], min_height=180),
+)
+```
+
+**效果对比**：
+
+| 配置 | 条目数 | 栅格占位 | 内边距 | 元数据显示 | 视觉占用 |
+|------|--------|---------|--------|-----------|---------|
+| **默认** | 20 | 12（全行） | p-4（大） | ✅ 全显示 | 🔴 很大 |
+| **标准** | 10 | 6（半行） | p-4（大） | ✅ 全显示 | 🟡 中等 |
+| **紧凑** | 5 | 4（1/3行） | p-2（小） | ❌ 全隐藏 | 🟢 很小 |
+
+**AI planner 可动态选择尺寸**：
+```python
+# AI planner 根据上下文选择合适的尺寸
+if context.has_other_components:
+    # 页面有其他组件，使用紧凑模式节省空间
+    config = list_panel_size_preset("compact")
+elif context.is_main_content:
+    # 热搜是主要内容，使用标准模式
+    config = list_panel_size_preset("normal")
+else:
+    # 详细展示，使用大型模式
+    config = list_panel_size_preset("large")
+```
+
+**适用场景**：
+- 热搜榜单、排行榜 → `"compact"`
+- 快捷导航菜单 → `"compact"`
+- 文章列表（摘要） → `"normal"`
+- 文章列表（详细） → `"large"`
+
+### 9.2 图表组件占比优化
+
+**默认配置**（占满整行）：
+```python
+AdapterBlockPlan(
+    component_id="BarChart",
+    options={"span": 12},  # 占满整行
+    layout_hint=LayoutHint(span=12, min_height=280),
+)
+```
+
+**优化配置**（并排显示）：
+```python
+# 方案1：两个图表并排
+AdapterBlockPlan(
+    component_id="BarChart",
+    options={"span": 6},  # 占半行
+    layout_hint=LayoutHint(span=6, min_height=280),
+)
+
+# 方案2：三个图表并排
+AdapterBlockPlan(
+    component_id="PieChart",
+    options={"span": 4},  # 占1/3行
+    layout_hint=LayoutHint(span=4, min_height=240),
+)
+```
+
+### 9.3 混合布局示例
+
+**场景**：GitHub Trending 页面
+
+```python
+# 顶部：3个指标卡片并排（各占4栅格）
+StatisticCard(span=4) + StatisticCard(span=4) + StatisticCard(span=4)
+
+# 中部：柱状图 + 饼图并排（各占6栅格）
+BarChart(span=6) + PieChart(span=6)
+
+# 底部：完整的项目列表（占满12栅格）
+ListPanel(span=12, max_items=20)
+```
+
+**代码实现**：
+```python
+block_plans = [
+    # 顶部指标卡片
+    AdapterBlockPlan("StatisticCard", options={"span": 4}, ...),  # Star总数
+    AdapterBlockPlan("StatisticCard", options={"span": 4}, ...),  # Fork总数
+    AdapterBlockPlan("StatisticCard", options={"span": 4}, ...),  # 今日新增
+
+    # 中部图表
+    AdapterBlockPlan("BarChart", options={"span": 6}, ...),  # 语言分布
+    AdapterBlockPlan("PieChart", options={"span": 6}, ...),  # 分类占比
+
+    # 底部列表
+    AdapterBlockPlan("ListPanel", options={"span": 12, "max_items": 20}, ...),
+]
+```
+
+### 9.4 响应式设计建议
+
+**栅格系统**（基于 12 栅格）：
+- `span: 12` - 占满整行（移动端和桌面端都占满）
+- `span: 6` - 占半行（桌面端并排，移动端可能堆叠）
+- `span: 4` - 占1/3行（桌面端三列，移动端可能堆叠）
+- `span: 3` - 占1/4行（桌面端四列，移动端可能堆叠）
+
+**推荐配置**：
+- **ListPanel**：紧凑模式 `span: 6`，标准模式 `span: 12`
+- **StatisticCard**：通常 `span: 3` 或 `span: 4`（一行放3-4个）
+- **Chart（柱状图/折线图/饼图）**：`span: 6` 或 `span: 12`
+- **Table**：通常 `span: 12`（需要宽度展示多列）
+- **ImageGallery**：`span: 12`（需要宽度展示网格）

@@ -14,6 +14,7 @@ from ..registry import (
     route_adapter,
 )
 from ..utils import short_text, early_return_if_no_match
+from ..config_presets import list_panel_size_preset
 
 
 HOT_SEARCH_MANIFEST = RouteAdapterManifest(
@@ -89,7 +90,13 @@ def bilibili_hot_search_adapter(
     # 验证数据契约
     validated = validate_records("ListPanel", normalized)
 
-    # 构建组件渲染计划
+    # 构建组件渲染计划 - 使用标准模式预设（10条）
+    # AI planner 可以选择不同的尺寸预设：
+    # - "compact": 紧凑（5条，占1/3行）
+    # - "normal": 标准（10条，占半行）
+    # - "large": 大型（20条，占全行）
+    size_config = list_panel_size_preset("normal")
+
     block_plan = AdapterBlockPlan(
         component_id="ListPanel",
         props={
@@ -98,10 +105,10 @@ def bilibili_hot_search_adapter(
             "description_field": "summary",
             "pub_date_field": "published_at",
         },
-        options={"show_description": True, "span": 12},
+        options=size_config,
         interactions=[ComponentInteraction(type="open_link", label="搜索关键词")],
-        title=payload.get("title") or "B站热搜榜",
-        layout_hint=LayoutHint(span=12, min_height=320),
+        title=None,  # 不设置标题，避免与外层标题重复
+        layout_hint=LayoutHint(span=size_config["span"], min_height=240),
         confidence=0.75,
     )
 

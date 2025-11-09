@@ -12,21 +12,23 @@
         暂无数据
       </div>
 
-      <div v-else class="space-y-4">
+      <div :class="compact ? 'space-y-1' : 'space-y-4'">
         <div
           v-for="item in displayItems"
           :key="itemKey(item)"
           :class="[
-            'group rounded-lg border p-4 transition-colors',
+            'group rounded-lg border transition-colors',
+            compact ? 'p-2' : 'p-4',
             linkField(item) ? 'cursor-pointer hover:bg-accent' : '',
           ]"
           @click="handleItemClick(item)"
         >
           <!-- 标题行 -->
-          <div class="mb-2 flex items-start justify-between gap-2">
+          <div :class="compact ? 'mb-0' : 'mb-2'">
             <h3
               :class="[
-                'flex-1 text-base font-semibold leading-tight',
+                compact ? 'text-sm font-medium' : 'text-base font-semibold',
+                'leading-tight',
                 linkField(item) ? 'group-hover:text-primary' : '',
               ]"
             >
@@ -37,13 +39,19 @@
           <!-- 摘要 -->
           <p
             v-if="descriptionField(item)"
-            class="mb-2 line-clamp-2 text-sm text-muted-foreground"
+            :class="[
+              'line-clamp-2 text-sm text-muted-foreground',
+              compact ? 'mb-0 mt-1' : 'mb-2',
+            ]"
           >
             {{ descriptionField(item) }}
           </p>
 
           <!-- 元数据 -->
-          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div
+            v-if="showMetadata && (authorField(item) || pubDateField(item))"
+            class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          >
             <span v-if="authorField(item)" class="flex items-center gap-1">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -79,31 +87,27 @@
               </svg>
               {{ formatDate(pubDateField(item)) }}
             </span>
+          </div>
 
-            <template v-if="categoriesField(item).length > 0">
-              <Separator
-                v-if="authorField(item) || pubDateField(item)"
-                orientation="vertical"
-                class="h-3"
-              />
-              <div class="flex gap-1">
-                <Badge
-                  v-for="(category, index) in categoriesField(item).slice(0, 3)"
-                  :key="index"
-                  variant="secondary"
-                  class="text-xs"
-                >
-                  {{ category }}
-                </Badge>
-                <Badge
-                  v-if="categoriesField(item).length > 3"
-                  variant="outline"
-                  class="text-xs"
-                >
-                  +{{ categoriesField(item).length - 3 }}
-                </Badge>
-              </div>
-            </template>
+          <div
+            v-if="showCategories && categoriesField(item).length > 0"
+            class="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground"
+          >
+            <Badge
+              v-for="(category, index) in categoriesField(item).slice(0, 3)"
+              :key="index"
+              variant="secondary"
+              class="text-xs"
+            >
+              {{ category }}
+            </Badge>
+            <Badge
+              v-if="categoriesField(item).length > 3"
+              variant="outline"
+              class="text-xs"
+            >
+              +{{ categoriesField(item).length - 3 }}
+            </Badge>
           </div>
         </div>
       </div>
@@ -133,7 +137,26 @@ const props = defineProps<{
 }>();
 
 const items = (props.data?.items as Record<string, unknown>[]) ?? props.dataBlock?.records ?? [];
-const maxItems = Number(props.block.options?.maxItems ?? 20);
+
+function getOption<T>(key: string, fallback: T): T {
+  const camel = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+  const options = props.block.options ?? {};
+  if (camel in options) {
+    return options[camel] as T;
+  }
+  if (key in options) {
+    return options[key] as T;
+  }
+  return fallback;
+}
+
+// 配置项
+const maxItems = Number(getOption('max_items', 20));
+const showDescription = getOption('show_description', getOption('showDescription', true));
+const showMetadata = getOption('show_metadata', getOption('showMetadata', true));
+const showCategories = getOption('show_categories', getOption('showCategories', true));
+const compact = getOption('compact', false);
+
 const displayItems = items.slice(0, maxItems);
 
 const isEmpty = computed(() => {
@@ -157,7 +180,7 @@ function linkField(item: Record<string, unknown>): string | null {
 }
 
 function descriptionField(item: Record<string, unknown>): string | null {
-  if (props.block.options?.show_description === false) return null;
+  if (!showDescription) return null;
   const key = getProp('description_field') ?? 'summary';
   const value = item[key];
   return value ? String(value) : null;

@@ -109,3 +109,5 @@
 - **嵌套支持**：所有组件支持 `UIBlock.children` 嵌套架构
 - **响应式图表**：ECharts 组件使用 ResizeObserver 实现响应式调整
 - **依赖状态**：shadcn-vue（8个组件）、ECharts、TanStack Table、marked 均已安装
+- **配置预设系统**：`services/panel/adapters/config_presets.py` 提供标准化尺寸预设（compact/normal/large/full），让 AI planner 灵活控制组件大小
+- **ListPanel 配置**：支持 compact 模式、max_items、show_description、show_metadata、show_categories 等配置项

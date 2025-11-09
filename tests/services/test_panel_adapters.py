@@ -470,7 +470,12 @@ def test_bilibili_hot_search_adapter():
     assert plan.component_id == "ListPanel"
     assert plan.props["title_field"] == "title"
     assert plan.props["link_field"] == "link"
-    assert plan.title == "热门"
+    assert plan.title is None  # 不设置标题，避免与外层标题重复
+
+    # 验证使用了 normal 预设（10条，占半行）
+    assert plan.options["max_items"] == 10
+    assert plan.options["span"] == 6
+    assert plan.options["compact"] is False
 
 
 def test_bilibili_hot_search_manifest():
