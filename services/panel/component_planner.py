@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Any
 
 from services.panel.adapters import (
     ComponentManifestEntry,
@@ -69,6 +69,7 @@ class PlannerContext:
     user_preferences: Sequence[str] = ()
     raw_query: Optional[str] = None
     layout_mode: Optional[str] = None
+    layout_snapshot: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass

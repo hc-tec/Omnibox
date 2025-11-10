@@ -883,3 +883,10 @@ block_plans = [
 - **Chart（柱状图/折线图/饼图）**：`span: 6` 或 `span: 12`
 - **Table**：通常 `span: 12`（需要宽度展示多列）
 - **ImageGallery**：`span: 12`（需要宽度展示网格）
+
+## 10. 桌面端与宫格布局（新增）
+
+- **Electron 集成**：前端提供 `npm run electron:dev`（并行启动 Vite 与 Electron）与 `npm run electron:build`（`vite build` + `tsc -p tsconfig.electron.json` + `electron-builder`）。主进程位于 `frontend/electron/main.ts`，预加载脚本 `frontend/electron/preload.ts` 会通过 `window.desktop` 暴露桌面 API。
+- **布局 hint**：后台 `LayoutEngine` 会在 `LayoutNode.props.grid` 注入 `{x,y,w,h,minH}`，`PanelBoard.vue` 依赖 `vue-grid-layout` 渲染 12 栏宫格；若缺少 hint，则自动顺序排布。
+- **Layout snapshot 回传**：`panelStore` 根据当前布局计算 `layout_snapshot` 并随 REST/WebSocket 请求下发，`ChatService`/PlannerContext 会接收该字段，Planner 可据此做 append/merge 策略。
+- **清空/追加策略**：Toolbar 默认采用 append 模式持续新增组件，点击“清空组件”会触发 `panelStore.resetPanel()`，重新开始一次新的宫格排布。

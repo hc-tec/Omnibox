@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { usePanelStore } from "../../store/panelStore";
 
-export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
+export function usePanelActions(initialQuery = "鎴戞兂鐪嬬湅 bilibili 鐑悳") {
   const panelStore = usePanelStore();
   const { state, hasPanel } = storeToRefs(panelStore);
   const query = ref(initialQuery);
@@ -13,17 +13,21 @@ export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
   const submit = async (payload: { query: string; datasource?: string | null }) => {
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
-    await panelStore.fetchPanel(query.value, datasource.value);
+    await panelStore.fetchPanel(query.value, datasource.value, panelStore.getLayoutSnapshot());
   };
 
   const startStream = (payload: { query: string; datasource?: string | null }) => {
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
-    panelStore.connectStream(query.value, datasource.value);
+    panelStore.connectStream(query.value, datasource.value, panelStore.getLayoutSnapshot());
   };
 
   const stopStream = () => {
     panelStore.disconnectStream();
+  };
+
+  const reset = () => {
+    panelStore.resetPanel();
   };
 
   return {
@@ -35,5 +39,6 @@ export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
     submit,
     startStream,
     stopStream,
+    reset,
   };
 }

@@ -4,7 +4,7 @@
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field, asdict
 import sys
 from pathlib import Path
@@ -111,6 +111,7 @@ class ChatService:
         user_query: str,
         filter_datasource: Optional[str] = None,
         use_cache: bool = True,
+        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
         """
         处理用户查询。
@@ -141,6 +142,7 @@ class ChatService:
                     filter_datasource=filter_datasource,
                     use_cache=use_cache,
                     intent_confidence=intent_result.confidence,
+                    layout_snapshot=layout_snapshot,
                 )
 
             return self._handle_chitchat(
@@ -163,6 +165,7 @@ class ChatService:
         filter_datasource: Optional[str],
         use_cache: bool,
         intent_confidence: float,
+        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
         """处理数据查询意图。"""
         logger.debug("处理数据查询意图")
@@ -181,6 +184,7 @@ class ChatService:
                 intent_confidence=intent_confidence,
                 user_query=user_query,
                 item_count=item_count,
+                layout_snapshot=layout_snapshot,
             )
 
             message = self._format_success_message(
@@ -315,6 +319,7 @@ class ChatService:
         intent_confidence: float,
         user_query: str,
         item_count: Optional[int] = None,
+        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
     ) -> PanelGenerationResult:
         """将数据查询结果转换为智能面板结构。"""
         source_info = SourceInfo(
@@ -333,6 +338,7 @@ class ChatService:
                 user_preferences=(),
                 raw_query=user_query,
                 layout_mode=None,
+                layout_snapshot=layout_snapshot,
             )
             manifest = get_route_manifest(source_info.route)
             decision = None
@@ -380,6 +386,8 @@ class ChatService:
         result.debug.setdefault("planner_reasons", planner_reasons)
         result.debug.setdefault("planner_engine", planner_engine)
         result.debug.setdefault("requested_components", planned_components)
+        if layout_snapshot:
+            result.debug.setdefault("layout_snapshot", layout_snapshot)
         return result
 
     @staticmethod

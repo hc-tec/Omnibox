@@ -44,6 +44,9 @@ export const componentManifest: ComponentManifest = {
       },
       options: {
         show_description: { type: "boolean", default: true },
+        show_metadata: { type: "boolean", default: true },
+        show_categories: { type: "boolean", default: true },
+        compact: { type: "boolean", default: false },
         span: { type: "number", default: 12 },
       },
       interactions: ["open_link", "refresh"],

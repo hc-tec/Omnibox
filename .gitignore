@@ -38,6 +38,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+frontend/dist-electron/
+frontend/release/
+nul
 
 # --- Project generated artifacts ---
 rag_system/vector_db/
@@ -49,4 +52,3 @@ Thumbs.db
 .DS_Store
 
 RSSHub/*
-

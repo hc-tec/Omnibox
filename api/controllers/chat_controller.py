@@ -285,6 +285,7 @@ async def chat(
             user_query=request.query,
             filter_datasource=request.filter_datasource,
             use_cache=request.use_cache,
+            layout_snapshot=request.layout_snapshot,
         )
 
         metadata = None

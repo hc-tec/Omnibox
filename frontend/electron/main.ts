@@ -1,5 +1,9 @@
 import { app, BrowserWindow, ipcMain, dialog } from "electron";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
 
@@ -33,7 +37,7 @@ async function createWindow() {
 
   const pageUrl = isDev
     ? process.env.VITE_DEV_SERVER_URL!
-    : join(__dirname, "../renderer/index.html");
+    : join(__dirname, "../../dist/index.html");
 
   if (isDev) {
     await mainWindow.loadURL(pageUrl);

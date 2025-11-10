@@ -14,6 +14,7 @@ export async function requestPanel(params: ChatRequestParams): Promise<PanelResp
     query: params.query,
     filter_datasource: params.filter_datasource ?? null,
     use_cache: params.use_cache ?? true,
+    layout_snapshot: params.layout_snapshot ?? null,
   });
   return response.data;
 }
@@ -48,6 +49,7 @@ export class PanelStreamClient {
           query: payload.query,
           filter_datasource: payload.filter_datasource ?? null,
           use_cache: payload.use_cache ?? true,
+          layout_snapshot: payload.layout_snapshot ?? null,
         })
       );
     });

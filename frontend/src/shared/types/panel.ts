@@ -30,6 +30,14 @@ export interface DataBlock {
   full_data_ref?: string | null;
 }
 
+export interface LayoutGridMeta {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minH?: number;
+}
+
 export interface LayoutNode {
   type: "row" | "column" | "grid" | "cell";
   id: string;
@@ -40,6 +48,7 @@ export interface LayoutNode {
     priority?: number;
     min_height?: number;
     responsive?: Record<string, unknown>;
+    grid?: LayoutGridMeta;
   };
 }
 
@@ -65,7 +74,6 @@ export interface UIBlock {
   interactions?: InteractionDefinition[];
   confidence?: number | null;
   title?: string | null;
-  // 支持嵌套 ✨
   children?: UIBlock[] | null;
 }
 
@@ -108,6 +116,15 @@ export interface PanelStreamFetchPayload {
   block_count: number;
   cache_hit?: string | null;
   source?: string | null;
+}
+
+export interface LayoutSnapshotItem {
+  block_id: string;
+  component: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export type StreamMessage =
@@ -165,8 +182,11 @@ export interface ChatRequestParams {
   query: string;
   filter_datasource?: string | null;
   use_cache?: boolean;
+  layout_snapshot?: LayoutSnapshotItem[] | null;
 }
 
 export interface StreamRequestPayload extends ChatRequestParams {
   use_cache?: boolean;
 }
+
+

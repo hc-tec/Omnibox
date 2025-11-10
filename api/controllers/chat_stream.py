@@ -48,6 +48,7 @@ def stream_chat_processing(
     stream_id: str,
     filter_datasource: Optional[str] = None,
     use_cache: bool = True,
+    layout_snapshot: Optional[list[dict]] = None,
 ) -> Generator[dict, None, None]:
     """
     流式处理对话（同步生成器，在线程池中执行）
@@ -140,6 +141,7 @@ def stream_chat_processing(
             user_query=user_query,
             filter_datasource=filter_datasource,
             use_cache=use_cache,
+            layout_snapshot=layout_snapshot,
         )
 
         # 推送数据
@@ -278,6 +280,7 @@ async def chat_stream(
         user_query = request_data.get("query", "")
         filter_datasource = request_data.get("filter_datasource")
         use_cache = request_data.get("use_cache", True)
+        layout_snapshot = request_data.get("layout_snapshot")
 
         logger.info(f"[{stream_id}] 收到查询: {user_query}")
 
@@ -310,6 +313,7 @@ async def chat_stream(
             stream_id=stream_id,
             filter_datasource=filter_datasource,
             use_cache=use_cache,
+            layout_snapshot=layout_snapshot,
         )
 
         # 在线程池中逐个获取消息

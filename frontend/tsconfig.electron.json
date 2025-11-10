@@ -1,0 +1,7 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.electron.main.json" },
+    { "path": "./tsconfig.electron.preload.json" }
+  ]
+}
