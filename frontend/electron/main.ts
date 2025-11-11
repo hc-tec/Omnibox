@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
 
 let mainWindow: BrowserWindow | null = null;
@@ -21,7 +20,7 @@ async function createWindow() {
     titleBarStyle: "hidden",
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "electron", "preload.js"),
+      preload: isDev ? join(__dirname, "preload.cjs") : join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,

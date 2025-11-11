@@ -36,29 +36,38 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 const isMaximized = ref(false);
 let dispose: (() => void) | null = null;
 
+const controls = () => window.desktop?.windowControls ?? null;
+
 async function sync() {
-  if (window.desktop?.windowControls) {
-    isMaximized.value = await window.desktop.windowControls.isMaximized();
-  }
+  const bridge = controls();
+  if (!bridge) return;
+  isMaximized.value = await bridge.isMaximized();
 }
 
 async function minimize() {
-  await window.desktop?.windowControls.command("minimize");
+  const bridge = controls();
+  if (!bridge) return;
+  await bridge.command("minimize");
 }
 
 async function toggleMaximize() {
-  await window.desktop?.windowControls.command("maximize");
+  const bridge = controls();
+  if (!bridge) return;
+  await bridge.command("maximize");
   await sync();
 }
 
 async function close() {
-  await window.desktop?.windowControls.command("close");
+  const bridge = controls();
+  if (!bridge) return;
+  await bridge.command("close");
 }
 
 onMounted(() => {
   sync();
-  if (window.desktop?.windowControls) {
-    dispose = window.desktop.windowControls.onStateChange((state) => {
+  const bridge = controls();
+  if (bridge) {
+    dispose = bridge.onStateChange((state) => {
       isMaximized.value = state;
     });
   }
