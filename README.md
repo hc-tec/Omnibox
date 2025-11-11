@@ -149,9 +149,22 @@ OPENAI_BASE_URL=https://api.openai.com/v1  # 或其他兼容服务
 # RSSHub 配置（通常使用默认值即可）
 RSSHUB_BASE_URL=http://localhost:1200
 RSSHUB_FALLBACK_URL=https://rsshub.app
+`
+
+### 第五步：启动 Electron 桌面端
+
+> 桌面外壳位于 `frontend/`，需要在本地启动 Vite Dev Server 后再启动 Electron。
+
+```bash
+cd frontend
+npm install
+npm run electron:dev
 ```
 
-### 第五步：构建知识库
+- `npm run electron:dev` 会同时启动 Vite (`npm run dev`) 与 Electron (`npm run electron:start`)，预加载脚本通过 `window.desktop` 注入窗口控制能力。
+- 打包发行版时使用 `npm run electron:build`。该命令会先运行 `npm run build` 产出前端静态资源，再自动复制 `electron/preload.cjs` 到 `dist-electron/electron`，无需手动处理 preload 路径。
+
+### 第六步：构建知识库
 
 ```bash
 cd rag_system

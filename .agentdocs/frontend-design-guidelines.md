@@ -69,3 +69,11 @@
 
 > è‹¥æœªæ¥å†å¢åŠ ç±»ä¼¼â€œå°çº¢ä¹¦ç¬”è®°å¡ç‰‡â€â€œå¾®åšçƒ­è¯å¡ç‰‡â€ç­‰ï¼Œè¯·å¤ç”¨ `MediaCardGrid` çš„æ•°æ®å¥‘çº¦ä¸ UI ç»“æ„ï¼Œåªéœ€åœ¨åç«¯å¡«å……å¯¹åº”å­—æ®µå³å¯ã€‚  
 > ä»¥ä¸Šè§„èŒƒå·²åœ¨ 2025/11/11 ç‰ˆæœ¬ä¸­è½åœ°ï¼Œåç»­ PR è‹¥ä¸ç¬¦åˆä¸Šè¿°è¦æ±‚ï¼Œéœ€å…ˆæ›´æ–° `.agentdocs`ã€‚ 
+## ²¼¾ÖÓïÒå£¨2025.11 ¸üĞÂ£©
+- PanelBoard ½öÒÀÀµ `layout_size`£¨quarter/third/half/full£©ÒÔ¼° LayoutHint ÖĞµÄ `grid.w/h` À´¾ö¶¨Õ¤¸ñ¿í¶È£¬ÊÊÅäÆ÷±ØĞëÍ¬²½ÌîÈëÕâĞ©×Ö¶Î£¬·ñÔòÇ°¶Ë»á fallback µ½ quarter¡£
+- layout_size Óë span ½öĞèÔÚºó¶ËÎ¬»¤Ò»´Î£ºPanelGenerator »á°ÑËüÍ¸´«¸ø UI options£¬PanelBoard »á°ÑÊµÊ±¿í¶ÈĞ´»Ø layout snapshot£¬±£Ö¤ append/replace ²»ÔÙ³öÏÖ ID ³åÍ»¡£
+- Compact/normal µÈÃÜ¶È±ä»¯Ö»Ó°Ïì padding/ĞĞ¸ß£¬ÕæÊµÌõÊıÓÉºó¶Ë `max_items` ¿ØÖÆ£¬ÇëÎğÔÚÇ°¶ËÔÙ×ö¶ş´Î²Ã¼ô¡£
+
+## Electron µ÷ÊÔÓë´ò°üÌáÊ¾
+- ÔÚ `frontend/` Ä¿Â¼ÔËĞĞ `npm run electron:dev`£¬½Å±¾»áÏÈµÈ Vite (5173) Æô¶¯£¬ÔÙ×¢Èë `window.desktop` µÄ´°¿Ú¿ØÖÆÇÅ£¬µ÷ÊÔ¹¦ÄÜ£¨×îĞ¡»¯¡¢×î´ó»¯¡¢¹Ø±Õ£©ĞèÒÀÀµ¸ÃÇÅ¡£
+- ´ò°üÃüÁî `npm run electron:build` »á×Ô¶¯¸´ÖÆ `electron/preload.cjs` ÖÁ `dist-electron/electron/`£¬ÇëÎğÔÙÒıÓÃ TypeScript °æ±¾µÄ preload ÎÄ¼ş£¬±ÜÃâ³öÏÖ ¡°Unable to load preload script¡± ´íÎó¡£
