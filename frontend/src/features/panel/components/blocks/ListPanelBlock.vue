@@ -113,7 +113,9 @@ function getOption<T>(key: string, fallback: T): T {
 }
 
 const compact = getOption('compact', false);
-const maxItems = Number(getOption('max_items', compact ? 6 : 8));
+const maxItemsOption = getOption('max_items', undefined as number | undefined);
+const maxItems =
+  typeof maxItemsOption === 'number' && maxItemsOption > 0 ? maxItemsOption : Number.POSITIVE_INFINITY;
 const showDescription = getOption('show_description', getOption('showDescription', true));
 const showMetadata = getOption('show_metadata', getOption('showMetadata', true));
 const showCategories = getOption('show_categories', getOption('showCategories', true));
@@ -127,8 +129,9 @@ const pubDateKey = getProp('pub_date_field', 'published_at');
 const authorKey = getProp('author_field', 'author');
 const categoriesKey = getProp('categories_field', 'categories');
 
-const maxItemsLimit = computed(() => Math.min(maxItems, sizePreset.value.listMaxItems));
-const displayItems = computed(() => items.slice(0, maxItemsLimit.value));
+const displayItems = computed(() =>
+  items.slice(0, Math.min(items.length, Number.isFinite(maxItems) ? maxItems : items.length))
+);
 const hasChildren = computed(() => (props.block.children?.length ?? 0) > 0);
 const isEmpty = computed(() => items.length === 0);
 const verticalMaxHeight = computed(

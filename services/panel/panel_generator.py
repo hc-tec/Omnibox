@@ -91,7 +91,8 @@ class PanelGenerator:
                 plans = [self._build_fallback_plan(block_input, data_block)]
 
             for plan_index, plan in enumerate(plans, start=1):
-                block_id = f"block-{block_index}-{plan_index}"
+                safe_component = plan.component_id.lower()
+                block_id = f"{data_block.id}-{safe_component}-{plan_index}"
                 ui_block = self._plan_to_ui_block(block_id, data_block, plan)
                 ui_blocks.append(ui_block)
                 component_confidence[block_id] = plan.confidence
@@ -145,7 +146,7 @@ class PanelGenerator:
         if plan.children:
             children_blocks = []
             for child_index, child_plan in enumerate(plan.children, start=1):
-                child_id = f"{block_id}-child-{child_index}"
+                child_id = f"{block_id}-child-{child_index}-{child_plan.component_id.lower()}"
                 child_block = self._plan_to_ui_block(child_id, data_block, child_plan)
                 children_blocks.append(child_block)
 

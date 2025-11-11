@@ -36,6 +36,9 @@ export interface LayoutGridMeta {
   w: number;
   h: number;
   minH?: number;
+  size?: string;
+  layoutSize?: string;
+  layout_size?: string;
 }
 
 export interface LayoutNode {

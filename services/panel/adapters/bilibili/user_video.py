@@ -278,7 +278,7 @@ def bilibili_user_video_adapter(
         or (requested is not None and "MediaCardGrid" in requested)
     )
     if list_needed:
-        list_config = list_panel_size_preset("large", show_description=True, show_metadata=True)
+        list_config = list_panel_size_preset("full", show_description=True, show_metadata=True)
         list_config.setdefault("horizontal_scroll", False)
         list_config.setdefault("item_min_width", 260)
         list_config["max_items"] = min(len(list_records), list_config.get("max_items", len(list_records)))

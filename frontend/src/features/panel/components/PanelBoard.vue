@@ -6,8 +6,9 @@
         :key="item.i"
         class="grid-cell"
         :style="{
-          gridColumn: `span ${item.colSpan}`,
+          gridColumn: `auto / span ${item.colSpan}`,
           gridRow: `span ${item.rowSpan}`,
+          gridArea: `span ${item.rowSpan} / span ${item.colSpan}`,
           order: item.order,
         }"
       >
@@ -62,6 +63,7 @@ const blockMap = computed(() => {
 });
 
 const layoutConfig = computed(() => sizePreset.value.layout);
+const BASE_COLUMNS = 12;
 
 const LAYOUT_SIZES: PanelLayoutSize[] = ["quarter", "third", "half", "full"];
 
@@ -117,9 +119,24 @@ const resolveLayoutSize = (block: UIBlock | null, gridMeta: Partial<LayoutGridMe
   return "quarter";
 };
 
-const colSpanFor = (size: PanelLayoutSize, columns: number) => {
-  const span = layoutConfig.value.sizeSpan[size];
-  return Math.max(1, Math.round(columns * span));
+const layoutSpanFraction = (size: PanelLayoutSize) => layoutConfig.value.sizeSpan[size] ?? 0.34;
+
+const computeColSpan = (gridMeta: Partial<LayoutGridMeta>, size: PanelLayoutSize) => {
+  if (typeof gridMeta.w === "number" && gridMeta.w > 0) {
+    const normalized = gridMeta.w / BASE_COLUMNS;
+    return Math.max(1, Math.round(normalized * currentColumns.value));
+  }
+  const fraction = layoutSpanFraction(size);
+  return Math.max(1, Math.round(currentColumns.value * fraction));
+};
+
+const computeRowSpan = (gridMeta: Partial<LayoutGridMeta>, size: PanelLayoutSize) => {
+  if (typeof gridMeta.h === "number" && gridMeta.h > 0) {
+    return Math.max(1, Math.round(gridMeta.h));
+  }
+  if (size === "full") return 2;
+  if (size === "quarter") return 1;
+  return 1;
 };
 
 const currentColumns = ref(layoutConfig.value.minColumns);
@@ -139,9 +156,9 @@ const gridItems = computed(() =>
       const block = blockMap.value.get(blockId) ?? null;
       const gridMeta = ((node.props as any)?.grid ?? {}) as Partial<LayoutGridMeta> & Record<string, unknown>;
       const layoutSize = resolveLayoutSize(block, gridMeta);
-      const span = colSpanFor(layoutSize, currentColumns.value);
-      const rowSpan = Math.max(1, Math.round((gridMeta.h ?? 1) * (layoutSize === "quarter" ? 0.8 : 1)));
-      const width = typeof gridMeta.w === "number" ? gridMeta.w : Math.max(1, Math.round((span / currentColumns.value) * 12));
+      const span = computeColSpan(gridMeta, layoutSize);
+      const rowSpan = computeRowSpan(gridMeta, layoutSize);
+      const width = typeof gridMeta.w === "number" ? gridMeta.w : Math.max(1, Math.round((span / currentColumns.value) * BASE_COLUMNS));
       const height = typeof gridMeta.h === "number" ? gridMeta.h : rowSpan;
       return {
         i: blockId,
