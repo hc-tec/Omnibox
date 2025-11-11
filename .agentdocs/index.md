@@ -14,6 +14,7 @@
 - `panel-nested-components-design.md` - **面板组件嵌套架构设计**（支持 Card、Tabs 等容器组件嵌套子组件）
 
 ### 前端架构（必读）
+- rontend-design-guidelines.md - 前端界面/组件设计规范（布局、shadcn 使用、MediaCardGrid 等）
 - `frontend-architecture.md` - 前端架构与技术约束，修改任何前端代码时必读
   - **技术栈铁律**：Vue 3 + shadcn-vue + ECharts（不是 React！）
   - 组件开发规范（Composition API、TypeScript、数据契约一致性）

@@ -5,7 +5,7 @@
     :class="[{ 'is-unknown': !resolved.ability }, resolved.ability?.tag ?? 'unknown']"
   >
     <header class="panel-block__header">
-      <h3>{{ resolved.block.title ?? resolved.block.component }}</h3>
+      <h3>{{ displayTitle }}</h3>
       <span v-if="resolved.block.confidence !== undefined" class="confidence">
         置信度 {{ (resolved.block.confidence * 100).toFixed(0) }}%
       </span>
@@ -52,6 +52,7 @@ import BarChartBlock from "./BarChartBlock.vue";
 import PieChartBlock from "./PieChartBlock.vue";
 import TableBlock from "./TableBlock.vue";
 import ImageGalleryBlock from "./ImageGalleryBlock.vue";
+import MediaCardGridBlock from "./MediaCardGridBlock.vue";
 
 defineOptions({
   name: "DynamicBlockRenderer",
@@ -95,6 +96,25 @@ const resolved = computed(() => {
   return resolveBlock(block, props.dataBlocks);
 });
 
+const COMPONENT_LABELS: Record<string, string> = {
+  ListPanel: "洞察列表",
+  LineChart: "趋势图",
+  BarChart: "对比图",
+  PieChart: "占比分析",
+  Table: "数据表",
+  StatisticCard: "指标卡片",
+  ImageGallery: "图像画廊",
+  MediaCardGrid: "媒体卡片",
+};
+const displayTitle = computed(() => {
+  const block = resolved.value.block;
+  if (block.title && block.title.trim().length > 0) {
+    return block.title;
+  }
+  const componentName = block.component ?? "";
+  return (COMPONENT_LABELS[componentName] ?? componentName) || "面板组件";
+});
+
 const resolvedComponent = computed(() => {
   switch (resolved.value.block.component) {
     case "ListPanel":
@@ -111,6 +131,8 @@ const resolvedComponent = computed(() => {
       return TableBlock;
     case "ImageGallery":
       return ImageGalleryBlock;
+    case "MediaCardGrid":
+      return MediaCardGridBlock;
     case "FallbackRichText":
     default:
       return FallbackBlock;
@@ -135,37 +157,38 @@ const styleVars = computed(() => {
 .panel-block {
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
-  padding: 16px;
-  min-height: 220px;
-  transition: transform 0.25s ease;
+  border-radius: var(--panel-card-radius, 18px);
+  background: color-mix(in srgb, var(--shell-surface) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  padding: var(--panel-card-padding, 16px);
+  font-size: calc(1rem * var(--panel-font-scale, 1));
+  min-height: 200px;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .panel-block:hover {
-  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--border) 85%, transparent);
+  background: color-mix(in srgb, var(--shell-surface) 35%, transparent);
 }
 
 .panel-block__header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 12px;
+  margin-bottom: calc(12px * var(--panel-spacing-scale, 1));
 }
 
 .panel-block__header h3 {
   margin: 0;
-  font-size: 17px;
-  color: #0f172a;
+  font-size: var(--panel-heading-size, 16px);
+  color: var(--foreground);
   font-weight: 600;
 }
 
 .confidence {
-  font-size: 12px;
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.12);
+  font-size: var(--panel-meta-size, 12px);
+  color: var(--primary-500, #2563eb);
+  background: color-mix(in srgb, var(--primary-500, #2563eb) 15%, transparent);
   padding: 2px 8px;
   border-radius: 999px;
 }

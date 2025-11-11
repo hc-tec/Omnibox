@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field, asdict
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -370,7 +371,7 @@ class ChatService:
             planner_engine = "error"
 
         block_input = PanelBlockInput(
-            block_id="data_block_1",
+            block_id=f"data_block_{uuid4().hex[:8]}",
             records=[query_result.payload] if query_result.payload else query_result.items,
             source_info=source_info,
             title=query_result.feed_title,

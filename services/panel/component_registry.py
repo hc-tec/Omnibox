@@ -42,7 +42,7 @@ class ComponentRegistry:
             component
             for component in self._components.values()
             if component.is_compatible(available_fields)
-        ]
+    ]
 
 
 def default_components() -> List[ComponentDefinition]:
@@ -54,7 +54,11 @@ def default_components() -> List[ComponentDefinition]:
             optional_fields=["description", "pubDate", "author"],
             options={"show_description": {"type": "boolean", "default": True}},
             interactions=["open_link"],
-            layout_defaults={"span": 12, "min_height": 320},
+            layout_defaults={
+                "layout_size": "third",
+                "span": 12,
+                "min_height": 320,
+            },
             description="适用于文本类数据源的通用列表组件。",
         ),
         ComponentDefinition(
@@ -63,7 +67,11 @@ def default_components() -> List[ComponentDefinition]:
             optional_fields=["series", "category"],
             options={"area_style": {"type": "boolean", "default": False}},
             interactions=["filter", "compare"],
-            layout_defaults={"span": 12, "min_height": 280},
+            layout_defaults={
+                "layout_size": "half",
+                "span": 12,
+                "min_height": 280,
+            },
             description="用于展示时间序列数据的折线图组件。",
         ),
         ComponentDefinition(
@@ -72,8 +80,28 @@ def default_components() -> List[ComponentDefinition]:
             optional_fields=["trend", "unit"],
             options={},
             interactions=[],
-            layout_defaults={"span": 6, "min_height": 160},
+            layout_defaults={
+                "layout_size": "quarter",
+                "span": 6,
+                "min_height": 160,
+            },
             description="用于突出单个统计指标的概览卡片。",
+        ),
+        ComponentDefinition(
+            id="MediaCardGrid",
+            requirements=["title", "cover_url"],
+            optional_fields=["link", "author", "summary", "duration", "view_count", "like_count", "badges"],
+            options={
+                "columns": {"type": "number", "default": 3},
+                "max_items": {"type": "number", "default": 6},
+            },
+            interactions=["open_link"],
+            layout_defaults={
+                "layout_size": "half",
+                "span": 6,
+                "min_height": 260,
+            },
+            description="适用于视频或短内容的卡片网格展示组件。",
         ),
         ComponentDefinition(
             id="FallbackRichText",
@@ -81,7 +109,11 @@ def default_components() -> List[ComponentDefinition]:
             optional_fields=["description"],
             options={},
             interactions=[],
-            layout_defaults={"span": 12, "min_height": 200},
+            layout_defaults={
+                "layout_size": "full",
+                "span": 12,
+                "min_height": 200,
+            },
             description="当无其它组件匹配时的富文本兜底渲染组件。",
         ),
     ]

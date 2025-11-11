@@ -66,10 +66,16 @@ class ComponentInteraction(BaseModel):
     )
 
 
+LayoutSize = Literal["quarter", "third", "half", "full"]
+
+
 class LayoutHint(BaseModel):
     """布局引擎可选提示信息。"""
 
-    span: Optional[int] = Field(None, description="Grid span suggestion")
+    span: Optional[int] = Field(None, description="Grid span suggestion (legacy)")
+    layout_size: Optional[LayoutSize] = Field(
+        None, description="Semantic width preset (quarter/third/half/full)"
+    )
     order: Optional[int] = Field(None, description="Preferred ordering")
     priority: Optional[int] = Field(None, description="Priority for placement")
     min_height: Optional[int] = Field(None, description="Minimum height requirement")

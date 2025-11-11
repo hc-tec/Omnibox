@@ -135,8 +135,11 @@ class PanelGenerator:
         plan: AdapterBlockPlan,
     ) -> UIBlock:
         options = dict(plan.options)
-        if plan.layout_hint and plan.layout_hint.span is not None:
-            options.setdefault("span", plan.layout_hint.span)
+        if plan.layout_hint:
+            if plan.layout_hint.span is not None:
+                options.setdefault("span", plan.layout_hint.span)
+            if plan.layout_hint.layout_size:
+                options.setdefault("layout_size", plan.layout_hint.layout_size)
 
         children_blocks: Optional[List[UIBlock]] = None
         if plan.children:
@@ -172,9 +175,9 @@ class PanelGenerator:
         return AdapterBlockPlan(
             component_id="FallbackRichText",
             props={"title_field": title_field},
-            options={"span": 12},
+            options={"span": 12, "layout_size": "full"},
             interactions=[],
             title=block_input.title or data_block.source_info.route,
-            layout_hint=LayoutHint(span=12, min_height=220),
+            layout_hint=LayoutHint(layout_size="full", span=12, min_height=220),
             confidence=0.4,
         )

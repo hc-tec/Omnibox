@@ -99,10 +99,10 @@ def _build_simple_list(
             'description_field': 'summary',
             'pub_date_field': 'published_at',
         },
-        options={'show_description': True, 'span': 12},
+        options={'show_description': True, 'span': 12, 'layout_size': 'full'},
         interactions=[ComponentInteraction(type='open_link', label='Open Link')],
         title=payload.get('title') or source_info.route,
-        layout_hint=LayoutHint(span=12, min_height=320),
+        layout_hint=LayoutHint(layout_size='full', span=12, min_height=320),
         confidence=confidence,
     )
 

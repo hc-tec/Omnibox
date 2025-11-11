@@ -36,6 +36,7 @@ def list_panel_size_preset(
             "compact": True,
             "max_items": 5,
             "span": 4,
+            "layout_size": "quarter",
             "show_description": False,
             "show_metadata": False,
             "show_categories": False,
@@ -44,6 +45,7 @@ def list_panel_size_preset(
             "compact": False,
             "max_items": 10,
             "span": 6,
+            "layout_size": "third",
             "show_description": show_description,
             "show_metadata": show_metadata,
             "show_categories": show_categories,
@@ -52,6 +54,7 @@ def list_panel_size_preset(
             "compact": False,
             "max_items": 20,
             "span": 12,
+            "layout_size": "half",
             "show_description": show_description,
             "show_metadata": show_metadata,
             "show_categories": show_categories,
@@ -60,6 +63,7 @@ def list_panel_size_preset(
             "compact": False,
             "max_items": 50,
             "span": 12,
+            "layout_size": "full",
             "show_description": show_description,
             "show_metadata": show_metadata,
             "show_categories": show_categories,
@@ -97,12 +101,24 @@ def chart_size_preset(size: SizePreset = "normal") -> Dict[str, Any]:
         组件配置字典
     """
     presets = {
-        "compact": {"span": 4},
-        "normal": {"span": 6},
-        "large": {"span": 12},
-        "full": {"span": 12},
+        "compact": {"span": 4, "layout_size": "third"},
+        "normal": {"span": 6, "layout_size": "half"},
+        "large": {"span": 12, "layout_size": "full"},
+        "full": {"span": 12, "layout_size": "full"},
     }
     return presets[size]
+
+def media_card_size_preset(size: SizePreset = "normal") -> Dict[str, Any]:
+    """
+    媒体/视频卡片组件的预设尺寸
+    """
+    presets = {
+        "compact": {"span": 4, "layout_size": "third", "columns": 2, "max_items": 4},
+        "normal": {"span": 6, "layout_size": "half", "columns": 3, "max_items": 6},
+        "large": {"span": 8, "layout_size": "half", "columns": 4, "max_items": 9},
+        "full": {"span": 12, "layout_size": "full", "columns": 4, "max_items": 12},
+    }
+    return presets[size].copy()
 
 
 def statistic_card_size_preset(size: SizePreset = "normal") -> Dict[str, Any]:
@@ -120,10 +136,10 @@ def statistic_card_size_preset(size: SizePreset = "normal") -> Dict[str, Any]:
         组件配置字典
     """
     presets = {
-        "compact": {"span": 2},
-        "normal": {"span": 3},
-        "large": {"span": 4},
-        "full": {"span": 6},
+        "compact": {"span": 2, "layout_size": "quarter"},
+        "normal": {"span": 3, "layout_size": "quarter"},
+        "large": {"span": 4, "layout_size": "third"},
+        "full": {"span": 6, "layout_size": "half"},
     }
     return presets[size]
 

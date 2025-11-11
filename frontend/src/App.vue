@@ -1,117 +1,170 @@
 <template>
-  <main class="app-shell">
-    <section class="hero">
-      <div>
-        <p class="hero-badge">桌面端 · Electron</p>
-        <h1>智能面板工作台</h1>
-        <p class="hero-subtitle">
-          输入一个需求，系统会持续 append 组件并按照宫格布局呈现洞察。支持实时流式模式与一键清空。
-        </p>
-      </div>
-      <div class="hero-actions">
-        <span class="hero-version" v-if="version">版本 {{ version }}</span>
-        <span class="hero-version muted" v-else>初始化桌面容器…</span>
-      </div>
-    </section>
+  <div class="app-shell relative min-h-screen overflow-hidden bg-background text-foreground">
+    <div class="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background" />
+    <div class="pointer-events-none absolute -top-40 right-1/4 h-[520px] w-[520px] rounded-full bg-[#5b8cff]/30 blur-[180px]" />
+    <div class="pointer-events-none absolute -bottom-52 left-1/5 h-[620px] w-[620px] rounded-full bg-emerald-400/25 blur-[200px]" />
 
-    <section class="app-content">
-      <PanelWorkspace />
-    </section>
-  </main>
+    <div class="relative z-10 flex min-h-screen flex-col gap-4 px-6 py-6 md:px-12 md:py-8">
+      <header class="app-chrome drag-region flex items-center justify-between rounded-[24px] border border-border/30 bg-[var(--shell-surface)]/75 px-5 py-2 backdrop-blur">
+        <div class="no-drag flex items-center gap-3">
+          <button
+            type="button"
+            class="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 text-sm font-semibold text-white shadow-lg shadow-indigo-500/35 transition hover:scale-95"
+            @click="focusCommandBar"
+            aria-label="Focus command input"
+          >
+            CMD
+          </button>
+          <div>
+            <p class="text-[10px] uppercase tracking-[0.5em] text-muted-foreground">Omnibox</p>
+            <p class="text-lg font-semibold leading-tight">Desktop Intelligence Studio</p>
+          </div>
+        </div>
+
+        <div class="chrome-controls no-drag flex items-center gap-1.5 text-xs">
+          <div class="flex items-center gap-1 rounded-2xl border border-border/40 bg-[var(--shell-surface)]/60 px-2 py-1">
+            <button
+              v-for="option in sizeOptions"
+              :key="option.value"
+              class="rounded-xl px-2 py-1 text-[11px] font-medium transition"
+              :class="sizePreset === option.value ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:text-foreground'"
+              @click="setSizePreset(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="toggleTheme">
+            {{ isLight ? "Dark" : "Light" }}
+          </button>
+          <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="inspectorOpen = true">
+            Inspector
+          </button>
+          <WindowControls />
+        </div>
+      </header>
+
+      <main class="desktop-stage relative flex-1 rounded-[32px] border border-border/20 bg-[var(--canvas-gradient)]/95">
+        <div
+          class="canvas-flow mx-auto w-full px-4 py-12 pb-28 sm:px-6 md:px-10 md:py-8 2xl:px-8"
+          style="max-width: clamp(320px, calc(100vw - 4rem), 2400px);"
+        >
+          <PanelWorkspace class="min-h-[70vh]" :auto-initialize="false" />
+          <div class="hud mt-10 flex flex-wrap items-center justify-center gap-4 text-[11px] uppercase tracking-[0.35em] text-muted-foreground/80">
+            <span class="rounded-full border border-border/60 px-4 py-1">{{ version ? `Desktop v${version}` : "Waiting for Desktop..." }}</span>
+            <span>Ctrl/Cmd + Space → Focus</span>
+            <span>Ctrl/Cmd + K → Spotlight</span>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <button
+      class="no-drag fixed bottom-28 right-6 z-30 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border/40 bg-[var(--shell-surface)]/85 text-muted-foreground shadow-2xl shadow-black/40 backdrop-blur transition hover:text-foreground"
+      @click="inspectorOpen = true"
+      aria-label="Open Inspector"
+    >
+      <Sparkles class="h-4 w-4" />
+    </button>
+
+    <CommandPalette
+      ref="commandPaletteRef"
+      :loading="panelState.loading"
+      :default-query="query"
+      :has-layout="hasBlocks"
+      @submit="handleCommandSubmit"
+      @reset-panels="handleReset"
+    />
+
+    <InspectorDrawer
+      :open="inspectorOpen"
+      :metadata="panelState.metadata"
+      :message="panelState.message"
+      :log="panelState.streamLog"
+      :fetch-snapshot="panelState.fetchSnapshot"
+      @close="inspectorOpen = false"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import PanelWorkspace from "./features/panel/PanelWorkspace.vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { Sparkles } from "lucide-vue-next";
+import PanelWorkspace from "@/features/panel/PanelWorkspace.vue";
+import CommandPalette from "@/features/panel/components/CommandPalette.vue";
+import InspectorDrawer from "@/features/panel/components/InspectorDrawer.vue";
+import WindowControls from "@/components/system/WindowControls.vue";
+import { usePanelActions } from "@/features/panel/usePanelActions";
+import { usePanelStore } from "@/store/panelStore";
+import type { PanelSizePreset } from "@/shared/panelSizePresets";
 
 const version = ref<string | null>(null);
+const inspectorOpen = ref(false);
+const appearance = ref<"dark" | "light">("dark");
+const isLight = computed(() => appearance.value === "light");
+const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null);
+
+const { state: panelState, query, submit, reset } = usePanelActions();
+const panelStore = usePanelStore();
+const sizePreset = computed(() => panelStore.state.sizePreset);
+const sizeOptions: { label: string; value: PanelSizePreset }[] = [
+  { label: "紧凑", value: "compact" },
+  { label: "适中", value: "balanced" },
+  { label: "宽松", value: "spacious" },
+];
+const hasBlocks = computed(() => ((panelState.blocks?.length ?? 0) > 0));
+
+const applyTheme = () => {
+  const root = document.documentElement;
+  root.classList.remove("theme-dark", "theme-light");
+  root.classList.add(isLight.value ? "theme-light" : "theme-dark");
+  root.classList.toggle("dark", !isLight.value);
+  root.classList.toggle("light", isLight.value);
+  document.body.classList.toggle("dark", !isLight.value);
+  document.body.classList.toggle("light", isLight.value);
+};
+
+const toggleTheme = () => {
+  appearance.value = isLight.value ? "dark" : "light";
+  applyTheme();
+};
+
+const focusCommandBar = () => {
+  commandPaletteRef.value?.open();
+};
+
+const handleReset = () => {
+  reset();
+};
+
+const handleCommandSubmit = (payload: { query: string }) => {
+  submit(payload);
+};
+
+const setSizePreset = (preset: PanelSizePreset) => {
+  panelStore.setSizePreset(preset);
+};
+
+const handleShortcut = (event: KeyboardEvent) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    focusCommandBar();
+  }
+  if ((event.metaKey || event.ctrlKey) && event.code === "Space") {
+    event.preventDefault();
+    focusCommandBar();
+  }
+};
 
 onMounted(async () => {
+  applyTheme();
+  window.addEventListener("keydown", handleShortcut);
   if (window.desktop?.getVersion) {
     version.value = await window.desktop.getVersion();
   }
 });
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleShortcut);
+});
 </script>
-
-<style scoped>
-.app-shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  padding: 32px 40px 48px;
-  gap: 24px;
-  background: radial-gradient(circle at top, #dbeafe 0%, #f8fafc 50%, #ffffff 80%);
-}
-
-.hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.hero h1 {
-  margin: 8px 0 12px;
-  font-size: 36px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.hero-subtitle {
-  margin: 0;
-  color: #475569;
-  font-size: 16px;
-  max-width: 640px;
-}
-
-.hero-badge {
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #1d4ed8;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.15);
-  padding: 4px 12px;
-  border-radius: 999px;
-}
-
-.hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.hero-version {
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.06);
-}
-
-.hero-version.muted {
-  background: transparent;
-  border: 1px dashed rgba(148, 163, 184, 0.6);
-}
-
-.app-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 24px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.12);
-  padding: 28px;
-  overflow: hidden;
-}
-
-@media (max-width: 1024px) {
-  .hero {
-    flex-direction: column;
-  }
-}
-</style>

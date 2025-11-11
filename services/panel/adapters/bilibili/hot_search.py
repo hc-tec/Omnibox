@@ -82,7 +82,7 @@ def bilibili_hot_search_adapter(
                 "id": f"hot-search-{idx}",
                 "title": f"#{idx} {keyword}",  # 添加排名前缀
                 "link": link,
-                "summary": description or keyword,
+                "summary": None,
                 "published_at": None,  # 热搜没有发布时间
             }
         )
@@ -107,9 +107,13 @@ def bilibili_hot_search_adapter(
         },
         options=size_config,
         interactions=[ComponentInteraction(type="open_link", label="搜索关键词")],
-        title=None,  # 不设置标题，避免与外层标题重复
-        layout_hint=LayoutHint(span=size_config["span"], min_height=240),
-        confidence=0.75,
+        title=stats["feed_title"],  # 不设置标题，避免与外层标题重复
+        layout_hint=LayoutHint(
+            layout_size=size_config.get("layout_size"),
+            span=size_config.get("span"),
+            min_height=240,
+        ),
+        confidence=1.0,
     )
 
     stats["total_items"] = len(validated)

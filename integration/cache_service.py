@@ -246,7 +246,7 @@ class CacheService:
 
     def get_stats(self) -> Dict[str, Any]:
         """
-        获取缓存���计信息
+        获取缓存统计信息
 
         Returns:
             包含缓存大小、命中率等统计信息的字典

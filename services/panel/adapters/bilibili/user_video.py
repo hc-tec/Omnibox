@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
@@ -14,20 +15,20 @@ from ..registry import (
     route_adapter,
 )
 from ..utils import short_text, early_return_if_no_match
-from ..config_presets import list_panel_size_preset, statistic_card_size_preset
+from ..config_presets import list_panel_size_preset, statistic_card_size_preset, media_card_size_preset
 
 
 USER_VIDEO_MANIFEST = RouteAdapterManifest(
     components=[
         ComponentManifestEntry(
             component_id="StatisticCard",
-            description="展示 UP 主的视频统计数据（总投稿数、总播放量、总点赞数等）",
+            description="展示 UP 主的视频投稿统计数据（投稿数、播放量、评论量等）",
             cost="low",
             default_selected=True,
             required=False,
             field_requirements=[
                 {"field": "metric_title", "description": "指标名称"},
-                {"field": "metric_value", "description": "指标数值"},
+                {"field": "metric_value", "description": "指标值"},
             ],
         ),
         ComponentManifestEntry(
@@ -44,8 +45,20 @@ USER_VIDEO_MANIFEST = RouteAdapterManifest(
             ],
         ),
         ComponentManifestEntry(
+            component_id="MediaCardGrid",
+            description="展示包含封面、播放量、时长等信息的视频卡片网格",
+            cost="medium",
+            default_selected=True,
+            required=False,
+            field_requirements=[
+                {"field": "cover_url", "description": "视频封面"},
+                {"field": "title", "description": "视频标题"},
+                {"field": "link", "description": "视频链接"},
+            ],
+        ),
+        ComponentManifestEntry(
             component_id="ImageGallery",
-            description="以图片画廊形式展示视频封面",
+            description="以图像拼贴形式展示视频封面",
             cost="medium",
             default_selected=False,
             required=False,
@@ -56,8 +69,36 @@ USER_VIDEO_MANIFEST = RouteAdapterManifest(
             ],
         ),
     ],
-    notes="展示 B 站 UP 主的视频投稿列表，数据来自 /bilibili/user/video/:uid 接口。支持统计卡片+列表或图片画廊展示。",
+    notes="展示 B 站 UP 主的视频投稿数据，数据来自 /bilibili/user/video/:uid。支持统计卡片、列表、卡片网格以及封面画廊等多种展示方式。",
 )
+
+
+def _parse_count(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            stripped = value.replace(",", '').strip()
+            if stripped.endswith('万'):
+                return float(stripped[:-1]) * 10000
+            return float(stripped)
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _format_duration(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        seconds = int(value)
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}:{secs:02d}"
+    except (ValueError, TypeError):
+        if isinstance(value, str) and value:
+            return value
+        return None
 
 
 @route_adapter("/bilibili/user/video", manifest=USER_VIDEO_MANIFEST)
@@ -66,27 +107,14 @@ def bilibili_user_video_adapter(
     records: Sequence[Dict[str, Any]],
     context: Optional[AdapterExecutionContext] = None,
 ) -> RouteAdapterResult:
-    """
-    B 站 UP 主投稿适配器
-
-    处理 RSSHub /bilibili/user/video/:uid 返回的 UP 主视频投稿数据。
-    数据结构包含视频标题、封面、描述、播放量、点赞数等信息。
-
-    支持三种展示模式：
-    1. 统计卡片 + 视频列表（默认）
-    2. 视频列表
-    3. 图片画廊（视频封面）
-    """
     payload = records[0] if records else {}
     raw_items = payload.get("item") or payload.get("items") or []
     if isinstance(raw_items, dict):
         raw_items = [raw_items]
 
-    # 提取 UP 主信息
-    up_name = payload.get("author") or "UP主"
+    up_name = payload.get("title") or "UP主"
     up_face = payload.get("image")
 
-    # 构建基础 stats
     stats = {
         "datasource": source_info.datasource or "bilibili",
         "route": source_info.route,
@@ -97,31 +125,19 @@ def bilibili_user_video_adapter(
         "up_face": up_face,
     }
 
-    # 计算统计数据（如果有足够信息）
     total_play = 0
     total_comment = 0
-    total_favorite = 0
 
     for item in raw_items:
-        if isinstance(item, dict):
-            # 尝试提取播放量、评论数、收藏数（如果有的话）
-            desc = item.get("description") or ""
-            # RSSHub 可能在 description 中包含这些信息
-            if "播放" in desc:
-                try:
-                    play_str = desc.split("播放")[0].strip().split()[-1]
-                    # 可能包含"万"单位
-                    if "万" in play_str:
-                        total_play += int(float(play_str.replace("万", "")) * 10000)
-                    else:
-                        total_play += int(play_str)
-                except (ValueError, IndexError):
-                    pass
+        if not isinstance(item, dict):
+            continue
+        play_count = _parse_count(item.get("play") or item.get("stat", {}).get("view"))
+        if play_count:
+            total_play += play_count
+        comment_count = _parse_count(item.get("stat", {}).get("reply"))
+        if comment_count:
+            total_comment += comment_count
 
-            if "comments" in item:
-                total_comment += int(item.get("comments", 0))
-
-    # 如果有统计数据，加入 metrics
     if total_play > 0 or total_comment > 0:
         stats["metrics"] = {
             "total_videos": len(raw_items),
@@ -129,14 +145,16 @@ def bilibili_user_video_adapter(
             "total_comment": total_comment,
         }
 
-    # 检查是否需要提前返回
     requested = context.requested_components if context else None
-    early = early_return_if_no_match(context, ["StatisticCard", "ListPanel", "ImageGallery"], stats)
+    early = early_return_if_no_match(
+        context,
+        ["StatisticCard", "ListPanel", "ImageGallery"],
+        stats,
+    )
     if early:
         return early
 
-    # 标准化数据
-    normalized_list: list[Dict[str, Any]] = []
+    normalized_cards: list[Dict[str, Any]] = []
     normalized_gallery: list[Dict[str, Any]] = []
 
     for idx, item in enumerate(raw_items, start=1):
@@ -144,37 +162,47 @@ def bilibili_user_video_adapter(
             continue
 
         title = item.get("title") or ""
-        link = item.get("link") or ""
+        link = item.get("url") or ""
         description = short_text(item.get("description"))
-        pub_date = item.get("pubDate")
-        author = item.get("author") or up_name
-
-        # 尝试从 description 中提取封面图（RSSHub 通常会在 description 中包含 img 标签）
+        pub_date = item.get("date_published")
+        author = item.get("authors")[0]["name"] or up_name
+        content_html = item.get("content_html")
         cover_url = None
-        if description:
-            import re
-
-            img_match = re.search(r'<img[^>]+src="([^"]+)"', str(description))
+        if content_html:
+            img_match = re.search(r'<img[^>]+src="([^"]+)"', str(content_html))
             if img_match:
                 cover_url = img_match.group(1)
 
-        # ListPanel 格式
-        normalized_list.append(
-            {
-                "id": link or f"video-{idx}",
-                "title": title,
-                "link": link,
-                "summary": description or "",
-                "published_at": pub_date,
-                "author": author,
-            }
-        )
+        view_count = _parse_count(item.get("play") or item.get("stat", {}).get("view"))
+        like_count = _parse_count(item.get("stat", {}).get("like"))
+        duration_text = _format_duration(item.get("duration"))
 
-        # ImageGallery 格式（如果有封面）
+        badges = []
+        if item.get("typename"):
+            badges.append(str(item.get("typename")))
+        if item.get("bvid"):
+            bvid = str(item.get("bvid"))
+            badges.append(bvid if bvid.startswith("BV") else f"BV{bvid}")
+
+        record = {
+            "id": link or f"video-{idx}",
+            "title": title,
+            "link": link,
+            "summary": description or "",
+            "published_at": pub_date,
+            "author": author,
+            "cover_url": cover_url,
+            "duration": duration_text,
+            "view_count": view_count,
+            "like_count": like_count,
+            "badges": badges,
+        }
+        normalized_cards.append(record)
+
         if cover_url:
             normalized_gallery.append(
                 {
-                    "id": link or f"video-{idx}",
+                    "id": record["id"],
                     "image_url": cover_url,
                     "title": title,
                     "description": description or "",
@@ -182,65 +210,83 @@ def bilibili_user_video_adapter(
                 }
             )
 
-    # 构建组件渲染计划
-    block_plans = []
+    block_plans: list[AdapterBlockPlan] = []
+    list_records = validate_records("ListPanel", normalized_cards)
+    # 确认卡片栅格契约，虽然最终数据仍由 ListPanel 承载
+    validate_records("MediaCardGrid", list_records)
 
-    # 1. 统计卡片（如果有 metrics 且被请求）
     if "metrics" in stats and (not requested or "StatisticCard" in requested):
         metrics = stats["metrics"]
-
-        # 总投稿数卡片
         block_plans.append(
             AdapterBlockPlan(
                 component_id="StatisticCard",
-                props={
-                    "title_field": "metric_title",
-                    "value_field": "metric_value",
-                },
+                props={"title_field": "metric_title", "value_field": "metric_value"},
                 options=statistic_card_size_preset("normal"),
-                title="总投稿",
+                title=f"{stats['feed_title']} 总投稿",
                 confidence=0.9,
             )
         )
-
-        # 如果有播放量数据
         if metrics.get("total_play", 0) > 0:
             block_plans.append(
                 AdapterBlockPlan(
                     component_id="StatisticCard",
-                    props={
-                        "title_field": "metric_title",
-                        "value_field": "metric_value",
-                    },
+                    props={"title_field": "metric_title", "value_field": "metric_value"},
                     options=statistic_card_size_preset("normal"),
-                    title="总播放",
-                    confidence=0.7,
+                    title="总播放量",
+                    confidence=0.75,
                 )
             )
-
-        # 如果有评论数据
         if metrics.get("total_comment", 0) > 0:
             block_plans.append(
                 AdapterBlockPlan(
                     component_id="StatisticCard",
-                    props={
-                        "title_field": "metric_title",
-                        "value_field": "metric_value",
-                    },
+                    props={"title_field": "metric_title", "value_field": "metric_value"},
                     options=statistic_card_size_preset("normal"),
-                    title="总评论",
-                    confidence=0.7,
+                    title="总评论数",
+                    confidence=0.75,
                 )
             )
 
-    # 2. 视频列表或图片画廊
-    if not requested or "ListPanel" in requested:
-        # 验证 ListPanel 数据契约
-        validated_list = validate_records("ListPanel", normalized_list)
+    media_needed = requested is None or "MediaCardGrid" in requested
+    media_config = media_card_size_preset("normal")
+    media_max_items = min(len(normalized_cards), 30)
+    media_config["max_items"] = media_max_items
+    if media_max_items >= 18:
+        media_config["columns"] = 5 if media_max_items >= 25 else 4
+    media_child_plan = AdapterBlockPlan(
+        component_id="MediaCardGrid",
+        props={
+            "title_field": "title",
+            "link_field": "link",
+            "cover_field": "cover_url",
+            "author_field": "author",
+            "summary_field": "summary",
+            "duration_field": "duration",
+            "view_count_field": "view_count",
+            "like_count_field": "like_count",
+            "badges_field": "badges",
+        },
+        options=media_config,
+        interactions=[ComponentInteraction(type="open_link", label="观看视频")],
+        title=f"{up_name} 最新投稿",
+        confidence=0.82,
+    )
 
-        # 使用大型模式（20条，占全行）- 视频列表通常是主要内容
+    list_needed = (
+        requested is None
+        or "ListPanel" in requested
+        or (requested is not None and "MediaCardGrid" in requested)
+    )
+    if list_needed:
         list_config = list_panel_size_preset("large", show_description=True, show_metadata=True)
-
+        list_config.setdefault("horizontal_scroll", False)
+        list_config.setdefault("item_min_width", 260)
+        list_config["max_items"] = min(len(list_records), list_config.get("max_items", len(list_records)))
+        if len(list_records) > 12:
+            list_config["horizontal_scroll"] = True
+            list_config["item_min_width"] = 260
+            list_config["max_items"] = min(len(list_records), 18)
+        children = [media_child_plan] if media_child_plan else None
         block_plans.append(
             AdapterBlockPlan(
                 component_id="ListPanel",
@@ -252,42 +298,30 @@ def bilibili_user_video_adapter(
                 },
                 options=list_config,
                 interactions=[ComponentInteraction(type="open_link", label="观看视频")],
-                title=None,  # 不设置标题，避免重复
-                layout_hint=LayoutHint(span=list_config["span"], min_height=400),
-                confidence=0.85,
+                title=stats["feed_title"],
+                layout_hint=LayoutHint(
+                    layout_size=list_config.get("layout_size"),
+                    span=list_config.get("span"),
+                    min_height=360,
+                ),
+                confidence=0.8,
+                children=children,
             )
         )
 
-        stats["total_items"] = len(validated_list)
-        return RouteAdapterResult(records=validated_list, block_plans=block_plans, stats=stats)
-
-    elif requested and "ImageGallery" in requested and normalized_gallery:
-        # 使用图片画廊模式
+    if (not requested or "ImageGallery" in requested) and normalized_gallery:
         validated_gallery = validate_records("ImageGallery", normalized_gallery)
-
         block_plans.append(
             AdapterBlockPlan(
                 component_id="ImageGallery",
-                props={
-                    "image_field": "image_url",
-                    "title_field": "title",
-                    "link_field": "link",
-                },
-                options={
-                    "columns": 4,  # 4列网格
-                    "span": 12,  # 占满整行
-                },
+                props={"image_field": "image_url", "title_field": "title", "link_field": "link"},
+                options={"columns": 4, "span": 12, "layout_size": "full"},
                 interactions=[ComponentInteraction(type="open_link", label="观看视频")],
-                title=None,
-                layout_hint=LayoutHint(span=12, min_height=400),
-                confidence=0.75,
+                title=f"{up_name} 精选封面",
+                layout_hint=LayoutHint(layout_size="full", span=12, min_height=380),
+                confidence=0.7,
             )
         )
 
-        stats["total_items"] = len(validated_gallery)
-        return RouteAdapterResult(records=validated_gallery, block_plans=block_plans, stats=stats)
-
-    # 默认返回列表
-    validated_list = validate_records("ListPanel", normalized_list)
-    stats["total_items"] = len(validated_list)
-    return RouteAdapterResult(records=validated_list, block_plans=block_plans, stats=stats)
+    stats["total_items"] = len(list_records)
+    return RouteAdapterResult(records=list_records, block_plans=block_plans, stats=stats)

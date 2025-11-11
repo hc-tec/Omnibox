@@ -1,26 +1,26 @@
 # 251101-intelligent-panel-backend
 
-## ±³¾°
-ºó¶ËÖÇÄÜÊı¾İÃæ°åÁ´Â·Ô­±¾ÒÀÀµ¹Ì¶¨×Ö¶ÎºÍÕıÔòÈ¥¡°²Â²â¡± RSSHub ·µ»ØµÄÊı¾İ×Ö¶Î£¬ÕâÔÚ¡°ÍòÎï½Ô¿É RSS¡±³¡¾°ÏÂÎŞ·¨¹¤×÷¡£ÎªÁË³Ğ½ÓºóĞøÇ°¶Ë¹¤×÷£¬ĞèÒª¸ÄÎª¡°±£ÁôÔ­Ê¼Êı¾İ + ÊÊÅäÆ÷¿ÉÀ©Õ¹¡±µÄÄ£Ê½¡£
+## èƒŒæ™¯
+åç«¯æ™ºèƒ½æ•°æ®é¢æ¿é“¾è·¯åŸæœ¬ä¾èµ–å›ºå®šå­—æ®µå’Œæ­£åˆ™å»â€œçŒœæµ‹â€ RSSHub è¿”å›çš„æ•°æ®å­—æ®µï¼Œè¿™åœ¨â€œä¸‡ç‰©çš†å¯ RSSâ€åœºæ™¯ä¸‹æ— æ³•å·¥ä½œã€‚ä¸ºäº†æ‰¿æ¥åç»­å‰ç«¯å·¥ä½œï¼Œéœ€è¦æ”¹ä¸ºâ€œä¿ç•™åŸå§‹æ•°æ® + é€‚é…å™¨å¯æ‰©å±•â€çš„æ¨¡å¼ã€‚
 
-## µ±Ç°½øÕ¹
-- DataExecutor ½ö²Ã¼ô²¢·µ»Ø RSSHub Ô­Ê¼ JSON£¬²»ÔÙÇ¿ÖÆÓ³Éä×Ö¶Î£¨integration/data_executor.py£©¡£
-- DataBlockBuilder / PanelGenerator ÒıÈëÂ·ÓÉ¼¶ÊÊÅäÆ÷»úÖÆ£¨services/panel/adapters.py£©£¬Î´×¢²áÊ±Ä¬ÈÏÊ¹ÓÃ FallbackRichText Õ¹Ê¾Ô­Ê¼Êı¾İ¡£
-- SchemaSummary ½öÍ³¼Æ×Ö¶ÎÀàĞÍºÍÑù±¾£¬È¥µôÓïÒå±êÇ©£¨services/panel/schema_summary.py£©¡£
-- Áªµ÷ÎÄµµ `docs/backend-intelligent-panel-overview.md` ÒÑ¸üĞÂÊÊÅäÆ÷Ê¹ÓÃËµÃ÷¡£
-- »Ø¹é²âÊÔÍ¨¹ı£º`D:\Anaconda\envs\torch-cuda\python.exe -m pytest tests/api/test_chat_controller.py tests/api/test_chat_stream.py`¡£
+## å½“å‰è¿›å±•
+- DataExecutor ä»…è£å‰ªå¹¶è¿”å› RSSHub åŸå§‹ JSONï¼Œä¸å†å¼ºåˆ¶æ˜ å°„å­—æ®µï¼ˆintegration/data_executor.pyï¼‰ã€‚
+- DataBlockBuilder / PanelGenerator å¼•å…¥è·¯ç”±çº§é€‚é…å™¨æœºåˆ¶ï¼ˆservices/panel/adapters.pyï¼‰ï¼Œæœªæ³¨å†Œæ—¶é»˜è®¤ä½¿ç”¨ FallbackRichText å±•ç¤ºåŸå§‹æ•°æ®ã€‚
+- SchemaSummary ä»…ç»Ÿè®¡å­—æ®µç±»å‹å’Œæ ·æœ¬ï¼Œå»æ‰è¯­ä¹‰æ ‡ç­¾ï¼ˆservices/panel/schema_summary.pyï¼‰ã€‚
+- è”è°ƒæ–‡æ¡£ `docs/backend-intelligent-panel-overview.md` å·²æ›´æ–°é€‚é…å™¨ä½¿ç”¨è¯´æ˜ã€‚
+- å›å½’æµ‹è¯•é€šè¿‡ï¼š`D:\Anaconda\envs\torch-cuda\python.exe -m pytest tests/api/test_chat_controller.py tests/api/test_chat_stream.py`ã€‚
 
-## Î´Íê³ÉÊÂÏî
-1. **Â·ÓÉÊÊÅäÆ÷ÊµÏÖÎª¿Õ°×**£ºÄ¿Ç°³ıÁË¶µµ×Âß¼­ÍâÃ»ÓĞÈÎºÎ route µÄ¾ßÌåÊÊÅäÊµÏÖ£¬ĞèÒª°´Êı¾İÔ´ÖğÒ»²¹Æë¡£
-2. **×é¼şÔ¼¶¨´ıÈ·ÈÏ**£ºÊÊÅäÆ÷·µ»ØµÄ props/options ĞèÓëÇ°¶Ë×é¼ş±£³ÖÒ»ÖÂ£¬ºóĞøÒªÓëÇ°¶ËĞ­Í¬¶¨ÒåÆõÔ¼¡£
-3. **´óÊı¾İÓëÃô¸Ğ×Ö¶Î´¦Àí**£ºÔ­Ê¼ JSON ¿ÉÄÜºÜ´ó£¬Ò²¿ÉÄÜº¬Ãô¸Ğ×Ö¶Î£¬ºóĞøĞè²¹³ä²Ã¼ô/¹ıÂË²ßÂÔ¡£
-4. **²âÊÔ²»×ã**£ºÈ±ÉÙÕë¶ÔÊÊÅäÆ÷ºÍ PanelGenerator µÄµ¥Ôª/¼¯³É²âÊÔ£¬Ó¦ÔÚ±àĞ´ÊÊÅäÆ÷Ê±Í¬²½²¹ÉÏ¡£
+## æœªå®Œæˆäº‹é¡¹
+1. **è·¯ç”±é€‚é…å™¨å®ç°ä¸ºç©ºç™½**ï¼šç›®å‰é™¤äº†å…œåº•é€»è¾‘å¤–æ²¡æœ‰ä»»ä½• route çš„å…·ä½“é€‚é…å®ç°ï¼Œéœ€è¦æŒ‰æ•°æ®æºé€ä¸€è¡¥é½ã€‚
+2. **ç»„ä»¶çº¦å®šå¾…ç¡®è®¤**ï¼šé€‚é…å™¨è¿”å›çš„ props/options éœ€ä¸å‰ç«¯ç»„ä»¶ä¿æŒä¸€è‡´ï¼Œåç»­è¦ä¸å‰ç«¯ååŒå®šä¹‰å¥‘çº¦ã€‚
+3. **å¤§æ•°æ®ä¸æ•æ„Ÿå­—æ®µå¤„ç†**ï¼šåŸå§‹ JSON å¯èƒ½å¾ˆå¤§ï¼Œä¹Ÿå¯èƒ½å«æ•æ„Ÿå­—æ®µï¼Œåç»­éœ€è¡¥å……è£å‰ª/è¿‡æ»¤ç­–ç•¥ã€‚
+4. **æµ‹è¯•ä¸è¶³**ï¼šç¼ºå°‘é’ˆå¯¹é€‚é…å™¨å’Œ PanelGenerator çš„å•å…ƒ/é›†æˆæµ‹è¯•ï¼Œåº”åœ¨ç¼–å†™é€‚é…å™¨æ—¶åŒæ­¥è¡¥ä¸Šã€‚
 
-## ²âÊÔ¼ÇÂ¼
+## æµ‹è¯•è®°å½•
 - `D:\Anaconda\envs\torch-cuda\python.exe -m pytest tests/api/test_chat_controller.py tests/api/test_chat_stream.py`
 
-## ºóĞø½¨Òé
-- ÔÚ `services/panel/adapters.py` ÖĞÎª¸÷¸ö RSSHub route ×¢²áÊÊÅäÆ÷£¬ÀıÈç£º
+## åç»­å»ºè®®
+- åœ¨ `services/panel/adapters.py` ä¸­ä¸ºå„ä¸ª RSSHub route æ³¨å†Œé€‚é…å™¨ï¼Œä¾‹å¦‚ï¼š
   ```python
   from services.panel.adapters import register_route_adapter, AdapterBlockPlan, RouteAdapterResult
 
@@ -37,5 +37,5 @@
 
   register_route_adapter("/bilibili/user/video/", bilibili_video_adapter)
   ```
-- ÊÊÅäÆ÷¿ÉÒÔ¾ö¶¨×Ö¶ÎÓ³Éä¡¢Êä³ö¶à¸ö block¡¢ÅäÖÃ½»»¥µÈ£»Î´×¢²áµÄÂ·ÓÉ²»»áÓ°ÏìÕûÌåÁ÷³Ì£¬¿É°´ÓÅÏÈ¼¶Öğ²½²¹Æë¡£
-- Ç°¶Ë±£³ÖÓë PanelPayload/AdapterBlockPlan ÆõÔ¼Ò»ÖÂ£¬Õë¶ÔÎ´ÊÊÅäµÄÊı¾İ±£Áô¶µµ×Õ¹Ê¾£¬±ÜÃâÊı¾İ¸ñÊ½±ä¶¯µ¼ÖÂäÖÈ¾Ê§°Ü¡£
+- é€‚é…å™¨å¯ä»¥å†³å®šå­—æ®µæ˜ å°„ã€è¾“å‡ºå¤šä¸ª blockã€é…ç½®äº¤äº’ç­‰ï¼›æœªæ³¨å†Œçš„è·¯ç”±ä¸ä¼šå½±å“æ•´ä½“æµç¨‹ï¼Œå¯æŒ‰ä¼˜å…ˆçº§é€æ­¥è¡¥é½ã€‚
+- å‰ç«¯ä¿æŒä¸ PanelPayload/AdapterBlockPlan å¥‘çº¦ä¸€è‡´ï¼Œé’ˆå¯¹æœªé€‚é…çš„æ•°æ®ä¿ç•™å…œåº•å±•ç¤ºï¼Œé¿å…æ•°æ®æ ¼å¼å˜åŠ¨å¯¼è‡´æ¸²æŸ“å¤±è´¥ã€‚

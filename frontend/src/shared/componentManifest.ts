@@ -146,6 +146,29 @@ export const componentManifest: ComponentManifest = {
       layoutDefaults: { span: 12, minHeight: 200 },
       categories: ["fallback"],
     },
+    {
+      id: "MediaCardGrid",
+      tag: "media",
+      props: {
+        title_field: { type: "string", required: true },
+        link_field: { type: "string", required: false },
+        cover_field: { type: "string", required: false },
+        author_field: { type: "string", required: false },
+        duration_field: { type: "string", required: false },
+        view_count_field: { type: "string", required: false },
+        like_count_field: { type: "string", required: false },
+        badges_field: { type: "string", required: false },
+      },
+      options: {
+        columns: { type: "number", default: 3 },
+        max_items: { type: "number", default: 6 },
+        span: { type: "number", default: 6 },
+        compact: { type: "boolean", default: false },
+      },
+      interactions: ["open_link"],
+      layoutDefaults: { span: 6, minHeight: 260 },
+      categories: ["media", "card"],
+    },
   ],
 };
 

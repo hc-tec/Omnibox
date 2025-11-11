@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Menu } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,16 +11,17 @@ let mainWindow: BrowserWindow | null = null;
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1366,
-    height: 900,
+    width: 1100,
+    height: 720,
     minWidth: 1100,
     minHeight: 720,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#050814",
     show: false,
-    center: true,
-    titleBarStyle: "hiddenInset",
+    frame: false,
+    titleBarStyle: "hidden",
+    autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, "preload.js"),
+      preload: join(__dirname, "electron", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
@@ -35,6 +36,14 @@ async function createWindow() {
     }
   });
 
+  mainWindow.on("maximize", () => {
+    mainWindow?.webContents.send("window:maximized", true);
+  });
+
+  mainWindow.on("unmaximize", () => {
+    mainWindow?.webContents.send("window:maximized", false);
+  });
+
   const pageUrl = isDev
     ? process.env.VITE_DEV_SERVER_URL!
     : join(__dirname, "../../dist/index.html");
@@ -47,6 +56,7 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   createWindow().catch((error) => {
     dialog.showErrorBox("启动失败", `${error}`);
   });
@@ -65,3 +75,28 @@ app.on("window-all-closed", () => {
 });
 
 ipcMain.handle("app:version", () => app.getVersion());
+ipcMain.handle("window:command", (_, command: "minimize" | "maximize" | "restore" | "close") => {
+  if (!mainWindow) return;
+  switch (command) {
+    case "minimize":
+      mainWindow.minimize();
+      break;
+    case "maximize":
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+      break;
+    case "restore":
+      if (!mainWindow.isMaximized()) mainWindow.restore();
+      break;
+    case "close":
+      mainWindow.close();
+      break;
+    default:
+      break;
+  }
+});
+
+ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);

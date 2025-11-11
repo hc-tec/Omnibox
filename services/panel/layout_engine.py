@@ -29,6 +29,13 @@ class LayoutEngine:
         current_y = 0
         current_row_height = 1
 
+        layout_size_spans = {
+            "quarter": max(1, round(grid_columns * 0.25)),
+            "third": max(1, round(grid_columns * (1 / 3))),
+            "half": max(1, round(grid_columns * 0.5)),
+            "full": grid_columns,
+        }
+
         for index, block in enumerate(blocks, start=1):
             node_id = f"row-{batch_id}-{index}"
             hint = layout_hints.get(block.id)
@@ -43,15 +50,26 @@ class LayoutEngine:
                     if block.options
                     else (block.props or {}).get("span")
                 )
-            if span:
-                props["span"] = span
+
+            layout_size = (
+                (hint.layout_size if hint else None)
+                or ((block.options or {}).get("layout_size") if block.options else None)
+                or ((block.props or {}).get("layout_size") if block.props else None)
+            )
 
             width_units = grid_columns
-            if span is not None:
+            if layout_size and layout_size in layout_size_spans:
+                width_units = layout_size_spans[layout_size]
+            elif span is not None:
                 try:
                     width_units = max(1, min(int(span), grid_columns))
                 except (ValueError, TypeError):
                     width_units = grid_columns
+
+            if span is not None:
+                props["span"] = span
+            else:
+                props["span"] = width_units
 
             if hint and hint.order is not None:
                 props["order"] = hint.order
@@ -61,6 +79,10 @@ class LayoutEngine:
                 props["min_height"] = hint.min_height
             if hint and hint.responsive:
                 props["responsive"] = hint.responsive
+            if layout_size:
+                props.setdefault("layout", {})
+                if isinstance(props["layout"], dict):
+                    props["layout"]["size"] = layout_size
 
             min_height = None
             if hint and hint.min_height is not None:
@@ -81,6 +103,8 @@ class LayoutEngine:
                 "h": height_units,
                 "minH": max(1, math.ceil((min_height or base_row_height) / base_row_height)),
             }
+            if layout_size:
+                props["grid"]["size"] = layout_size
 
             current_x += width_units
             current_row_height = max(current_row_height, height_units)

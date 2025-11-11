@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import type {
   DataBlock,
   LayoutNode,
@@ -12,6 +12,8 @@ import type {
   UIBlock,
 } from "../shared/types/panel";
 import { requestPanel, PanelStreamClient } from "../services/panelApi";
+import type { PanelSizePreset } from "@/shared/panelSizePresets";
+import { PANEL_SIZE_PRESETS } from "@/shared/panelSizePresets";
 
 interface PanelState {
   layout: PanelPayload["layout"] | null;
@@ -24,6 +26,7 @@ interface PanelState {
   streamLog: StreamMessage[];
   fetchSnapshot: PanelStreamFetchPayload | null;
   layoutSnapshot: LayoutSnapshotItem[];
+  sizePreset: PanelSizePreset;
 }
 
 const streamClient = new PanelStreamClient();
@@ -61,7 +64,26 @@ export const usePanelStore = defineStore("panel", () => {
     streamLog: [],
     fetchSnapshot: null,
     layoutSnapshot: [],
+    sizePreset: "balanced",
   });
+
+  function applySizePresetStyles(preset: PanelSizePreset) {
+    const cfg = PANEL_SIZE_PRESETS[preset];
+    const root = document.documentElement;
+    root.style.setProperty("--panel-grid-gap", `${cfg.gridGap}px`);
+    root.style.setProperty("--panel-card-padding", `${cfg.cardPadding}px`);
+    root.style.setProperty("--panel-card-radius", `${cfg.cardRadius}px`);
+    root.style.setProperty("--panel-font-scale", `${cfg.fontScale}`);
+    root.style.setProperty("--panel-heading-size", `${cfg.headingSize}px`);
+    root.style.setProperty("--panel-meta-size", `${cfg.metaSize}px`);
+    root.style.setProperty("--panel-spacing-scale", `${cfg.spacingScale}`);
+  }
+
+  watch(
+    () => state.value.sizePreset,
+    (preset) => applySizePresetStyles(preset),
+    { immediate: true }
+  );
 
   const hasPanel = computed(() => !!state.value.layout && state.value.blocks.length > 0);
 
@@ -190,6 +212,12 @@ export const usePanelStore = defineStore("panel", () => {
     return state.value.layoutSnapshot ?? [];
   }
 
+  function setSizePreset(preset: PanelSizePreset) {
+    if (PANEL_SIZE_PRESETS[preset]) {
+      state.value.sizePreset = preset;
+    }
+  }
+
   return {
     state,
     hasPanel,
@@ -200,5 +228,6 @@ export const usePanelStore = defineStore("panel", () => {
     getLayoutNodes,
     setLayoutSnapshot,
     getLayoutSnapshot,
+    setSizePreset,
   };
 });

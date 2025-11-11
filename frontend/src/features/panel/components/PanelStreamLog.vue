@@ -1,24 +1,39 @@
 <template>
-  <section class="log-card">
-    <header>
-      <h2>流式进度</h2>
-      <span v-if="fetchSnapshot" class="fetch-info">
-        数据获取：{{ fetchSnapshot.items_count }} 条 / {{ fetchSnapshot.block_count }} 块
-      </span>
-    </header>
-
-    <ol>
-      <li v-for="item in log" :key="item.timestamp + item.type">
-        <span class="timestamp">{{ formatTime(item.timestamp) }}</span>
-        <span class="type">{{ renderType(item) }}</span>
-        <span class="detail">{{ renderDetail(item) }}</span>
-      </li>
-    </ol>
-  </section>
+  <Card>
+    <CardHeader>
+      <p class="text-[11px] uppercase tracking-[0.4em] text-muted-foreground">流式进度</p>
+      <div class="flex items-center justify-between text-sm text-muted-foreground">
+        <span>AI Channel</span>
+        <span v-if="fetchSnapshot" class="rounded-full bg-muted px-2 py-0.5 text-xs">
+          items {{ fetchSnapshot.items_count }} / blocks {{ fetchSnapshot.block_count }}
+        </span>
+      </div>
+    </CardHeader>
+    <CardContent class="space-y-3">
+      <div class="flex max-h-72 flex-col gap-2 overflow-y-auto rounded-xl border border-border/50 bg-muted/30 p-3 font-mono text-xs">
+        <template v-if="log.length">
+          <article
+            v-for="item in log"
+            :key="item.timestamp + item.type"
+            class="rounded-lg border border-border/40 bg-background/80 p-3"
+            :class="logVariant(item.type)"
+          >
+            <div class="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wide">
+              <span>{{ formatTime(item.timestamp) }}</span>
+              <span>{{ renderType(item) }}</span>
+            </div>
+            <p class="text-sm text-foreground">{{ renderDetail(item) }}</p>
+          </article>
+        </template>
+        <p v-else class="text-center text-sm text-muted-foreground">等待流式输出...</p>
+      </div>
+    </CardContent>
+  </Card>
 </template>
 
 <script setup lang="ts">
-import type { StreamMessage, PanelStreamFetchPayload } from "../../../shared/types/panel";
+import type { PanelStreamFetchPayload, StreamMessage } from "@/shared/types/panel";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 defineProps<{
   log: StreamMessage[];
@@ -32,10 +47,10 @@ function formatTime(input: string): string {
 }
 
 function renderType(message: StreamMessage): string {
-  if (message.type === "stage") return `阶段: ${message.stage}`;
-  if (message.type === "data") return `数据: ${message.stage}`;
-  if (message.type === "error") return "错误";
-  return "完成";
+  if (message.type === "stage") return `Stage · ${message.stage}`;
+  if (message.type === "data") return `Data · ${message.stage}`;
+  if (message.type === "error") return "Error";
+  return "Complete";
 }
 
 function renderDetail(message: StreamMessage): string {
@@ -50,10 +65,7 @@ function renderDetail(message: StreamMessage): string {
         const payload = message.data;
         return `items=${payload.items_count}, blocks=${payload.block_count}, cache=${payload.cache_hit ?? "-"}`;
       }
-      if (message.stage === "summary") {
-        return message.data.message;
-      }
-      return "";
+      return typeof message.data?.message === "string" ? message.data.message : "";
     case "error":
       return `${message.error_code}: ${message.error_message}`;
     case "complete":
@@ -62,70 +74,12 @@ function renderDetail(message: StreamMessage): string {
       return "";
   }
 }
+
+function logVariant(type: StreamMessage["type"]) {
+  if (type === "error") return "border-red-400/40 bg-red-500/10 text-red-200";
+  if (type === "data") return "border-sky-400/40 bg-sky-500/10 text-sky-200";
+  if (type === "stage") return "border-indigo-400/40 bg-indigo-500/10 text-indigo-200";
+  if (type === "complete") return "border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
+  return "";
+}
 </script>
-
-<style scoped>
-.log-card {
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  padding: 16px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-}
-
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 12px;
-}
-
-h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.fetch-info {
-  font-size: 12px;
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.12);
-  padding: 4px 8px;
-  border-radius: 999px;
-}
-
-ol {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-li {
-  display: grid;
-  grid-template-columns: 80px 90px 1fr;
-  gap: 8px;
-  font-size: 13px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: rgba(148, 163, 184, 0.08);
-}
-
-.timestamp {
-  color: #475569;
-}
-
-.type {
-  font-weight: 600;
-  color: #1d4ed8;
-}
-
-.detail {
-  color: #0f172a;
-}
-</style>

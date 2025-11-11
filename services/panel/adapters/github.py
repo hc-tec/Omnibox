@@ -119,9 +119,9 @@ def github_trending_adapter(
                     "description_field": "summary",
                     "pub_date_field": "published_at",
                 },
-                options={"show_description": True, "span": 12},
+                options={"show_description": True, "span": 12, "layout_size": "full"},
                 title=payload.get("title") or "GitHub Trending",
-                layout_hint=LayoutHint(span=12, min_height=320),
+                layout_hint=LayoutHint(layout_size="full", span=12, min_height=320),
                 confidence=0.74,
             )
         )
@@ -134,9 +134,9 @@ def github_trending_adapter(
                     "y_field": "y",
                     "series_field": "series",
                 },
-                options={"area_style": False, "span": 12},
+                options={"area_style": False, "span": 12, "layout_size": "full"},
                 title=f"{payload.get('title') or 'GitHub Trending'} Stars",
-                layout_hint=LayoutHint(span=12, min_height=280),
+                layout_hint=LayoutHint(layout_size="full", span=12, min_height=280),
                 confidence=0.65,
             )
         )

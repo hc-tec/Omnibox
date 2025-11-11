@@ -143,6 +143,26 @@ def ensure_image_gallery(records: Sequence[Dict[str, Any]]) -> List[ImageGallery
     return [ImageGalleryRecord.model_validate(record) for record in records]
 
 
+class MediaCardRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(..., description="Unique record identifier")
+    title: str = Field(..., description="Display title")
+    link: Optional[str] = Field(None, description="Target hyperlink")
+    cover_url: Optional[str] = Field(None, description="Card cover image")
+    summary: Optional[str] = Field(None, description="Short description")
+    author: Optional[str] = Field(None, description="Creator display name")
+    duration: Optional[str] = Field(None, description="Duration text, e.g. 03:20")
+    view_count: Optional[float] = Field(None, description="Numeric view count")
+    like_count: Optional[float] = Field(None, description="Numeric like count")
+    badges: Optional[List[str]] = Field(None, description="Badges/tags for the card")
+    published_at: Optional[str] = Field(None, description="ISO8601 timestamp")
+
+
+def ensure_media_cards(records: Sequence[Dict[str, Any]]) -> List[MediaCardRecord]:
+    return [MediaCardRecord.model_validate(record) for record in records]
+
+
 def ensure_number_view(records: Sequence[Dict[str, Any]]) -> List[NumberViewRecord]:
     return [NumberViewRecord.model_validate(record) for record in records]
 
@@ -185,6 +205,8 @@ class ContractViolation(ValueError):
 
 def validate_records(component_id: str, records: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     try:
+        if component_id == "MediaCardGrid":
+            return [model.model_dump() for model in ensure_media_cards(records)]
         if component_id == "ListPanel":
             return [model.model_dump() for model in ensure_list_panel(records)]
         if component_id == "LineChart":

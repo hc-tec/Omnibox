@@ -94,7 +94,7 @@ Omnibox 会自动：
 
 ---
 
-## 🚀 快速开始（5 分钟��手）
+## 🚀 快速开始（5 分钟上手）
 
 ### 环境要求
 
@@ -188,7 +188,7 @@ from orchestrator.chat_orchestrator import ChatOrchestrator
 orchestrator = ChatOrchestrator()
 
 # 查询数据
-result = orchestrator.process_query("我��看看 GitHub 今日热门项目")
+result = orchestrator.process_query("我想看看 GitHub 今日热门项目")
 
 # 查看结果
 print(result["message"])  # 用户友好的消息
@@ -345,7 +345,7 @@ cache.clear("github_trending")
 每个数据源都有对应的适配器，负责：
 - 将 RSSHub 原始数据转换为标准格式
 - 声明支持的可视化组件（Manifest）
-- 根据运行时上��文生成组件
+- 根据运行时上下文生成组件
 
 ```python
 @route_adapter("/github/trending", manifest=GITHUB_MANIFEST)

@@ -1,40 +1,31 @@
 <template>
-  <div class="empty-state">
-    <h3>欢迎使用智能数据面板</h3>
-    <p>请输入查询内容或通过 WebSocket 观察流式状态，渲染结果将出现在此处。</p>
-    <ul>
-      <li>默认查询示例：<code>虎扑步行街最新帖子</code></li>
-      <li>支持 <strong>append / replace</strong> 等布局模式</li>
-      <li>右侧“流式进度”会实时展示后端返回过程</li>
-    </ul>
-  </div>
+  <Card class="empty-state h-full items-center justify-center border-dashed border-border/70 bg-[var(--shell-surface)]/30 text-center">
+    <CardContent class="space-y-5 py-16">
+      <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+        <Sparkles class="h-8 w-8" />
+      </div>
+      <div class="space-y-3">
+        <CardTitle class="text-2xl font-semibold">{{ copy.title }}</CardTitle>
+        <p class="text-sm text-muted-foreground">
+          {{ copy.description }}
+        </p>
+      </div>
+      <div class="inline-flex flex-wrap items-center justify-center gap-3 text-[11px] uppercase tracking-[0.35em] text-muted-foreground/80">
+        <span v-for="badge in copy.badges" :key="badge" class="rounded-full border border-border/60 px-3 py-1">
+          {{ badge }}
+        </span>
+      </div>
+    </CardContent>
+  </Card>
 </template>
 
 <script setup lang="ts">
+import { Sparkles } from "lucide-vue-next";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
+
+const copy = {
+  title: "\u7b49\u5f85\u65b0\u7684\u7075\u611f",
+  description: "\u4f7f\u7528\u5feb\u6377\u952e\u5524\u9192\u8f93\u5165\u6846\uff0c\u63cf\u8ff0\u4f60\u60f3\u770b\u5230\u7684\u52a8\u6001\uff0cOmnibox \u4f1a\u81ea\u52a8\u62fc\u88c5\u5361\u7247\u3001\u56fe\u8868\u4e0e\u5e03\u5c40\u3002",
+  badges: ["Append \u6a21\u5f0f", "\u5b9e\u65f6\u6d41\u5f0f", "\u81ea\u52a8\u6392\u7248"],
+};
 </script>
-
-<style scoped>
-.empty-state {
-  border: 1px dashed rgba(148, 163, 184, 0.6);
-  border-radius: 12px;
-  padding: 36px;
-  text-align: center;
-  color: #475569;
-  background: rgba(241, 245, 249, 0.6);
-  margin-top: 12px;
-}
-
-code {
-  background: rgba(15, 23, 42, 0.08);
-  color: #0f172a;
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-
-ul {
-  margin: 16px auto 0;
-  max-width: 420px;
-  text-align: left;
-  padding-left: 18px;
-}
-</style>
