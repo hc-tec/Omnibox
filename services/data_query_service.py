@@ -322,6 +322,11 @@ class DataQueryService:
         cache_hint: str,
         prefer_single_route: bool,
     ) -> List[Dict[str, Any]]:
+        logger.info(
+            "规划数据获取任务 (prefer_single_route=%s, single_route_default=%s)",
+            prefer_single_route,
+            self.single_route_default
+        )
         tasks: List[Dict[str, Any]] = []
 
         primary_tool = rag_result.get("selected_tool") or {}
@@ -339,6 +344,7 @@ class DataQueryService:
             )
 
         if prefer_single_route:
+            logger.info("启用单路模式，仅返回 primary route")
             return tasks[:1]
 
         retrieved_tools = rag_result.get("retrieved_tools") or []

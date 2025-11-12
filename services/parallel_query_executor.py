@@ -81,7 +81,11 @@ class ParallelQueryExecutor:
             logger.warning("子查询列表为空，无需执行")
             return []
 
-        logger.info(f"开始并行执行 {len(sub_queries)} 个子查询")
+        logger.info(
+            "开始并行执行 %d 个子查询 (prefer_single_route=%s)",
+            len(sub_queries),
+            prefer_single_route
+        )
 
         # 提交所有任务
         futures = {}

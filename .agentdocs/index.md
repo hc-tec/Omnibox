@@ -49,6 +49,9 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251113-research-streaming-and-nesting.md` - **研究模式实时推送与数据归属可视化方案**（WebSocket流式推送、嵌套容器设计）
+
+## 最近完成任务文档
 - `code-review-20251113.md` - **Codex 生成代码审查报告**（P0 bug修复、P1架构改进、测试补充）[✅ 完成]
 
 ## 已完成任务文档
