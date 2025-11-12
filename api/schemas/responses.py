@@ -79,7 +79,7 @@ class ChatRequest(BaseModel):
     mode: str = Field(
         "auto",
         description="查询模式：auto(自动识别)/simple(简单查询)/research(复杂研究)",
-        regex="^(auto|simple|research)$",
+        pattern="^(auto|simple|research)$",
     )
 
 

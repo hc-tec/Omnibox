@@ -62,6 +62,7 @@ class MockChatService:
         filter_datasource: Optional[str] = None,
         use_cache: bool = True,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+        mode: str = "auto",
     ) -> SimpleChatResponse:
         """返回模拟响应，满足测试和本地无依赖场景"""
         normalized = (user_query or "").strip()
@@ -210,12 +211,43 @@ def initialize_services():
         from orchestrator.rag_in_action import create_rag_in_action
         from services.data_query_service import DataQueryService
         from services.chat_service import ChatService
+        from services.research_service import ResearchService
+        from query_processor.llm_client import create_llm_client
+        from query_processor.config import llm_settings
+
         logger.info("初始化服务（模式：%s）...", mode)
 
+        # 初始化 RAG 和数据查询服务
         rag_in_action = create_rag_in_action()
         data_query_service = DataQueryService(rag_in_action)
+
+        # 初始化 ResearchService（支持复杂研究）
+        research_service = None
+        try:
+            logger.info("初始化 ResearchService...")
+            provider = llm_settings.llm_provider
+
+            router_llm = create_llm_client(provider)
+            planner_llm = create_llm_client(provider)
+            reflector_llm = create_llm_client(provider)
+            synthesizer_llm = create_llm_client(provider)
+
+            research_service = ResearchService(
+                router_llm=router_llm,
+                planner_llm=planner_llm,
+                reflector_llm=reflector_llm,
+                synthesizer_llm=synthesizer_llm,
+                data_query_service=data_query_service,
+            )
+            logger.info("✓ ResearchService 初始化完成")
+        except Exception as res_exc:
+            logger.warning(f"ResearchService 初始化失败，研究功能将不可用: {res_exc}")
+            research_service = None
+
+        # 初始化 ChatService（注入 ResearchService）
         _chat_service = ChatService(
             data_query_service,
+            research_service=research_service,
             manage_data_service=True,
         )
         _service_mode = "production"
@@ -436,4 +468,3 @@ async def get_metrics() -> dict:
             "error": str(e),
             "data": None
         }
-

@@ -150,3 +150,45 @@ def test_chat_service_ignores_empty_planner_components(monkeypatch):
 
     requested = recording_generator.block_inputs[0].requested_components
     assert requested is None
+
+
+class _StubResearchService:
+    def __init__(self):
+        self.calls = []
+
+    def research(self, user_query, filter_datasource=None):
+        self.calls.append((user_query, filter_datasource))
+        step = types.SimpleNamespace(
+            step_id=1,
+            node_name="router",
+            action="路由判定",
+            status="success",
+            timestamp="2025-11-12T00:00:00Z",
+        )
+        return types.SimpleNamespace(
+            success=True,
+            final_report="研究完成",
+            execution_steps=[step],
+            data_stash=[],
+            metadata={"thread_id": "thread-1"},
+            error=None,
+        )
+
+
+def test_chat_service_handles_research_mode():
+    data_service = _DummyDataQueryService(_make_success_query_result())
+    research_stub = _StubResearchService()
+    chat = ChatService(
+        data_query_service=data_service,
+        intent_service=_DummyIntentService(),
+        research_service=research_stub,
+    )
+
+    response = chat.chat("需要复杂研究", mode="research")
+
+    assert research_stub.calls == [("需要复杂研究", None)]
+    assert response.intent_type == "research"
+    assert response.metadata["mode"] == "research"
+    assert response.metadata["total_steps"] == 1
+    assert response.metadata["execution_steps"][0]["step_id"] == 1
+    assert response.message == "研究完成"

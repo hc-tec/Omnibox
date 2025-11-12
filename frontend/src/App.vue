@@ -48,6 +48,16 @@
           class="canvas-flow mx-auto w-full px-4 py-12 pb-28 sm:px-6 md:px-10 md:py-8 2xl:px-8"
           style="max-width: clamp(320px, calc(100vw - 4rem), 2400px);"
         >
+          <!-- Research Live Cards -->
+          <div v-if="activeTasks.length > 0" class="research-cards-grid mb-6">
+            <ResearchLiveCard
+              v-for="task in activeTasks"
+              :key="task.task_id"
+              :task="task"
+              @delete="handleDeleteTask"
+            />
+          </div>
+
           <PanelWorkspace class="min-h-[70vh]" :auto-initialize="false" />
           <div class="hud mt-10 flex flex-wrap items-center justify-center gap-4 text-[11px] uppercase tracking-[0.35em] text-muted-foreground/80">
             <span class="rounded-full border border-border/60 px-4 py-1">{{ version ? `Desktop v${version}` : "Waiting for Desktop..." }}</span>
@@ -84,6 +94,9 @@
       :fetch-snapshot="panelState.fetchSnapshot"
       @close="inspectorOpen = false"
     />
+
+    <!-- Action Inbox for Research Tasks -->
+    <ActionInbox />
   </div>
 </template>
 
@@ -94,9 +107,13 @@ import PanelWorkspace from "@/features/panel/PanelWorkspace.vue";
 import CommandPalette from "@/features/panel/components/CommandPalette.vue";
 import InspectorDrawer from "@/features/panel/components/InspectorDrawer.vue";
 import WindowControls from "@/components/system/WindowControls.vue";
+import ResearchLiveCard from "@/features/research/components/ResearchLiveCard.vue";
+import ActionInbox from "@/features/research/components/ActionInbox.vue";
 import { usePanelActions } from "@/features/panel/usePanelActions";
 import { usePanelStore } from "@/store/panelStore";
+import { useResearchStore } from "@/features/research/stores/researchStore";
 import type { PanelSizePreset } from "@/shared/panelSizePresets";
+import type { QueryMode, ResearchResponse } from "@/features/research/types/researchTypes";
 
 const version = ref<string | null>(null);
 const inspectorOpen = ref(false);
@@ -106,6 +123,7 @@ const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null);
 
 const { state: panelState, query, submit, reset } = usePanelActions();
 const panelStore = usePanelStore();
+const researchStore = useResearchStore();
 const sizePreset = computed(() => panelStore.state.sizePreset);
 const sizeOptions: { label: string; value: PanelSizePreset }[] = [
   { label: "紧凑", value: "compact" },
@@ -113,6 +131,7 @@ const sizeOptions: { label: string; value: PanelSizePreset }[] = [
   { label: "宽松", value: "spacious" },
 ];
 const hasBlocks = computed(() => ((panelState.blocks?.length ?? 0) > 0));
+const activeTasks = computed(() => researchStore.activeTasks);
 
 const applyTheme = () => {
   const root = document.documentElement;
@@ -137,8 +156,33 @@ const handleReset = () => {
   reset();
 };
 
-const handleCommandSubmit = (payload: { query: string }) => {
-  submit(payload);
+const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) => {
+  let taskId: string | null = null;
+  if (payload.mode === "research") {
+    taskId = researchStore.createTask(payload.query, payload.mode);
+  }
+
+  try {
+    const response = await submit(payload);
+    if (taskId) {
+      const metadata = response?.metadata as ResearchResponse["metadata"] | undefined;
+      if (metadata?.mode === "research") {
+        researchStore.completeTask(taskId, response.message, metadata);
+      } else {
+        researchStore.setTaskError(taskId, "服务器未返回研究元数据，无法更新研究卡片。");
+      }
+    }
+  } catch (error) {
+    if (taskId) {
+      const message = error instanceof Error ? error.message : "研究请求失败";
+      researchStore.setTaskError(taskId, message);
+    }
+    throw error;
+  }
+};
+
+const handleDeleteTask = (taskId: string) => {
+  researchStore.deleteTask(taskId);
 };
 
 const setSizePreset = (preset: PanelSizePreset) => {
@@ -168,3 +212,23 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleShortcut);
 });
 </script>
+
+<style scoped>
+.research-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .research-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  }
+}
+
+@media (min-width: 1536px) {
+  .research-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  }
+}
+</style>

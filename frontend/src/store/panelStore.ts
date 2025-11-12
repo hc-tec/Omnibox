@@ -90,8 +90,9 @@ export const usePanelStore = defineStore("panel", () => {
   async function fetchPanel(
     query: string,
     filterDatasource?: string | null,
-    layoutSnapshot?: LayoutSnapshotItem[] | null
-  ) {
+    layoutSnapshot?: LayoutSnapshotItem[] | null,
+    mode?: string
+  ): Promise<PanelResponse> {
     state.value.loading = true;
     try {
       const response = await requestPanel({
@@ -99,12 +100,14 @@ export const usePanelStore = defineStore("panel", () => {
         filter_datasource: filterDatasource,
         use_cache: true,
         layout_snapshot: layoutSnapshot ?? state.value.layoutSnapshot ?? null,
+        mode: mode as any,
       });
       if (response.success && response.data) {
         applyPanelPayload(response);
       }
       state.value.message = response.message;
       state.value.metadata = response.metadata;
+      return response;
     } finally {
       state.value.loading = false;
     }
@@ -145,7 +148,7 @@ export const usePanelStore = defineStore("panel", () => {
     };
   }
 
-  function connectStream(query: string, filterDatasource?: string | null, layoutSnapshot?: LayoutSnapshotItem[] | null) {
+  function connectStream(query: string, filterDatasource?: string | null, layoutSnapshot?: LayoutSnapshotItem[] | null, mode?: string) {
     state.value.streamLoading = true;
     state.value.streamLog = [];
     state.value.fetchSnapshot = null;
@@ -156,6 +159,7 @@ export const usePanelStore = defineStore("panel", () => {
         filter_datasource: filterDatasource ?? null,
         use_cache: true,
         layout_snapshot: layoutSnapshot ?? state.value.layoutSnapshot ?? null,
+        mode: mode as any,
       },
       (message) => {
         state.value.streamLog.push(message);

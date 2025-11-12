@@ -36,6 +36,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import CommandBar from "./CommandBar.vue";
+import type { QueryMode } from "@/features/research/types/researchTypes";
 
 const props = defineProps<{
   loading: boolean;
@@ -44,7 +45,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: "submit", payload: { query: string }): void;
+  (event: "submit", payload: { query: string; mode: QueryMode }): void;
   (event: "reset-panels"): void;
 }>();
 
@@ -69,7 +70,7 @@ const closePalette = () => {
   open.value = false;
 };
 
-const handleSubmit = (payload: { query: string }) => {
+const handleSubmit = (payload: { query: string; mode: QueryMode }) => {
   emit("submit", payload);
   closePalette();
 };

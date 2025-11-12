@@ -37,19 +37,41 @@
         </Button>
       </div>
 
-      <div v-if="!condensed" class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span class="tracking-[0.4em] uppercase text-muted-foreground/70">{{ copy.samplesLabel }}</span>
-        <Button
-          v-for="sample in samples"
-          :key="sample"
-          variant="outline"
-          size="sm"
-          type="button"
-          class="rounded-full border-dashed border-border/70 text-foreground hover:border-foreground/80"
-          @click="useSample(sample)"
-        >
-          {{ sample }}
-        </Button>
+      <div v-if="!condensed" class="flex flex-col gap-3">
+        <!-- Mode Selector -->
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] uppercase tracking-[0.4em] text-muted-foreground/70">模式</span>
+          <div class="flex gap-2">
+            <Button
+              v-for="mode in modes"
+              :key="mode.value"
+              :variant="queryMode === mode.value ? 'default' : 'outline'"
+              size="sm"
+              type="button"
+              class="rounded-full text-xs h-7 px-3"
+              @click="queryMode = mode.value"
+            >
+              <component :is="mode.icon" class="h-3 w-3 mr-1" />
+              {{ mode.label }}
+            </Button>
+          </div>
+        </div>
+
+        <!-- Samples -->
+        <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span class="tracking-[0.4em] uppercase text-muted-foreground/70">{{ copy.samplesLabel }}</span>
+          <Button
+            v-for="sample in samples"
+            :key="sample"
+            variant="outline"
+            size="sm"
+            type="button"
+            class="rounded-full border-dashed border-border/70 text-foreground hover:border-foreground/80"
+            @click="useSample(sample)"
+          >
+            {{ sample }}
+          </Button>
+        </div>
       </div>
 
       <div v-if="!condensed" class="flex flex-wrap items-center justify-between gap-3 text-[12px] uppercase tracking-[0.4em] text-muted-foreground/70">
@@ -69,9 +91,10 @@
 </template>
 
 <script setup lang="ts">
-import { Sparkles } from "lucide-vue-next";
+import { Sparkles, Zap, Search, Brain } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { onMounted, ref, watch, defineExpose, computed } from "vue";
+import type { QueryMode } from "@/shared/types/panel";
 
 const props = defineProps<{
   loading: boolean;
@@ -81,10 +104,16 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: "submit", payload: { query: string }): void;
+  (event: "submit", payload: { query: string; mode: QueryMode }): void;
   (event: "reset-panels"): void;
   (event: "focus-change", value: boolean): void;
 }>();
+
+const modes = [
+  { value: 'auto' as QueryMode, label: '自动', icon: Zap },
+  { value: 'simple' as QueryMode, label: '简单', icon: Search },
+  { value: 'research' as QueryMode, label: '研究', icon: Brain },
+];
 
 const copy = {
   label: "\u8f93\u5165\u6307\u4ee4",
@@ -103,6 +132,7 @@ const copy = {
 
 const samples = copy.samples;
 const localQuery = ref(props.defaultQuery);
+const queryMode = ref<QueryMode>('auto');
 const inputRef = ref<HTMLInputElement | null>(null);
 const hovered = ref(false);
 const focused = ref(false);
@@ -130,7 +160,7 @@ defineExpose({ focusInput });
 function handleSubmit() {
   const value = localQuery.value.trim();
   if (!value) return;
-  emit("submit", { query: value });
+  emit("submit", { query: value, mode: queryMode.value });
 }
 
 function useSample(sample: string) {

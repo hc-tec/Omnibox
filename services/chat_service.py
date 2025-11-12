@@ -538,6 +538,13 @@ class ChatService:
             self.data_query_service.close()
             logger.info("ChatService 已关闭（管理 DataQueryService 资源）")
 
+        if self.research_service and hasattr(self.research_service, "close"):
+            try:
+                self.research_service.close()
+                logger.info("ResearchService 已关闭")
+            except Exception as exc:  # pragma: no cover
+                logger.warning("ResearchService 关闭失败: %s", exc)
+
     def __enter__(self):
         """上下文管理器入口。"""
         return self

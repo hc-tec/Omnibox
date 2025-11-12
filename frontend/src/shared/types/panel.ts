@@ -181,15 +181,19 @@ export type StreamMessage =
       total_time?: number;
     };
 
+export type QueryMode = 'auto' | 'simple' | 'research';
+
 export interface ChatRequestParams {
   query: string;
   filter_datasource?: string | null;
   use_cache?: boolean;
   layout_snapshot?: LayoutSnapshotItem[] | null;
+  mode?: QueryMode;
 }
 
 export interface StreamRequestPayload extends ChatRequestParams {
   use_cache?: boolean;
+  mode?: QueryMode;
 }
 
 

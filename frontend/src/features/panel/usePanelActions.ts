@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { usePanelStore } from "../../store/panelStore";
+import type { PanelResponse } from "@/shared/types/panel";
 
 export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
   const panelStore = usePanelStore();
@@ -10,16 +11,16 @@ export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
 
   const isBusy = computed(() => state.value.loading || state.value.streamLoading);
 
-  const submit = async (payload: { query: string; datasource?: string | null }) => {
+  const submit = async (payload: { query: string; datasource?: string | null; mode?: string }): Promise<PanelResponse> => {
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
-    await panelStore.fetchPanel(query.value, datasource.value, panelStore.getLayoutSnapshot());
+    return panelStore.fetchPanel(query.value, datasource.value, panelStore.getLayoutSnapshot(), payload.mode);
   };
 
-  const startStream = (payload: { query: string; datasource?: string | null }) => {
+  const startStream = (payload: { query: string; datasource?: string | null; mode?: string }) => {
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
-    panelStore.connectStream(query.value, datasource.value, panelStore.getLayoutSnapshot());
+    panelStore.connectStream(query.value, datasource.value, panelStore.getLayoutSnapshot(), payload.mode);
   };
 
   const stopStream = () => {

@@ -16,7 +16,17 @@
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -c \"from services.panel.adapters import get_route_adapter; adapter = get_route_adapter(''/bilibili/hot-search-test-not-exist''); result = adapter(None, [{''title'': ''test'', ''link'': ''http://test.com''}]); print(''Records:'', result.records); print(''BlockPlans:'', result.block_plans); print(''Stats:'', result.stats)\")",
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -c:*)",
       "Bash(dir:*)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_panel_adapters.py::test_bar_chart_contract -v --tb=short)"
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_panel_adapters.py::test_bar_chart_contract -v --tb=short)",
+      "Bash(python:*)",
+      "Bash(git mv:*)",
+      "Bash(move docslanggrapg-agents-design.md docslanggraph-agents-design.md)",
+      "Bash(move docslanggrapg-agents-frontend-design.md docslanggraph-agents-frontend-design.md)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/ -v --tb=short)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/test_integration.py -v --tb=short)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/ -v --tb=short --co -q)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/test_storage.py -v --tb=short)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/ -v --tb=line)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/ -v --tb=short)"
     ],
     "deny": [],
     "ask": []
