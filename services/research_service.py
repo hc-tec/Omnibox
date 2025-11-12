@@ -11,13 +11,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
-from langgraph_agents import (
-    LangGraphRuntime,
-    create_langgraph_app,
-    InMemoryResearchDataStore,
-)
-from langgraph_agents.tools import ToolRegistry
+from langgraph_agents.runtime import LangGraphRuntime, ToolExecutionContext
+from langgraph_agents.graph_builder import create_langgraph_app
+from langgraph_agents.storage import InMemoryResearchDataStore
+from langgraph_agents.tools.registry import ToolRegistry, tool
+from langgraph_agents.tools.bootstrap import register_default_tools
 from langgraph_agents.config import LangGraphConfig
+from langgraph_agents.state import ToolCall, ToolExecutionPayload
 from services.research_task_hub import ResearchTaskHub
 from services.research_constants import (
     StepStatus,
@@ -97,6 +97,12 @@ class ResearchService:
         # 初始化工具注册表
         self.tool_registry = self._init_tools()
 
+        # 创建工具执行上下文（注入依赖）
+        tool_context = ToolExecutionContext(
+            data_query_service=data_query_service,
+            note_backend=None,  # 暂不支持笔记搜索
+        )
+
         # 初始化 LangGraph 运行时
         self.runtime = LangGraphRuntime(
             router_llm=router_llm,
@@ -105,6 +111,7 @@ class ResearchService:
             synthesizer_llm=synthesizer_llm,
             tool_registry=self.tool_registry,
             data_store=self.data_store,
+            tool_context=tool_context,
         )
 
         # 创建 LangGraph 应用
@@ -178,70 +185,14 @@ class ResearchService:
         """
         初始化工具注册表。
 
-        注册默认工具：
-        - query_data: 查询数据源
-        - search_notes: 搜索笔记（如果启用）
+        使用 langgraph_agents 提供的默认工具：
+        - fetch_public_data: 查询公共数据源（RSSHub）
+        - search_private_notes: 搜索私人笔记（如果启用）
         """
         registry = ToolRegistry()
 
-        # 工具 1: 查询数据
-        @registry.register_tool(
-            plugin_id="query_data",
-            description="查询数据源获取信息。可以查询 RSS、新闻、论坛、社交媒体等各类数据源。",
-            schema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "查询内容，用自然语言描述需要什么数据",
-                    },
-                    "datasource": {
-                        "type": "string",
-                        "description": "指定数据源（可选），如 'github'、'bilibili'、'zhihu' 等",
-                    },
-                },
-                "required": ["query"],
-            },
-        )
-        def query_data_tool(query: str, datasource: Optional[str] = None):
-            """查询数据工具"""
-            try:
-                result = self.data_query_service.query(
-                    user_query=query,
-                    filter_datasource=datasource,
-                    use_cache=True,
-                )
-
-                if result.status == "success":
-                    # 限制返回数据量，避免状态膨胀
-                    items = result.feed_items[:20] if result.feed_items else []
-                    return {
-                        "status": "success",
-                        "feed_title": result.feed_title,
-                        "source": result.source,
-                        "item_count": len(items),
-                        "items": [
-                            {
-                                "title": item.title,
-                                "link": item.link,
-                                "description": item.description[:200]
-                                if item.description
-                                else None,  # 截断描述
-                                "pubDate": item.pubDate,
-                                "author": item.author,
-                            }
-                            for item in items
-                        ],
-                    }
-                else:
-                    return {
-                        "status": result.status,
-                        "error": result.clarification_question or "查询失败",
-                    }
-
-            except Exception as exc:
-                logger.error(f"query_data 工具执行失败: {exc}", exc_info=True)
-                return {"status": "error", "error": str(exc)}
+        # 注册默认工具（fetch_public_data 和 search_private_notes）
+        register_default_tools(registry)
 
         logger.info(f"已注册 {len(registry.list_tools())} 个工具")
         return registry

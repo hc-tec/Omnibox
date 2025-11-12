@@ -5,7 +5,7 @@
 
 import logging
 import os
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 from dataclasses import dataclass, field
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool

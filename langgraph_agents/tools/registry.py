@@ -45,6 +45,16 @@ class ToolRegistry:
         )
         logger.info("注册工具: %s - %s", plugin_id, description)
 
+    # 兼容旧接口（某些调用方使用 register_tool）
+    def register_tool(
+        self,
+        plugin_id: str,
+        handler: ToolHandler,
+        description: str,
+        schema: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self.register(plugin_id, handler, description, schema)
+
     def get(self, plugin_id: str) -> ToolSpec:
         if plugin_id not in self._tools:
             raise KeyError(f"未找到工具: {plugin_id}")
@@ -81,4 +91,3 @@ def tool(
         return func
 
     return decorator
-
