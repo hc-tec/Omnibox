@@ -1,4 +1,41 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8001/api/v1";
+function ensureAbsoluteHttpBase(url: string | undefined): string {
+  const fallback = "http://localhost:8001/api/v1";
+  const value = (url ?? "").trim();
+
+  const effectiveOrigin =
+    typeof window !== "undefined" && window.location?.origin?.startsWith("http")
+      ? window.location.origin
+      : fallback;
+
+  if (!value) {
+    return fallback;
+  }
+
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value.replace(/\/$/, "");
+  }
+
+  if (value.startsWith("/")) {
+    return `${effectiveOrigin}${value}`.replace(/\/$/, "");
+  }
+
+  return `${effectiveOrigin}/${value}`.replace(/\/$/, "");
+}
+
+function ensureAbsoluteWsBase(url: string | undefined): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  if (trimmed.startsWith("ws://") || trimmed.startsWith("wss://")) {
+    return trimmed.replace(/\/$/, "");
+  }
+
+  return normalizeWebSocketBase(ensureAbsoluteHttpBase(trimmed));
+}
+
+const API_BASE = ensureAbsoluteHttpBase(import.meta.env.VITE_API_BASE);
 
 function normalizeWebSocketBase(httpUrl: string): string {
   if (httpUrl.startsWith("https://")) {
@@ -11,7 +48,7 @@ function normalizeWebSocketBase(httpUrl: string): string {
 }
 
 const DEFAULT_WS_BASE = `${normalizeWebSocketBase(API_BASE)}/research/stream`;
-const RESEARCH_WS_BASE = import.meta.env.VITE_RESEARCH_WS_BASE ?? DEFAULT_WS_BASE;
+const RESEARCH_WS_BASE = ensureAbsoluteWsBase(import.meta.env.VITE_RESEARCH_WS_BASE) ?? DEFAULT_WS_BASE;
 
 export type ResearchStreamEventType =
   | "step"
