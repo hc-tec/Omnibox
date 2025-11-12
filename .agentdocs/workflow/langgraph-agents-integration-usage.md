@@ -155,16 +155,12 @@ async function submitQuery() {
 </script>
 ```
 
-### 2. 显示研究进度（可选）
+### 2. 显示研究进度（推荐 WebSocket）
 
-如果需要实时显示研究进度，可以：
-
-1. **方案 A**：轮询方式
-   - 前端定时请求进度状态（需要后端额外实现进度查询接口）
-
-2. **方案 B**：WebSocket 方式（推荐）
-   - 使用 WebSocket 实时推送每个步骤
-   - 已在 `langgraph-agents-integration-plan.md` 中设计，待实现
+- 端点：`GET /api/v1/research/stream?task_id=xxx`
+- 前端：`ResearchStreamClient`（`frontend/src/features/research/services/researchStream.ts`）在 `researchStore.createTask()` 时自动连接
+- 事件类型：`step`、`human_in_loop`、`human_response_ack`、`complete`、`error`、`cancelled`
+- 如果无法使用 WebSocket，可退化为轮询任务状态接口（需自行实现）
 
 ---
 

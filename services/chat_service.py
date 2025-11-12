@@ -111,6 +111,7 @@ class ChatService:
         use_cache: bool = True,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
         mode: str = "auto",  # 新增：auto / simple / research
+        client_task_id: Optional[str] = None,
     ) -> ChatResponse:
         """
         处理用户查询。
@@ -137,6 +138,7 @@ class ChatService:
                         user_query=user_query,
                         filter_datasource=filter_datasource,
                         intent_confidence=1.0,
+                        client_task_id=client_task_id,
                     )
 
             # 阶段1：意图识别
@@ -451,6 +453,7 @@ class ChatService:
         user_query: str,
         filter_datasource: Optional[str],
         intent_confidence: float,
+        client_task_id: Optional[str] = None,
     ) -> ChatResponse:
         """
         处理复杂研究意图（多轮动态研究）。
@@ -473,11 +476,14 @@ class ChatService:
                 metadata={"error": "research_service_not_available"},
             )
 
+        task_id = client_task_id or f"task-{uuid4().hex}"
+
         try:
             # 调用 ResearchService 执行研究
             research_result = self.research_service.research(
                 user_query=user_query,
                 filter_datasource=filter_datasource,
+                task_id=task_id,
             )
 
             if research_result.success:
@@ -499,8 +505,10 @@ class ChatService:
                     "total_steps": len(research_result.execution_steps),
                     "execution_steps": execution_steps,
                     "data_stash_count": len(research_result.data_stash),
-                    **research_result.metadata,
                 }
+                if research_result.metadata:
+                    metadata.update(research_result.metadata)
+                metadata.setdefault("task_id", task_id)
 
                 return ChatResponse(
                     success=True,
@@ -517,6 +525,7 @@ class ChatService:
                         "mode": "research",
                         "error": research_result.error,
                         "intent_confidence": intent_confidence,
+                        "task_id": task_id,
                     },
                 )
 
@@ -529,6 +538,7 @@ class ChatService:
                 metadata={
                     "mode": "research",
                     "error": str(exc),
+                    "task_id": task_id,
                 },
             )
 

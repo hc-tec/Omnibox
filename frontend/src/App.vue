@@ -163,7 +163,8 @@ const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) 
   }
 
   try {
-    const response = await submit(payload);
+    const requestPayload = taskId ? { ...payload, client_task_id: taskId } : payload;
+    const response = await submit(requestPayload);
     if (taskId) {
       const metadata = response?.metadata as ResearchResponse["metadata"] | undefined;
       if (metadata?.mode === "research") {

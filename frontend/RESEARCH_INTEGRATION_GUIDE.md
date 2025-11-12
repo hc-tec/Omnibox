@@ -1,4 +1,4 @@
-# LangGraph Agents 前端集成指南
+﻿# LangGraph Agents 前端集成指南
 
 ## ✅ 已完成的工作
 
@@ -48,106 +48,48 @@ npx shadcn-vue@latest add textarea
 
 在现有的聊天界面添加研究功能：
 
-```vue
-<template>
-  <div class="app-container">
-    <!-- 原有的聊天输入区域 -->
-    <div class="chat-input-area">
-      <!-- 添加模式选择器 -->
-      <QueryModeSelector v-model="queryMode" />
+## 🧠 集成要点（App.vue）
 
-      <!-- 原有的输入框 -->
-      <input v-model="userQuery" @keyup.enter="handleSubmit" />
-      <button @click="handleSubmit">发送</button>
-    </div>
+1. 使用 useResearchStore() 在研究模式下生成 	askId，并把它作为 client_task_id 透传给 /api/v1/chat
+2. esearchStore 在创建任务时会自动实例化 ResearchStreamClient，监听 /api/v1/research/stream?task_id=xxx
+3. 当 REST 响应返回 metadata 时，根据 metadata.mode 决定是否进入研究流程
 
-    <!-- 研究任务卡片区域（新增） -->
-    <div v-if="activeTasks.length > 0" class="research-cards">
-      <ResearchLiveCard
-        v-for="task in activeTasks"
-        :key="task.task_id"
-        :task="task"
-        @delete="handleDeleteTask"
-      />
-    </div>
-
-    <!-- 原有的内容区域 -->
-    <div class="content-area">
-      <!-- 原有内容 -->
-    </div>
-
-    <!-- Action Inbox（全局浮动组件） -->
-    <ActionInbox />
-  </div>
-</template>
-
-<script setup lang="ts">
-import { ref, computed } from 'vue';
-import QueryModeSelector from '@/features/research/components/QueryModeSelector.vue';
-import ResearchLiveCard from '@/features/research/components/ResearchLiveCard.vue';
-import ActionInbox from '@/features/research/components/ActionInbox.vue';
-import { useResearchStore } from '@/features/research/stores/researchStore';
-import { researchApi } from '@/features/research/services/researchApi';
-import type { QueryMode } from '@/features/research/types/researchTypes';
-
-const researchStore = useResearchStore();
-const userQuery = ref('');
-const queryMode = ref<QueryMode>('auto');
-
-const activeTasks = computed(() => researchStore.activeTasks);
-
-async function handleSubmit() {
-  if (!userQuery.value.trim()) return;
-
-  const query = userQuery.value;
-  const mode = queryMode.value;
-
-  // 创建任务
-  const taskId = researchStore.createTask(query, mode);
-
-  // 清空输入
-  userQuery.value = '';
-
+`	s
+const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) => {
+  let taskId: string | null = null;
+  if (payload.mode === 'research') {
+    taskId = researchStore.createTask(payload.query, payload.mode);
+  }
   try {
-    // 发送请求
-    const response = await researchApi.submitQuery(query, mode);
-
-    // 处理响应
-    if (response.success) {
-      if (response.metadata?.mode === 'research') {
-        // 研究模式：更新步骤
-        response.metadata.execution_steps?.forEach(step => {
-          researchStore.updateTaskStep(taskId, step);
-        });
+    const response = await submit({ ...payload, client_task_id: taskId ?? undefined });
+    if (taskId) {
+      const metadata = response.metadata as ResearchResponse['metadata'] | undefined;
+      if (metadata?.mode === 'research') {
+        researchStore.completeTask(taskId, response.message, metadata);
+      } else {
+        researchStore.setTaskError(taskId, '服务器未返回研究元数据');
       }
-
-      // 完成任务
-      researchStore.completeTask(taskId, response.message);
-    } else {
-      researchStore.setTaskError(taskId, response.message);
     }
   } catch (error) {
-    researchStore.setTaskError(
-      taskId,
-      `请求失败: ${error instanceof Error ? error.message : '未知错误'}`
-    );
+    if (taskId) {
+      researchStore.setTaskError(taskId, error instanceof Error ? error.message : '研究请求失败');
+    }
+    throw error;
   }
-}
+};
+`
 
-function handleDeleteTask(taskId: string) {
-  researchStore.deleteTask(taskId);
-}
-</script>
+## 📨 ActionInbox
+- 入口：rontend/src/features/research/components/ActionInbox.vue
+- 调用：esearchApi.submitHumanResponse / esearchApi.cancelTask
+- 收敛：WebSocket 推送 human_response_ack 后，store 会把任务重新标记为 processing
 
-<style scoped>
-.research-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-</style>
-```
+## 🔌 WebSocket 客户端
+- rontend/src/features/research/services/researchStream.ts
+- 默认地址：${VITE_API_BASE}/research/stream
+- 事件类型：step、human_in_loop、human_response_ack、complete、error、cancelled
+- 断线策略：任务完成/报错/取消时自动断开，防止资源泄露
+
 
 ---
 
@@ -328,3 +270,4 @@ npm install lucide-vue-next
 ---
 
 **当前状态**: ✅ 基础功能已完成，可以开始测试！
+

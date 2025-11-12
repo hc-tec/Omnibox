@@ -63,6 +63,7 @@ export interface ResearchResponse {
     execution_steps?: ExecutionStep[];
     data_stash_count?: number;
     thread_id?: string;
+    task_id?: string;
     intent_confidence?: number;
   };
 }

@@ -91,7 +91,8 @@ export const usePanelStore = defineStore("panel", () => {
     query: string,
     filterDatasource?: string | null,
     layoutSnapshot?: LayoutSnapshotItem[] | null,
-    mode?: string
+    mode?: string,
+    clientTaskId?: string | null
   ): Promise<PanelResponse> {
     state.value.loading = true;
     try {
@@ -101,6 +102,7 @@ export const usePanelStore = defineStore("panel", () => {
         use_cache: true,
         layout_snapshot: layoutSnapshot ?? state.value.layoutSnapshot ?? null,
         mode: mode as any,
+        client_task_id: clientTaskId ?? null,
       });
       if (response.success && response.data) {
         applyPanelPayload(response);

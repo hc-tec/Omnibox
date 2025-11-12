@@ -57,6 +57,16 @@
           </AlertDescription>
         </Alert>
       </div>
+
+      <div
+        v-if="task.metadata"
+        class="mt-4 border-t border-border/60 pt-3 text-[12px] text-muted-foreground space-y-1"
+      >
+        <div v-if="task.metadata.task_id"><span class="font-semibold">任务ID：</span><code>{{ task.metadata.task_id }}</code></div>
+        <div v-if="task.metadata.thread_id"><span class="font-semibold">线程：</span><code>{{ task.metadata.thread_id }}</code></div>
+        <div v-if="task.metadata.total_steps"><span class="font-semibold">总步骤：</span>{{ task.metadata.total_steps }}</div>
+        <div v-if="task.metadata.data_stash_count !== undefined"><span class="font-semibold">缓存片段：</span>{{ task.metadata.data_stash_count }}</div>
+      </div>
     </CardContent>
 
     <CardFooter v-if="task.status === 'completed' || task.status === 'error'" class="justify-between">

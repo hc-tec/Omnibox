@@ -50,6 +50,17 @@ class ResponseMetadata(BaseModel):
         None,
         description="调试信息（耗时、降级情况等）",
     )
+    mode: Optional[str] = Field(None, description="查询模式")
+    task_id: Optional[str] = Field(None, description="研究任务ID")
+    thread_id: Optional[str] = Field(None, description="LangGraph 线程 ID")
+    total_steps: Optional[int] = Field(None, description="研究步骤总数")
+    execution_steps: Optional[List[Dict[str, Any]]] = Field(
+        None, description="研究步骤明细（仅研究模式返回）"
+    )
+    data_stash_count: Optional[int] = Field(None, description="数据仓条目数量")
+    warnings: Optional[List[Dict[str, Any]]] = Field(
+        None, description="面板生成过程中的警告列表"
+    )
 
 
 class LayoutSnapshotItem(BaseModel):
@@ -80,6 +91,11 @@ class ChatRequest(BaseModel):
         "auto",
         description="查询模式：auto(自动识别)/simple(简单查询)/research(复杂研究)",
         pattern="^(auto|simple|research)$",
+    )
+    client_task_id: Optional[str] = Field(
+        default=None,
+        description="客户端生成的研究任务ID（研究实时流使用，可选）",
+        max_length=128,
     )
 
 

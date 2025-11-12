@@ -3,6 +3,13 @@ import { storeToRefs } from "pinia";
 import { usePanelStore } from "../../store/panelStore";
 import type { PanelResponse } from "@/shared/types/panel";
 
+interface SubmitPayload {
+  query: string;
+  datasource?: string | null;
+  mode?: string;
+  client_task_id?: string | null;
+}
+
 export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
   const panelStore = usePanelStore();
   const { state, hasPanel } = storeToRefs(panelStore);
@@ -11,10 +18,10 @@ export function usePanelActions(initialQuery = "我想看看bilibili热搜") {
 
   const isBusy = computed(() => state.value.loading || state.value.streamLoading);
 
-  const submit = async (payload: { query: string; datasource?: string | null; mode?: string }): Promise<PanelResponse> => {
+  const submit = async (payload: SubmitPayload): Promise<PanelResponse> => {
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
-    return panelStore.fetchPanel(query.value, datasource.value, panelStore.getLayoutSnapshot(), payload.mode);
+    return panelStore.fetchPanel(query.value, datasource.value, panelStore.getLayoutSnapshot(), payload.mode, payload.client_task_id ?? null);
   };
 
   const startStream = (payload: { query: string; datasource?: string | null; mode?: string }) => {

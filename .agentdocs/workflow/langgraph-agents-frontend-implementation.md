@@ -510,25 +510,19 @@ function closeInbox() {
 
 async function submitResponse(taskId: string) {
   const response = responses.value[taskId];
-  if (!response) return;
+  if (!response?.trim()) return;
 
   try {
-    // TODO: 发送响应到后端
-    // await api.submitHumanResponse(taskId, response);
-
-    // 清空输入
+    await researchApi.submitHumanResponse(taskId, response);
     delete responses.value[taskId];
-
-    // 更新任务状态（实际应由后端 WebSocket 推送）
-    researchStore.completeTask(taskId, '继续处理中...');
   } catch (error) {
     console.error('提交响应失败:', error);
+    alert('提交失败，请重试');
   }
 }
 
-function skipTask(taskId: string) {
-  // 标记任务为跳过（可选实现）
-  delete responses.value[taskId];
+async function skipTask(taskId: string) {
+  await researchApi.cancelTask(taskId, '用户取消');
 }
 </script>
 
@@ -825,37 +819,12 @@ npm run dev
 
 ## 可选增强
 
-### WebSocket 实时推送（推荐）
+### WebSocket 实时推送（已落地）
 
-如果需要真正的实时进度推送，需要：
-
-1. **后端实现 WebSocket**（参考 `langgraph-agents-integration-plan.md` 阶段 4）
-2. **前端添加 WebSocket 客户端**：
-
-```typescript
-// frontend/src/features/research/services/researchWebSocket.ts
-export class ResearchWebSocket {
-  private ws: WebSocket | null = null;
-
-  connect(taskId: string, onMessage: (msg: ResearchWebSocketMessage) => void) {
-    this.ws = new WebSocket(`ws://localhost:8000/api/v1/research/stream`);
-
-    this.ws.onopen = () => {
-      this.ws?.send(JSON.stringify({ task_id: taskId }));
-    };
-
-    this.ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      onMessage(message);
-    };
-  }
-
-  disconnect() {
-    this.ws?.close();
-    this.ws = null;
-  }
-}
-```
+- **后端**：`GET /api/v1/research/stream?task_id=xxx`
+- **前端实现**：`frontend/src/features/research/services/researchStream.ts`
+- **Store集成**：`researchStore.createTask()` 会自动调用 `ResearchStreamClient.connect`，任务结束后自动断开
+- **事件**：`step`、`human_in_loop`、`human_response_ack`、`complete`、`error`、`cancelled`
 
 ---
 
@@ -868,6 +837,7 @@ export class ResearchWebSocket {
 ✅ Action Inbox 组件（异步交互）
 ✅ Query Mode Selector（模式选择）
 ✅ API 服务层
+✅ WebSocket 客户端（ResearchStreamClient）
 ✅ App.vue 集成示例
 
 ### 技术栈验证

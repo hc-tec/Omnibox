@@ -189,11 +189,11 @@ export interface ChatRequestParams {
   use_cache?: boolean;
   layout_snapshot?: LayoutSnapshotItem[] | null;
   mode?: QueryMode;
+  client_task_id?: string | null;
 }
 
 export interface StreamRequestPayload extends ChatRequestParams {
   use_cache?: boolean;
   mode?: QueryMode;
 }
-
 

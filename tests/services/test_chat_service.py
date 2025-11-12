@@ -156,8 +156,8 @@ class _StubResearchService:
     def __init__(self):
         self.calls = []
 
-    def research(self, user_query, filter_datasource=None):
-        self.calls.append((user_query, filter_datasource))
+    def research(self, user_query, filter_datasource=None, task_id=None):
+        self.calls.append((user_query, filter_datasource, task_id))
         step = types.SimpleNamespace(
             step_id=1,
             node_name="router",
@@ -170,7 +170,7 @@ class _StubResearchService:
             final_report="研究完成",
             execution_steps=[step],
             data_stash=[],
-            metadata={"thread_id": "thread-1"},
+            metadata={"thread_id": "thread-1", "task_id": task_id or "task-stub"},
             error=None,
         )
 
@@ -184,11 +184,13 @@ def test_chat_service_handles_research_mode():
         research_service=research_stub,
     )
 
-    response = chat.chat("需要复杂研究", mode="research")
+    client_task_id = "task-client-123"
+    response = chat.chat("需要复杂研究", mode="research", client_task_id=client_task_id)
 
-    assert research_stub.calls == [("需要复杂研究", None)]
+    assert research_stub.calls == [("需要复杂研究", None, client_task_id)]
     assert response.intent_type == "research"
     assert response.metadata["mode"] == "research"
     assert response.metadata["total_steps"] == 1
     assert response.metadata["execution_steps"][0]["step_id"] == 1
+    assert response.metadata["task_id"] == client_task_id
     assert response.message == "研究完成"

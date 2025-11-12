@@ -399,45 +399,11 @@ async def chat(request: ChatRequest):
 
 ---
 
-### 阶段 4：WebSocket 流式响应（可选）
+### 阶段 4：WebSocket 流式响应（已完成）
 
-**目标**：前端实时查看研究进展
-
-**实现**：通过 WebSocket 推送每个步骤的事件
-
-```python
-@router.websocket("/research/stream")
-async def research_stream(websocket: WebSocket):
-    await websocket.accept()
-
-    data = await websocket.receive_json()
-    user_query = data.get("query")
-
-    def callback(event):
-        """LangGraph 事件回调"""
-        # 解析事件并推送到前端
-        message = {
-            "type": "step",
-            "node": event.get("node"),
-            "data": event.get("data"),
-        }
-        asyncio.create_task(websocket.send_json(message))
-
-    result = await run_in_threadpool(
-        _research_service.research,
-        user_query=user_query,
-        callback=callback,
-    )
-
-    # 发送最终结果
-    await websocket.send_json({
-        "type": "complete",
-        "data": {
-            "final_report": result.final_report,
-            "success": result.success,
-        },
-    })
-```
+- **端点**：`GET /api/v1/research/stream?task_id=xxx`
+- **实现**：ResearchService 在 `task_hub.ensure_task` 后注册监听队列，WebSocket 读取队列并发送 `step/human_in_loop/human_response_ack/complete/error/cancelled`
+- **配套**：`POST /api/v1/research/human-response`、`POST /api/v1/research/cancel`
 
 ---
 

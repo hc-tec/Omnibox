@@ -15,6 +15,7 @@ from api.controllers.chat_controller import (
     shutdown_services,
 )
 from api.controllers.chat_stream import router as chat_stream_router
+from api.controllers.research_controller import router as research_router
 from api.middleware.exception_handlers import (
     exception_handler_middleware,
     http_exception_handler,
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     # ========== 注册路由 ==========
     app.include_router(chat_router)
     app.include_router(chat_stream_router)  # WebSocket流式接口
+    app.include_router(research_router)
 
     # ========== 启动和关闭事件 ==========
     @app.on_event("startup")

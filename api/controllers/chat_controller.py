@@ -63,6 +63,7 @@ class MockChatService:
         use_cache: bool = True,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
         mode: str = "auto",
+        client_task_id: Optional[str] = None,
     ) -> SimpleChatResponse:
         """返回模拟响应，满足测试和本地无依赖场景"""
         normalized = (user_query or "").strip()
@@ -325,6 +326,7 @@ async def chat(
             use_cache=request.use_cache,
             layout_snapshot=request.layout_snapshot,
             mode=request.mode,  # 新增：传递查询模式
+            client_task_id=request.client_task_id,
         )
 
         metadata = None
@@ -341,6 +343,13 @@ async def chat(
                 reasoning=response.metadata.get("reasoning"),
                 component_confidence=response.metadata.get("component_confidence"),
                 debug=response.metadata.get("debug"),
+                mode=response.metadata.get("mode"),
+                task_id=response.metadata.get("task_id"),
+                thread_id=response.metadata.get("thread_id"),
+                total_steps=response.metadata.get("total_steps"),
+                execution_steps=response.metadata.get("execution_steps"),
+                data_stash_count=response.metadata.get("data_stash_count"),
+                warnings=response.metadata.get("warnings"),
             )
 
         return ChatResponse(

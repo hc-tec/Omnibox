@@ -70,12 +70,12 @@
             <p class="text-xs text-muted-foreground">提示：Ctrl + Enter 快速发送</p>
           </CardContent>
           <CardFooter class="justify-end gap-2">
-            <Button variant="outline" size="sm" @click="skipTask(task.task_id)">
-              跳过
+            <Button variant="outline" size="sm" :disabled="!!submitting[task.task_id]" @click="cancelTask(task.task_id)">
+              取消任务
             </Button>
             <Button
               size="sm"
-              :disabled="!responses[task.task_id]?.trim()"
+              :disabled="!!submitting[task.task_id] || !responses[task.task_id]?.trim()"
               @click="submitResponse(task.task_id)"
             >
               <Send class="h-4 w-4 mr-1" />
@@ -106,11 +106,13 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Wand2, Inbox, X, Brain, CheckCircle, Send } from 'lucide-vue-next';
 import { useResearchStore } from '../stores/researchStore';
+import { researchApi } from '../services/researchApi';
 
 const researchStore = useResearchStore();
 
 const isOpen = ref(false);
 const responses = ref<Record<string, string>>({});
+const submitting = ref<Record<string, boolean>>({});
 
 const pendingTasks = computed(() => researchStore.pendingHumanTasks);
 const pendingCount = computed(() => researchStore.pendingCount);
@@ -126,34 +128,34 @@ function closeInbox() {
 async function submitResponse(taskId: string) {
   const response = responses.value[taskId];
   if (!response?.trim()) return;
+  if (submitting.value[taskId]) return;
 
   try {
-    // TODO: 发送响应到后端（需要实现后端 API）
-    // await researchApi.submitHumanResponse(taskId, response);
-
-    console.log('提交响应:', taskId, response);
-
-    // 清空输入
+    submitting.value[taskId] = true;
+    await researchApi.submitHumanResponse(taskId, response);
     delete responses.value[taskId];
 
-    // 更新任务状态（实际应由后端 WebSocket 推送）
-    researchStore.completeTask(taskId, '收到您的回复，继续处理中...');
-
-    // 如果没有待处理任务了，关闭侧边栏
     if (pendingCount.value === 0) {
       closeInbox();
     }
   } catch (error) {
     console.error('提交响应失败:', error);
     alert('提交失败，请重试');
+  } finally {
+    delete submitting.value[taskId];
   }
 }
 
-function skipTask(taskId: string) {
-  // 标记任务为跳过（可选实现）
-  delete responses.value[taskId];
-  // 暂时标记为错误状态
-  researchStore.setTaskError(taskId, '用户跳过了此任务');
+async function cancelTask(taskId: string) {
+  try {
+    submitting.value[taskId] = true;
+    await researchApi.cancelTask(taskId, '用户手动取消');
+  } catch (error) {
+    console.error('取消任务失败:', error);
+    alert('取消失败，请重试');
+  } finally {
+    delete submitting.value[taskId];
+  }
 }
 </script>
 

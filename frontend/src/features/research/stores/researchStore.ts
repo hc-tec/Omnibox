@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { ResearchTask, QueryMode, ResearchResponse } from '../types/researchTypes';
+import type { ResearchTask, QueryMode, ResearchResponse, ExecutionStep } from '../types/researchTypes';
+import { ResearchStreamClient } from '../services/researchStream';
+import type { ResearchStreamEvent } from '../services/researchStream';
 
 export const useResearchStore = defineStore('research', () => {
   // 状态
@@ -28,6 +30,7 @@ export const useResearchStore = defineStore('research', () => {
   );
 
   const pendingCount = computed(() => pendingHumanTasks.value.length);
+  const streamClients = ref<Map<string, ResearchStreamClient>>(new Map());
 
   // Actions
   function createTask(query: string, mode: QueryMode): string {
@@ -43,12 +46,22 @@ export const useResearchStore = defineStore('research', () => {
     };
     tasks.value.set(taskId, task);
     activeTaskId.value = taskId;
+    if (mode === 'research') {
+      connectTaskStream(taskId);
+    }
     return taskId;
   }
 
-  function updateTaskStep(taskId: string, step: any) {
+  function updateTaskStep(taskId: string, stepData: any) {
     const task = tasks.value.get(taskId);
     if (task) {
+      const step: ExecutionStep = {
+        step_id: stepData?.step_id ?? stepData?.stepId ?? task.execution_steps.length + 1,
+        node: stepData?.node ?? stepData?.node_name ?? 'unknown',
+        action: stepData?.action ?? '',
+        status: stepData?.status ?? 'success',
+        timestamp: stepData?.timestamp ?? new Date().toISOString(),
+      };
       task.execution_steps.push(step);
       task.updated_at = new Date().toISOString();
     }
@@ -79,6 +92,7 @@ export const useResearchStore = defineStore('research', () => {
       task.final_report = report;
       task.updated_at = new Date().toISOString();
     }
+    disconnectTaskStream(taskId);
   }
 
   function setTaskError(taskId: string, error: string) {
@@ -88,6 +102,7 @@ export const useResearchStore = defineStore('research', () => {
       task.error = error;
       task.updated_at = new Date().toISOString();
     }
+    disconnectTaskStream(taskId);
   }
 
   function deleteTask(taskId: string) {
@@ -95,12 +110,75 @@ export const useResearchStore = defineStore('research', () => {
     if (activeTaskId.value === taskId) {
       activeTaskId.value = null;
     }
+    disconnectTaskStream(taskId);
   }
 
   function clearCompletedTasks() {
     completedTasks.value.forEach(task => {
       tasks.value.delete(task.task_id);
+      disconnectTaskStream(task.task_id);
     });
+  }
+
+  function connectTaskStream(taskId: string) {
+    if (streamClients.value.has(taskId)) return;
+    const client = new ResearchStreamClient();
+    client.connect(taskId, {
+      onEvent: (event) => handleStreamEvent(taskId, event),
+      onError: (error) => {
+        console.error('[ResearchStream] 连接错误', error);
+      },
+      onClose: () => {
+        streamClients.value.delete(taskId);
+      },
+    });
+    streamClients.value.set(taskId, client);
+  }
+
+  function disconnectTaskStream(taskId: string) {
+    const client = streamClients.value.get(taskId);
+    if (client) {
+      client.disconnect();
+      streamClients.value.delete(taskId);
+    }
+  }
+
+  function markTaskProcessing(taskId: string) {
+    const task = tasks.value.get(taskId);
+    if (task) {
+      task.status = 'processing';
+      task.human_request = undefined;
+      task.updated_at = new Date().toISOString();
+    }
+  }
+
+  function handleStreamEvent(taskId: string, event: ResearchStreamEvent) {
+    switch (event.type) {
+      case 'step':
+        updateTaskStep(taskId, event.data);
+        break;
+      case 'human_in_loop':
+        setTaskHumanRequest(taskId, (event.data?.message as string) || '需要补充信息');
+        break;
+      case 'human_response_ack':
+        markTaskProcessing(taskId);
+        break;
+      case 'complete':
+        completeTask(
+          taskId,
+          (event.data?.final_report as string) || '研究已完成',
+          (event.data?.metadata as ResearchResponse["metadata"] | undefined)
+        );
+        break;
+      case 'error':
+        setTaskError(taskId, (event.data?.message as string) || '研究任务失败');
+        break;
+      case 'cancelled':
+        setTaskError(taskId, (event.data?.reason as string) || '研究任务已取消');
+        break;
+      default:
+        break;
+    }
   }
 
   return {
@@ -121,5 +199,7 @@ export const useResearchStore = defineStore('research', () => {
     setTaskError,
     deleteTask,
     clearCompletedTasks,
+    connectTaskStream,
+    disconnectTaskStream,
   };
 });

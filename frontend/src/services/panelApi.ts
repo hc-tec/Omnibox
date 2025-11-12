@@ -16,6 +16,7 @@ export async function requestPanel(params: ChatRequestParams): Promise<PanelResp
     use_cache: params.use_cache ?? true,
     layout_snapshot: params.layout_snapshot ?? null,
     mode: params.mode ?? 'auto',
+    client_task_id: params.client_task_id ?? null,
   });
   return response.data;
 }

@@ -1,92 +1,60 @@
-# LangGraph Agents 前后端集成完成报告
+﻿# LangGraph Agents 前后端集成完成报告
 
 ## ✅ 已完成的工作
 
 ### 1. 后端集成（已完成）
 
-#### 1.1 ResearchService 初始化
-- **文件**: `api/controllers/chat_controller.py`
-- **修改**: 在 `initialize_services()` 函数中添加了 ResearchService 的初始化代码
-- **功能**: 在应用启动时自动初始化 ResearchService，支持复杂研究任务
+#### 1.1 ResearchService 增强
+- **文件**：`services/research_service.py`
+- **内容**：引入 `ResearchTaskHub` 统一管理任务上下文/监听队列/人工请求，支持 `client_task_id` 透传、保存最新 LangGraph state，并在收到 ActionInbox 回复后自动续写。
 
-#### 1.2 ChatService 更新
-- **文件**: `services/chat_service.py`
-- **修改**: 添加 `mode` 参数支持，新增 `_handle_research()` 方法
-- **功能**: 支持三种模式 - auto/simple/research
+#### 1.2 研究专用 API
+- **文件**：`api/controllers/research_controller.py`, `api/app.py`
+- **端点**：
+  - `GET /api/v1/research/stream`（WebSocket），推送 `step/human_in_loop/human_response_ack/complete/cancelled`
+  - `POST /api/v1/research/human-response`（ActionInbox 回复）
+  - `POST /api/v1/research/cancel`
+- **说明**：三组接口共用 ResearchService，上线前需配置 `CHAT_SERVICE_MODE=production` 以启用真实服务。
 
-#### 1.3 API Schema 更新
-- **文件**: `api/schemas/responses.py`
-- **修改**:
-  - `ChatRequest` 添加 `mode` 字段
-  - 使用 Pydantic v2 兼容的 `pattern` 替代 `regex`
-- **验证**: mode 参数支持 auto/simple/research 三种值
+#### 1.3 ChatService / Schema 同步
+- **文件**：`services/chat_service.py`, `api/schemas/responses.py`, `api/controllers/chat_controller.py`
+- **改动**：
+  - `ChatRequest` 新增 `client_task_id`
+  - `ChatResponse.metadata` 增加 `task_id/thread_id/total_steps/data_stash_count`
+  - `_handle_research` 会把 `client_task_id` 作为 ResearchService 的任务 ID，metadata 默认回填
 
-#### 1.4 MockChatService 修复
-- **文件**: `api/controllers/chat_controller.py`
-- **修改**: 添加 `layout_snapshot` 和 `mode` 参数
-- **目的**: 确保测试环境与生产环境签名一致
+#### 1.4 ResearchTaskHub
+- **文件**：`services/research_task_hub.py`
+- **功能**：持久化任务历史、人工请求、人工回复、最近 LangGraph state，并向 WebSocket 监听者推送事件；供 REST 与 WebSocket 共享。
 
----
+#### 1.5 测试/工具
+- **新增**：`tests/services/test_research_task_hub.py`（上下文事件）与 `tests/services/test_chat_service.py`（client_task_id 透传）。
+- **运行**：`pytest tests/services/test_chat_service.py tests/services/test_research_task_hub.py -q`
+
+------
 
 ### 2. 前端集成（已完成）
 
-#### 2.1 类型定义扩展
-- **文件**: `frontend/src/shared/types/panel.ts`
-- **新增**: `QueryMode` 类型定义
-- **修改**: `ChatRequestParams` 和 `StreamRequestPayload` 添加 `mode` 字段
+#### 2.1 请求参数与类型
+- **文件**：`frontend/src/shared/types/panel.ts`, `frontend/src/services/panelApi.ts`, `frontend/src/store/panelStore.ts`, `frontend/src/features/panel/usePanelActions.ts`
+- **内容**：REST / WebSocket 请求均支持 `mode` 与 `client_task_id`，研究模式下会把任务 ID 传给后端，metadata 中回传 `task_id` 供 UI 显示。
 
-#### 2.2 API 层更新
-- **文件**: `frontend/src/services/panelApi.ts`
-- **修改**:
-  - `requestPanel()` 发送 mode 参数到后端
-  - WebSocket 客户端也传递 mode 参数
+#### 2.2 研究态管理
+- **文件**：`frontend/src/features/research/stores/researchStore.ts`, `frontend/src/features/research/services/researchStream.ts`
+- **内容**：
+  - 引入 `ResearchStreamClient`，在创建研究任务时立刻连接 `/api/v1/research/stream?task_id=...`
+  - `researchStore` 统一处理 `step/human_in_loop/human_response_ack/complete/cancelled` 事件，自动更新 Pinia 状态并在任务终止时回收 WebSocket
 
-#### 2.3 状态管理更新
-- **文件**: `frontend/src/store/panelStore.ts`
-- **修改**: `fetchPanel()` 和 `connectStream()` 接受并传递 mode 参数
+#### 2.3 组件更新
+- **App.vue**：提交研究查询时创建 `taskId`，将其作为 `client_task_id` 发往 REST；任务完成或出错自动调用 store 更新
+- **ResearchLiveCard.vue**：新增 `task_id/thread_id/total_steps/data_stash_count` 调试信息区域
+- **ActionInbox.vue**：按钮行为与 `researchApi` 接口打通，支持发送人工回复、取消任务，并显示加载状态
 
-#### 2.4 Composable 更新
-- **文件**: `frontend/src/features/panel/usePanelActions.ts`
-- **修改**: `submit()` 和 `startStream()` 支持 mode 参数
+#### 2.4 文档 / 调试
+- `researchTypes.ts`、`ResearchResponse.metadata` 同步新增字段用于 TS 类型提示
+- `frontend/src/features/research/services/researchApi.ts` 读取 `VITE_API_BASE` 并暴露 `submitHumanResponse/cancelTask`
 
-#### 2.5 CommandBar 增强
-- **文件**: `frontend/src/features/panel/components/CommandBar.vue`
-- **新增功能**:
-  - 模式选择器（三个按钮：自动/简单/研究）
-  - 图标支持（Zap/Search/Brain from lucide-vue-next）
-  - 当 CommandBar 展开时显示模式选择器
-- **设计**: 与现有设计风格完美融合，使用圆形按钮和渐变效果
-
-#### 2.6 CommandPalette 更新
-- **文件**: `frontend/src/features/panel/components/CommandPalette.vue`
-- **修改**: 传递 mode 参数到 App.vue
-
-#### 2.7 App.vue 主界面集成
-- **文件**: `frontend/src/App.vue`
-- **新增组件导入**:
-  - `ResearchLiveCard` - 研究任务进度卡片
-  - `ActionInbox` - 人机交互收件箱
-  - `useResearchStore` - 研究状态管理
-
-- **新增 UI 元素**:
-  - **ResearchLiveCard 网格**:
-    - 位置：PanelWorkspace 上方
-    - 布局：响应式网格（320px/380px/420px min-width）
-    - 显示条件：仅当有 activeTasks 时显示
-
-  - **ActionInbox 浮动组件**:
-    - 位置：页面右下角（z-index: 50，高于其他内容）
-    - 功能：显示待处理的人机交互请求
-    - 交互：点击魔棒按钮打开侧边栏
-
-- **新增函数**:
-  - `handleDeleteTask()` - 删除研究任务
-
-- **新增样式**:
-  - `.research-cards-grid` - 响应式网格布局
-  - 支持 768px 和 1536px 断点
-
----
+------
 
 ### 3. 研究功能组件（已创建）
 
@@ -277,16 +245,15 @@ python -m pytest tests/api/ -v
 ## ⚠️ 已知限制和待实现功能
 
 ### 当前不支持的功能
-1. **WebSocket 实时推送** - 当前研究进度不会实时更新，需要后端实现 WebSocket endpoint
-2. **人机交互响应提交** - `ActionInbox` 中的"回复"按钮当前仅 console.log，需要后端 API `/api/v1/research/human-response`
-3. **任务取消** - 无法中途取消研究任务
-4. **任务历史** - 没有持久化存储，刷新页面后历史丢失
+1. **任务历史持久化** - 当前任务上下文保存在内存，刷新页面或后端重启后将丢失，可在后续落地数据库/IndexedDB
+2. **研究报告导出** - 暂未提供 Markdown/PDF 导出入口
+3. **多模型调度** - 仍依赖单一 LLM 配置，后续可根据任务动态选择不同 provider
 
 ### 边界情况处理
-1. **并发任务** - 支持多个研究任务同时执行
-2. **错误处理** - 前端会捕获 API 错误并显示错误状态
-3. **空状态** - 没有研究任务时，ResearchLiveCard 网格不显示
-4. **mode 默认值** - 所有地方默认值统一为 'auto'
+1. **并发任务** - Pinia store 与 WebSocket 客户端支持多任务并行，每个 taskId 维护独立连接
+2. **错误处理** - REST/WebSocket 返回 error 时会同步到卡片与 ActionInbox，便于定位
+3. **空状态** - 无任务时隐藏 ResearchLiveCard 网格与 ActionInbox badge
+4. **模式默认值** - CommandBar/CommandPalette 默认 `auto`，允许用户切换为 `simple` 或 `research`
 
 ---
 
@@ -369,3 +336,5 @@ python -m pytest tests/api/ -v
 **版本**: v1.0.0
 **完成日期**: 2025-11-12
 **负责人**: Claude Code (Sonnet 4.5)
+
+
