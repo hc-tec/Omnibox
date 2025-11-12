@@ -31,7 +31,8 @@
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.4.38",
     "vue-echarts": "^6.7.2",
-    "vue-grid-layout-v3": "^3.1.2"
+    "vue-grid-layout-v3": "^3.1.2",
+    "vue-router": "^4.0.13"
   },
   "devDependencies": {
     "@types/node": "^20.16.10",

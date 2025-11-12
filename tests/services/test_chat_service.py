@@ -21,6 +21,7 @@ if "rag_system.rag_pipeline" not in sys.modules:
 from api.schemas.panel import LayoutNode, LayoutTree, PanelPayload
 from services.chat_service import ChatService
 from services.data_query_service import DataQueryResult
+from services.llm_query_planner import QueryPlan, SubQuery
 from services.panel.component_planner import PlannerDecision
 import services.chat_service as chat_service_module
 
@@ -228,3 +229,42 @@ def test_chat_service_exposes_retrieved_tools_on_clarification():
     assert tools[0]["route"] == "/demo/:category"
     assert tools[0]["score"] == pytest.approx(0.91)
     assert tools[0]["description"] == "测试路由"
+
+
+def test_streaming_research_respects_filter_datasource():
+    """確保流式研究會應用客戶端提供的 filter_datasource。"""
+
+    class _RecordingDataQueryService:
+        def __init__(self):
+            self.calls = []
+
+        def query(self, **kwargs):
+            self.calls.append(kwargs)
+            return _make_success_query_result()
+
+    data_service = _RecordingDataQueryService()
+    chat = ChatService(data_query_service=data_service, llm_client=None)
+
+    demo_plan = QueryPlan(
+        sub_queries=[
+            SubQuery(query="demo sub", datasource=None, task_type="data_fetch"),
+        ],
+        reasoning="demo",
+        estimated_time=5,
+    )
+    chat.query_planner = types.SimpleNamespace(plan=lambda *_args, **_kwargs: demo_plan)
+    chat._build_panel = lambda *args, **kwargs: _empty_panel_result()
+
+    list(
+        chat._handle_complex_research_streaming(
+            task_id="task-stream",
+            user_query="demo request",
+            filter_datasource="github",
+            use_cache=False,
+        )
+    )
+
+    assert data_service.calls, "数据查询应至少执行一次"
+    first_call = data_service.calls[0]
+    assert first_call["filter_datasource"] == "github"
+    assert first_call["prefer_single_route"] is True

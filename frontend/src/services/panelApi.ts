@@ -5,9 +5,14 @@ import type {
   StreamMessage,
   StreamRequestPayload,
 } from "../shared/types/panel";
+import { resolveHttpBase, resolveWsBase } from "@/shared/networkBase";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8003/api/v1";
-const WS_BASE = import.meta.env.VITE_WS_BASE ?? "ws://localhost:8003/api/v1/chat/stream";
+const API_BASE = resolveHttpBase(import.meta.env.VITE_API_BASE, "/api/v1");
+const WS_BASE = resolveWsBase(
+  import.meta.env.VITE_WS_BASE,
+  "/api/v1/chat/stream",
+  API_BASE
+);
 
 export async function requestPanel(params: ChatRequestParams): Promise<PanelResponse> {
   const response = await axios.post<PanelResponse>(`${API_BASE}/chat`, {

@@ -49,9 +49,11 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251113-research-streaming-and-nesting.md` - **研究模式实时推送与数据归属可视化方案**（WebSocket流式推送、嵌套容器设计）
+- `workflow/251113-research-stream-bugfix.md` - 研究视图与流式接口缺陷修复记录（进行中）
 
 ## 最近完成任务文档
+- `workflow/251113-research-view-implementation.md` - **专属研究视图实施完成**（WebSocket流式推送、双栏布局、实时进度可视化）[✅ 完成 2025-11-13]
+- `workflow/251113-research-streaming-and-nesting.md` - **研究模式实时推送与数据归属可视化方案**（WebSocket流式推送、嵌套容器设计）[✅ 规划完成]
 - `code-review-20251113.md` - **Codex 生成代码审查报告**（P0 bug修复、P1架构改进、测试补充）[✅ 完成]
 
 ## 已完成任务文档
@@ -141,3 +143,15 @@
   - 前端 `panelStore.ts` 正确处理后端返回的 `mode` 字段（append/replace/insert），支持多轮对话时数据追加显示
   - 后端 `layout_engine.py` 使用 UUID 生成唯一 node id（`row-{batch_id}-{index}`），确保 append 模式下布局节点不重复
   - 前端包含详细的 console.log 调试日志，可查看数据合并过程
+
+### 专属研究视图（2025-11-13 新增）
+- **WebSocket 流式推送** - 后端使用 Generator 逐步 yield 研究进度消息，前端通过 WebSocket 实时接收
+- **双栏布局** - 左侧 30% 显示研究上下文（计划、步骤、进度），右侧 70% 显示数据面板和分析结果
+- **路由配置** - `/research/:taskId` 路由跳转到专属研究视图，主界面通过 `mode="research"` 触发跳转
+- **消息类型** - 6 种研究专用消息：start、step、panel、analysis、complete、error（定义在 `api/schemas/stream_messages.py:176-415`）
+- **Store 管理** - `researchViewStore.ts` 管理研究任务状态、步骤列表、面板数据、分析结果
+- **自动重连** - WebSocket 连接支持自动重连（最多 5 次，延迟递增），确保稳定性
+- **组件复用** - 数据面板复用现有的 `DynamicBlockRenderer`，无需重复开发
+- **文件清单**：
+  - 后端：`api/schemas/stream_messages.py`（消息类型）、`services/chat_service.py:790-1171`（流式生成器）、`api/controllers/research_stream.py`（WebSocket 端点）
+  - 前端：`frontend/src/views/ResearchView.vue`（主容器）、`frontend/src/composables/useResearchWebSocket.ts`（WebSocket 管理）、`frontend/src/store/researchViewStore.ts`（状态管理）、`frontend/src/features/research/components/ResearchContextPanel.vue`（左侧面板）、`frontend/src/features/research/components/ResearchDataPanel.vue`（右侧面板）
