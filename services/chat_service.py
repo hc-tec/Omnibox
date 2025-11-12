@@ -182,6 +182,7 @@ class ChatService:
         logger.info("收到对话请求: %s (mode=%s)", user_query, mode)
 
         try:
+            llm_logs: List[Dict[str, Any]] = []
             # 阶段0：如果显式指定 LangGraph 研究模式
             if mode == "langgraph":
                 if not self.research_service:
@@ -202,6 +203,7 @@ class ChatService:
                     use_cache=use_cache,
                     intent_confidence=1.0,
                     layout_snapshot=layout_snapshot,
+                    llm_logs=llm_logs,
                 )
 
             if mode == "research":
@@ -213,6 +215,7 @@ class ChatService:
                         use_cache=use_cache,
                         intent_confidence=1.0,
                         layout_snapshot=layout_snapshot,
+                        llm_logs=llm_logs,
                     )
                 else:
                     return self._handle_complex_research(
@@ -221,6 +224,7 @@ class ChatService:
                         use_cache=use_cache,
                         intent_confidence=1.0,
                         layout_snapshot=layout_snapshot,
+                        llm_logs=llm_logs,
                     )
 
             # 阶段1：LLM 意图分类（三层架构第一层）
@@ -233,9 +237,12 @@ class ChatService:
                     use_cache=use_cache,
                     intent_confidence=0.5,
                     layout_snapshot=layout_snapshot,
+                    llm_logs=llm_logs,
                 )
 
             intent_result: IntentClassification = self.intent_classifier.classify(user_query)
+            if intent_result.debug:
+                llm_logs.append(dict(intent_result.debug))
             logger.info(
                 "意图分类结果: %s (置信度 %.2f) - %s",
                 intent_result.intent,
@@ -248,6 +255,7 @@ class ChatService:
                 return self._handle_chitchat(
                     user_query=user_query,
                     intent_confidence=intent_result.confidence,
+                    llm_logs=llm_logs,
                 )
 
             elif intent_result.intent == "simple_query":
@@ -257,6 +265,7 @@ class ChatService:
                     use_cache=use_cache,
                     intent_confidence=intent_result.confidence,
                     layout_snapshot=layout_snapshot,
+                    llm_logs=llm_logs,
                 )
 
             elif intent_result.intent == "complex_research":
@@ -269,6 +278,7 @@ class ChatService:
                         use_cache=use_cache,
                         intent_confidence=intent_result.confidence,
                         layout_snapshot=layout_snapshot,
+                        llm_logs=llm_logs,
                     )
                 else:
                     return self._handle_complex_research(
@@ -277,6 +287,7 @@ class ChatService:
                         use_cache=use_cache,
                         intent_confidence=intent_result.confidence,
                         layout_snapshot=layout_snapshot,
+                        llm_logs=llm_logs,
                     )
 
             else:
@@ -288,6 +299,7 @@ class ChatService:
                     use_cache=use_cache,
                     intent_confidence=intent_result.confidence,
                     layout_snapshot=layout_snapshot,
+                    llm_logs=llm_logs,
                 )
 
         except Exception as exc:
@@ -306,6 +318,7 @@ class ChatService:
         use_cache: bool,
         intent_confidence: float,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+        llm_logs: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
         """处理简单查询意图（单次 RAG 调用）。"""
         logger.debug("处理简单查询意图")
@@ -315,6 +328,7 @@ class ChatService:
             filter_datasource=filter_datasource,
             use_cache=use_cache,
         )
+        llm_debug = self._clone_llm_logs(llm_logs)
 
         if query_result.status == "success":
             datasets = query_result.datasets or []
@@ -332,6 +346,12 @@ class ChatService:
                 fallback_source=query_result.source,
             )
 
+            debug_info = self._compose_debug_payload(
+                panel_result.debug,
+                llm_debug,
+                query_result.rag_trace or None,
+            )
+
             metadata: Dict[str, Any] = {
                 "generated_path": query_result.generated_path,
                 "source": query_result.source,
@@ -342,13 +362,13 @@ class ChatService:
                 "requested_components": panel_result.debug.get("requested_components"),
                 "planner_reasons": panel_result.debug.get("planner_reasons"),
                 "planner_engine": panel_result.debug.get("planner_engine"),
-                "debug": panel_result.debug,
+                "debug": debug_info,
                 "datasets": self._summarize_datasets(datasets, query_result),
                 "retrieved_tools": self._format_retrieved_tools(query_result.retrieved_tools),
             }
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
-            blocks_debug = panel_result.debug.get("blocks", [])
+            blocks_debug = debug_info.get("blocks", [])
             warnings = []
             for block in blocks_debug:
                 if block.get("using_default_adapter"):
@@ -385,6 +405,11 @@ class ChatService:
         formatted_tools = self._format_retrieved_tools(query_result.retrieved_tools)
 
         if query_result.status == "needs_clarification":
+            debug_payload = self._compose_debug_payload(
+                None,
+                llm_debug,
+                query_result.rag_trace or None,
+            )
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
@@ -394,10 +419,16 @@ class ChatService:
                     "reasoning": query_result.reasoning,
                     "intent_confidence": intent_confidence,
                     "retrieved_tools": formatted_tools,
+                    "debug": debug_payload,
                 },
             )
 
         if query_result.status == "not_found":
+            debug_payload = self._compose_debug_payload(
+                None,
+                llm_debug,
+                query_result.rag_trace or None,
+            )
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
@@ -407,9 +438,11 @@ class ChatService:
                     "reasoning": query_result.reasoning,
                     "intent_confidence": intent_confidence,
                     "retrieved_tools": formatted_tools,
+                    "debug": debug_payload,
                 },
             )
 
+        debug_payload = self._compose_debug_payload(None, llm_debug, query_result.rag_trace or None)
         return ChatResponse(
             success=False,
             intent_type="data_query",
@@ -420,6 +453,7 @@ class ChatService:
                 "intent_confidence": intent_confidence,
                 "generated_path": query_result.generated_path,
                 "retrieved_tools": formatted_tools,
+                "debug": debug_payload,
             },
         )
 
@@ -427,6 +461,7 @@ class ChatService:
         self,
         user_query: str,
         intent_confidence: float,
+        llm_logs: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
         """处理闲聊意图。"""
         logger.debug("处理闲聊意图")
@@ -445,18 +480,35 @@ class ChatService:
         user_query_lower = user_query.lower().strip()
         for keyword, response in chitchat_responses.items():
             if keyword.lower() in user_query_lower:
+                debug_payload = self._compose_debug_payload(
+                    None,
+                    self._clone_llm_logs(llm_logs),
+                    None,
+                )
+                metadata = {"intent_confidence": intent_confidence}
+                if debug_payload:
+                    metadata["debug"] = debug_payload
                 return ChatResponse(
                     success=True,
                     intent_type="chitchat",
                     message=response,
-                    metadata={"intent_confidence": intent_confidence},
+                    metadata=metadata,
                 )
+
+        debug_payload = self._compose_debug_payload(
+            None,
+            self._clone_llm_logs(llm_logs),
+            None,
+        )
+        metadata = {"intent_confidence": intent_confidence}
+        if debug_payload:
+            metadata["debug"] = debug_payload
 
         return ChatResponse(
             success=True,
             intent_type="chitchat",
             message='我是RSS数据聚合助手。您可以问我关于各种平台数据的问题，比如"虎扑步行街最新帖子"、"B站热门视频"等。',
-            metadata={"intent_confidence": intent_confidence},
+            metadata=metadata,
         )
 
     def _handle_complex_research(
@@ -466,6 +518,7 @@ class ChatService:
         use_cache: bool,
         intent_confidence: float,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+        llm_logs: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
         """
         处理复杂研究意图（LLM 查询规划 + 并行执行）。
@@ -486,10 +539,13 @@ class ChatService:
             ChatResponse 对象
         """
         logger.info("处理复杂研究意图: %s", user_query)
+        llm_debug = self._clone_llm_logs(llm_logs)
 
         try:
             # 第一步：LLM 查询规划（三层架构第二层）
             query_plan: QueryPlan = self.query_planner.plan(user_query)
+            if query_plan.debug:
+                llm_debug.append(dict(query_plan.debug))
 
             if not query_plan.sub_queries:
                 logger.warning("查询规划未生成子查询，回退到简单查询")
@@ -499,6 +555,7 @@ class ChatService:
                     use_cache=use_cache,
                     intent_confidence=intent_confidence,
                     layout_snapshot=layout_snapshot,
+                    llm_logs=llm_debug,
                 )
 
             logger.info(
@@ -535,6 +592,11 @@ class ChatService:
                         "sub_query_count": len(query_plan.sub_queries),
                         "success_count": 0,
                         "intent_confidence": intent_confidence,
+                        "debug": self._compose_debug_payload(
+                            None,
+                            llm_debug,
+                            None,
+                        ),
                     },
                 )
 
@@ -570,6 +632,24 @@ class ChatService:
             message = f"已完成复杂研究，获取 {len(success_results)} 组数据：" + "；".join(message_parts)
 
             # 第七步：构造元数据
+            rag_traces = [
+                result.result.rag_trace
+                for result in success_results
+                if result.result and result.result.rag_trace
+            ]
+            if len(rag_traces) == 1:
+                rag_debug = rag_traces[0]
+            elif rag_traces:
+                rag_debug = rag_traces
+            else:
+                rag_debug = None
+
+            debug_info = self._compose_debug_payload(
+                panel_result.debug,
+                llm_debug,
+                rag_debug,
+            )
+
             metadata: Dict[str, Any] = {
                 "generated_path": primary_result.generated_path,
                 "source": primary_result.source,
@@ -580,7 +660,7 @@ class ChatService:
                 "requested_components": panel_result.debug.get("requested_components"),
                 "planner_reasons": panel_result.debug.get("planner_reasons"),
                 "planner_engine": panel_result.debug.get("planner_engine"),
-                "debug": panel_result.debug,
+                "debug": debug_info,
                 "datasets": self._summarize_datasets(aggregated_datasets, primary_result),
                 "retrieved_tools": self._format_retrieved_tools(primary_result.retrieved_tools),
                 # 复杂研究特有元数据
@@ -606,7 +686,7 @@ class ChatService:
             }
 
             # 提取警告信息
-            blocks_debug = panel_result.debug.get("blocks", [])
+            blocks_debug = debug_info.get("blocks", [])
             warnings = []
             for block in blocks_debug:
                 if block.get("using_default_adapter"):
@@ -649,6 +729,7 @@ class ChatService:
                 metadata={
                     "error": str(exc),
                     "intent_confidence": intent_confidence,
+                    "debug": self._compose_debug_payload(None, llm_debug, None),
                 },
             )
 
@@ -778,9 +859,7 @@ class ChatService:
     @staticmethod
     def _dataset_records(dataset: QueryDataset) -> List[Dict[str, Any]]:
         if dataset.payload and isinstance(dataset.payload, dict):
-            payload_items = dataset.payload.get("items")
-            if isinstance(payload_items, list):
-                return payload_items
+            return [dataset.payload]
         return dataset.items or []
 
     @staticmethod
@@ -799,6 +878,29 @@ class ChatService:
         if "error" in engines and "rule" in engines:
             return "mixed"
         return engines[0]
+
+    @staticmethod
+    def _clone_llm_logs(llm_logs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        if not llm_logs:
+            return []
+        return [dict(entry) for entry in llm_logs]
+
+    @staticmethod
+    def _compose_debug_payload(
+        panel_debug: Optional[Dict[str, Any]] = None,
+        llm_logs: Optional[List[Dict[str, Any]]] = None,
+        rag_trace: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        debug_info: Dict[str, Any] = {}
+        if panel_debug:
+            debug_info.update(panel_debug)
+        if llm_logs:
+            debug_info.setdefault("llm_calls", []).extend([
+                dict(entry) for entry in llm_logs
+            ])
+        if rag_trace:
+            debug_info["rag"] = rag_trace
+        return debug_info
 
     @staticmethod
     def _guess_datasource(generated_path: Optional[str]) -> str:

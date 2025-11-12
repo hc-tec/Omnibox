@@ -5,8 +5,8 @@ LLM 查询规划器
 
 import logging
 import json
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
+from typing import List, Dict, Any, Optional, Sequence
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ class QueryPlan:
     sub_queries: List[SubQuery]
     reasoning: str  # 整体规划理由
     estimated_time: Optional[int] = None  # 预估耗时（秒）
+    debug: Dict[str, Any] = field(default_factory=dict)
 
 
 class LLMQueryPlanner:
@@ -148,21 +149,19 @@ class LLMQueryPlanner:
         Returns:
             QueryPlan: 查询计划
         """
-        try:
-            # 构建 prompt
-            user_prompt = f"用户查询：{user_query}\n\n请规划查询方案。"
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": f"用户查询：{user_query}\n\n请规划查询方案。"},
+        ]
 
-            # 调用 LLM
+        try:
             response = self.llm_client.chat(
-                messages=[
-                    {"role": "system", "content": self.SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2,  # 略高温度，允许一定创造性
+                messages=messages,
+                temperature=0.2,
             )
 
-            # 解析响应
             plan = self._parse_response(response, user_query)
+            plan.debug.update(self._build_debug_entry(messages, response))
 
             logger.info(
                 "查询规划完成: %d 个子查询 - %s",
@@ -182,16 +181,17 @@ class LLMQueryPlanner:
 
         except Exception as exc:
             logger.error("查询规划失败: %s", exc, exc_info=True)
-            # 降级：将原始查询作为单个子查询
-            return QueryPlan(
+            fallback_plan = QueryPlan(
                 sub_queries=[SubQuery(
                     query=user_query,
                     datasource=None,
                     priority=1,
                     reasoning=f"LLM 规划失败，使用原始查询: {exc}"
                 )],
-                reasoning="降级策略：使用原始查询"
+                reasoning="降级策略：使用原始查询",
             )
+            fallback_plan.debug.update(self._build_debug_entry(messages, response=None, error=str(exc)))
+            return fallback_plan
 
     def _parse_response(self, response: str, original_query: str) -> QueryPlan:
         """解析 LLM 响应"""
@@ -257,6 +257,38 @@ class LLMQueryPlanner:
                 )],
                 reasoning="降级策略：JSON 解析失败"
             )
+
+    def _build_debug_entry(
+        self,
+        messages: Sequence[Dict[str, str]],
+        response: Optional[str],
+        error: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        preview_messages = [
+            {
+                "role": message.get("role"),
+                "content": self._trim(message.get("content", "")),
+            }
+            for message in messages
+        ]
+        entry: Dict[str, Any] = {
+            "stage": "query_planner",
+            "provider": getattr(self.llm_client, "model_name", self.llm_client.__class__.__name__),
+            "messages": preview_messages,
+        }
+        if response is not None:
+            entry["response"] = self._trim(response, limit=800)
+        if error:
+            entry["error"] = error
+        return entry
+
+    @staticmethod
+    def _trim(text: str, limit: int = 400) -> str:
+        if not text:
+            return ""
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit]}..."
 
 
 # 全局单例（可选）

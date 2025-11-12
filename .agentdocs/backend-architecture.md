@@ -695,6 +695,8 @@ ws.onmessage = (event) => {
 3. 相关推荐（基于检索结果推荐相关数据源）
 4. 调试信息（开发时查看 RAG 效果和评分）
 
+此外，为了透明化 LLM 行为，`metadata.debug.llm_calls` 会记录本次请求涉及的所有 LLM 调用（意图分类、查询规划等），包含截断后的 prompt/response；`metadata.debug.rag` 则提供 RAG 解析轨迹（selected_tool、参数填充、retrieved_tools preview）。调试前端可以直接读取该字段渲染“模型推理过程”面板。
+
 > **注意**：无论查询最终状态是 `success`、`needs_clarification`、`not_found` 还是 `error`，都会透出同一次 RAG 检索得到的候选工具，方便用户在失败场景下也能看到“系统已经考虑过什么”。
 
 ### 数据格式

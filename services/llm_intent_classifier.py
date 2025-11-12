@@ -5,8 +5,8 @@ LLM 意图分类器
 
 import logging
 import json
-from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from typing import Dict, Any, Optional, Sequence
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ class IntentClassification:
     intent: str  # chitchat/simple_query/complex_research
     confidence: float
     reasoning: str
+    debug: Dict[str, Any] = field(default_factory=dict)
 
 
 class LLMIntentClassifier:
@@ -87,21 +88,20 @@ class LLMIntentClassifier:
         Returns:
             IntentClassification: 意图分类结果
         """
-        try:
-            # 构建 prompt
-            user_prompt = f"用户请求：{user_query}"
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": f"用户请求：{user_query}"},
+        ]
 
-            # 调用 LLM
+        try:
             response = self.llm_client.chat(
-                messages=[
-                    {"role": "system", "content": self.SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.1,  # 低温度，保证分类稳定性
+                messages=messages,
+                temperature=0.1,
             )
 
-            # 解析响应
+            debug_entry = self._build_debug_entry(messages, response)
             result = self._parse_response(response)
+            result.debug.update(debug_entry)
 
             logger.info(
                 "意图分类完成: %s (置信度 %.2f) - %s",
@@ -114,12 +114,14 @@ class LLMIntentClassifier:
 
         except Exception as exc:
             logger.error("意图分类失败: %s", exc, exc_info=True)
-            # 降级：返回 simple_query，让后续流程处理
-            return IntentClassification(
+            debug_entry = self._build_debug_entry(messages, response=None, error=str(exc))
+            failure = IntentClassification(
                 intent="simple_query",
                 confidence=0.5,
-                reasoning=f"LLM 分类失败，降级为简单查询: {exc}"
+                reasoning=f"LLM 分类失败，降级为简单查询: {exc}",
             )
+            failure.debug.update(debug_entry)
+            return failure
 
     def _parse_response(self, response: str) -> IntentClassification:
         """解析 LLM 响应"""
@@ -182,6 +184,39 @@ class LLMIntentClassifier:
             confidence=0.5,
             reasoning="无法解析 LLM 响应，降级为简单查询"
         )
+
+    def _build_debug_entry(
+        self,
+        messages: Sequence[Dict[str, str]],
+        response: Optional[str],
+        error: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        preview_messages = [
+            {
+                "role": message.get("role"),
+                "content": self._trim(message.get("content", "")),
+            }
+            for message in messages
+        ]
+
+        entry: Dict[str, Any] = {
+            "stage": "intent_classification",
+            "provider": getattr(self.llm_client, "model_name", self.llm_client.__class__.__name__),
+            "messages": preview_messages,
+        }
+        if response is not None:
+            entry["response"] = self._trim(response, limit=800)
+        if error:
+            entry["error"] = error
+        return entry
+
+    @staticmethod
+    def _trim(text: str, limit: int = 400) -> str:
+        if not text:
+            return ""
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit]}..."
 
 
 # 全局单例（可选）

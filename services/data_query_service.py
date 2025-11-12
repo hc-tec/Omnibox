@@ -64,6 +64,7 @@ class DataQueryResult:
     payload: Optional[Dict[str, Any]] = None
     datasets: List[QueryDataset] = field(default_factory=list)
     retrieved_tools: List[Dict[str, Any]] = field(default_factory=list)  # RAG 检索到的候选工具列表
+    rag_trace: Dict[str, Any] = field(default_factory=dict)
 
 
 class DataQueryService:
@@ -94,6 +95,7 @@ class DataQueryService:
         logger.info("开始数据查询: %s", user_query)
 
         retrieved_tools: List[Dict[str, Any]] = []
+        rag_trace: Dict[str, Any] = {}
 
         try:
             rag_cache_key = user_query if not filter_datasource else f"{user_query}||{filter_datasource}"
@@ -104,6 +106,7 @@ class DataQueryService:
                 use_cache=use_cache,
             )
             retrieved_tools = rag_result.get("retrieved_tools") or []
+            rag_trace = self._build_rag_trace(rag_result)
 
             status = rag_result.get("status")
             if status == "needs_clarification":
@@ -114,6 +117,7 @@ class DataQueryService:
                     clarification_question=rag_result.get("clarification_question"),
                     cache_hit=rag_cache_hit,
                     retrieved_tools=retrieved_tools,
+                    rag_trace=rag_trace,
                 )
             if status == "not_found":
                 return DataQueryResult(
@@ -123,6 +127,7 @@ class DataQueryService:
                     clarification_question=rag_result.get("clarification_question"),
                     cache_hit=rag_cache_hit,
                     retrieved_tools=retrieved_tools,
+                    rag_trace=rag_trace,
                 )
             if status != "success":
                 return DataQueryResult(
@@ -131,6 +136,7 @@ class DataQueryService:
                     reasoning=rag_result.get("reasoning", "RAG 处理失败"),
                     cache_hit=rag_cache_hit,
                     retrieved_tools=retrieved_tools,
+                    rag_trace=rag_trace,
                 )
 
             datasets, failures = self._collect_datasets(
@@ -158,6 +164,7 @@ class DataQueryService:
                     payload=primary.payload,
                     datasets=datasets,
                     retrieved_tools=retrieved_tools,
+                    rag_trace=rag_trace,
                 )
 
             failure_reason = failures[0] if failures else rag_result.get("reasoning", "未能获取可用数据")
@@ -167,6 +174,7 @@ class DataQueryService:
                 reasoning=failure_reason,
                 cache_hit=rag_cache_hit,
                 retrieved_tools=retrieved_tools,
+                rag_trace=rag_trace,
             )
 
         except Exception as exc:
@@ -176,6 +184,7 @@ class DataQueryService:
                 items=[],
                 reasoning=f"查询过程中发生异常: {exc}",
                 retrieved_tools=retrieved_tools,
+                rag_trace=rag_trace,
             )
 
     def close(self):
@@ -242,6 +251,43 @@ class DataQueryService:
                 failures.append(task.get("name") or task.get("route_id") or "unknown_route")
 
         return datasets, failures
+
+    @staticmethod
+    def _build_rag_trace(rag_result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not rag_result:
+            return {}
+
+        trace: Dict[str, Any] = {
+            "status": rag_result.get("status"),
+            "reasoning": rag_result.get("reasoning"),
+            "generated_path": rag_result.get("generated_path"),
+        }
+
+        selected_tool = rag_result.get("selected_tool") or {}
+        if selected_tool:
+            trace["selected_tool"] = {
+                "route_id": selected_tool.get("route_id"),
+                "name": selected_tool.get("name"),
+                "provider": selected_tool.get("provider"),
+            }
+
+        if rag_result.get("parameters_filled"):
+            trace["parameters_filled"] = rag_result.get("parameters_filled")
+        if rag_result.get("clarification_question"):
+            trace["clarification_question"] = rag_result.get("clarification_question")
+
+        retrieved = rag_result.get("retrieved_tools") or []
+        if retrieved:
+            trace["retrieved_tools_preview"] = [
+                {
+                    "route_id": tool.get("route_id"),
+                    "name": tool.get("name"),
+                    "score": tool.get("score"),
+                }
+                for tool in retrieved[:5]
+            ]
+
+        return trace
 
     def _plan_tasks(
         self,
