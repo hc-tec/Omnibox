@@ -61,6 +61,9 @@ class ResponseMetadata(BaseModel):
     warnings: Optional[List[Dict[str, Any]]] = Field(
         None, description="面板生成过程中的警告列表"
     )
+    retrieved_tools: Optional[List[Dict[str, Any]]] = Field(
+        None, description="RAG 检索到的候选工具列表"
+    )
 
 
 class LayoutSnapshotItem(BaseModel):

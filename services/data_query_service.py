@@ -63,6 +63,7 @@ class DataQueryResult:
     clarification_question: Optional[str] = None
     payload: Optional[Dict[str, Any]] = None
     datasets: List[QueryDataset] = field(default_factory=list)
+    retrieved_tools: List[Dict[str, Any]] = field(default_factory=list)  # RAG 检索到的候选工具列表
 
 
 class DataQueryService:
@@ -150,6 +151,7 @@ class DataQueryService:
                     reasoning="；".join(reasoning_notes),
                     payload=primary.payload,
                     datasets=datasets,
+                    retrieved_tools=rag_result.get("retrieved_tools", []),
                 )
 
             failure_reason = failures[0] if failures else rag_result.get("reasoning", "未能获取可用数据")

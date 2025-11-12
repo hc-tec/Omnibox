@@ -350,6 +350,7 @@ async def chat(
                 execution_steps=response.metadata.get("execution_steps"),
                 data_stash_count=response.metadata.get("data_stash_count"),
                 warnings=response.metadata.get("warnings"),
+                retrieved_tools=response.metadata.get("retrieved_tools"),
             )
 
         return ChatResponse(

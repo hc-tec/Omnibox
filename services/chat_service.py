@@ -218,6 +218,7 @@ class ChatService:
                 "planner_engine": panel_result.debug.get("planner_engine"),
                 "debug": panel_result.debug,
                 "datasets": self._summarize_datasets(datasets, query_result),
+                "retrieved_tools": self._format_retrieved_tools(query_result.retrieved_tools),
             }
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
@@ -530,6 +531,32 @@ class ChatService:
                 }
             )
         return summary
+
+    @staticmethod
+    def _format_retrieved_tools(retrieved_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        格式化 RAG 检索到的候选工具列表，用于前端展示。
+
+        Args:
+            retrieved_tools: RAG 检索返回的工具列表
+
+        Returns:
+            格式化后的工具列表，包含关键信息
+        """
+        if not retrieved_tools:
+            return []
+
+        formatted = []
+        for tool in retrieved_tools:
+            formatted.append({
+                "route_id": tool.get("route_id"),
+                "name": tool.get("name"),
+                "provider": tool.get("datasource") or tool.get("provider_id"),
+                "description": tool.get("description", "")[:100],  # 限制描述长度
+                "score": tool.get("score"),  # RAG 检索相似度分数
+                "route": tool.get("route"),  # 路由模板
+            })
+        return formatted
 
     def _handle_research(
         self,

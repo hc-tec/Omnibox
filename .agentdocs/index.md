@@ -94,6 +94,8 @@
 - ChatService默认为调用方管理DataQueryService生命周期，只有在`manage_data_service=True`时才会自动关闭
 - ChatResponse.to_dict()用于API响应序列化，包含丰富的元数据信息
 - FastAPI 层通过 `CHAT_SERVICE_MODE` 控制服务初始化（auto/mock/production），测试环境推荐设为 `mock`
+- **DataQueryResult 携带 retrieved_tools 字段**，包含 RAG 检索到的候选工具列表（route_id/name/score 等），供前端展示 AI 推理过程（2025-11）
+- **ChatService 格式化 retrieved_tools**，通过 `_format_retrieved_tools()` 方法限制描述长度、提取关键字段，避免前端 payload 过大
 
 ### 配置管理
 - RSSHub配置统一使用`RSSHubSettings`（`query_processor/config.py`）

@@ -301,10 +301,20 @@ with DataQueryService(rag_in_action) as service:
 1. **双层缓存** - RAG结果缓存（避免重复RAG）+ RSS数据缓存（避免重复请求）
 2. **智能缓存键** - RAG缓存包含filter_datasource参数
 3. **资源管理** - 自动创建和释放DataExecutor
-4. **统一结果** - DataQueryResult包含status/items/cache_hit/source等信息
+4. **统一结果** - DataQueryResult包含status/items/cache_hit/source/datasets/retrieved_tools等信息
+5. **多路由查询** - 自动尝试 RAG 检索到的前 3 个候选路由，返回多个数据集（2025-11 新增）
+6. **RAG 检索透明化** - 返回 retrieved_tools 字段，前端可展示 AI 推理过程（2025-11 新增）
+
+**DataQueryResult 核心字段**:
+- `status` - 查询状态（success/error/not_found/needs_clarification）
+- `items` - 主数据集的数据项列表（兼容旧版）
+- `datasets` - 多数据集列表（QueryDataset 类型），每个数据集对应一张前端卡片
+- `retrieved_tools` - RAG 检索到的候选工具列表（包含 route_id、name、score 等）
+- `cache_hit` - 缓存命中状态（rag_cache/rss_cache/none）
+- `reasoning` - 推理过程或错误信息
 
 **流程**:
-1. 检查RAG缓存 → 2. 调用RAGInAction → 3. 缓存RAG结果 → 4. 检查RSS缓存 → 5. 调用DataExecutor → 6. 缓存RSS数据 → 7. 返回结果
+1. 检查RAG缓存 → 2. 调用RAGInAction → 3. 缓存RAG结果 → 4. 多路由规划 → 5. 并行拉取数据 → 6. 返回多数据集结果
 
 ### ChatService - 统一对话服务
 **位置**: `services/chat_service.py`
@@ -337,7 +347,8 @@ response_dict = response.to_dict()
 1. **自动路由** - 根据IntentService识别结果路由到数据查询或闲聊
 2. **统一响应** - ChatResponse包含success/intent_type/message/data/metadata
 3. **闲聊支持** - 简单的关键词匹配响应（可扩展为LLM）
-4. **元数据丰富** - 包含cache_hit/source/intent_confidence等调试信息
+4. **元数据丰富** - 包含cache_hit/source/intent_confidence/retrieved_tools/datasets等调试信息
+5. **RAG 透明化** - `_format_retrieved_tools()` 方法格式化候选工具列表，提取 route_id、name、score 等关键信息供前端展示
 
 **重要记忆**:
 - 所有对话入口统一走ChatService，不要直接调用DataQueryService
@@ -403,10 +414,20 @@ GET /api/v1/health
 #### 3. 统一响应Schema (api/schemas/responses.py)
 **核心模型**:
 - `FeedItemSchema` - RSS数据项（title/link/description/pub_date/media_url等）
-- `ResponseMetadata` - 元数据（intent/cache_hit/source/confidence等）
+- `ResponseMetadata` - 元数据（intent/cache_hit/source/confidence/retrieved_tools等）
 - `ApiResponse[T]` - 泛型响应容器（success/message/data/metadata）
 - `ChatRequest` - 对话请求（query必填，filter_datasource/use_cache可选）
 - `ChatResponse` - 对话响应（继承ApiResponse[List[FeedItemSchema]]）
+
+**ResponseMetadata 关键字段**:
+- `intent_type` - 意图类型（data_query/chitchat）
+- `intent_confidence` - 意图识别置信度
+- `generated_path` - 生成的 RSS 路径
+- `source` - 数据来源（local/fallback）
+- `cache_hit` - 缓存命中情况（rag_cache/rss_cache/none）
+- `retrieved_tools` - **RAG 检索到的候选工具列表**（用于前端展示 AI 推理过程）
+- `datasets` - 多数据集摘要（route/feed_title/item_count）
+- `warnings` - 面板生成警告列表
 
 #### 4. FastAPI应用 (api/app.py)
 **配置项**:
@@ -665,6 +686,125 @@ ws.onmessage = (event) => {
 - **阶段顺序** - 流式阶段必须按顺序推送：intent → rag（可选）→ fetch → summary
 - **complete最后** - 每个流式请求最后必须发送complete消息，无论成功失败
 - **错误即关闭** - 发送error消息后应立即发送complete并关闭连接
+
+## RAG 检索结果展示（retrieved_tools）
+
+### 功能说明
+从 2025-11 版本开始，`metadata.retrieved_tools` 字段包含 RAG 检索到的候选工具列表，前端可利用此信息：
+1. 展示 AI 推理过程（让用户了解系统考虑了哪些数据源）
+2. 提供快速切换功能（点击候选工具重新查询）
+3. 相关推荐（基于检索结果推荐相关数据源）
+4. 调试信息（开发时查看 RAG 效果和评分）
+
+### 数据格式
+
+```json
+{
+  "metadata": {
+    "retrieved_tools": [
+      {
+        "route_id": "bilibili/hot-search",
+        "name": "B站热搜",
+        "provider": "bilibili",
+        "description": "B站热搜榜单，包含当前最热门的话题和视频",
+        "score": 0.92,
+        "route": "/bilibili/hot-search"
+      },
+      {
+        "route_id": "bilibili/ranking",
+        "name": "B站排行榜",
+        "provider": "bilibili",
+        "description": "B站各分区排行榜",
+        "score": 0.78,
+        "route": "/bilibili/ranking/:rid/:day?"
+      }
+    ],
+    "generated_path": "/bilibili/hot-search",
+    ...
+  }
+}
+```
+
+### 前端使用示例
+
+```typescript
+// 获取 RAG 候选工具
+const response = await chatApi.chat({
+  query: '我想看bilibili热搜',
+  mode: 'auto',
+});
+
+const retrievedTools = response.metadata?.retrieved_tools || [];
+
+// 场景1: 展示 AI 推理过程
+console.log(`系统考虑了 ${retrievedTools.length} 个数据源：`);
+retrievedTools.forEach((tool, index) => {
+  console.log(`${index + 1}. ${tool.name} (相似度: ${tool.score})`);
+});
+
+// 场景2: 实现快速切换
+function switchToTool(toolRouteId: string) {
+  const tool = retrievedTools.find(t => t.route_id === toolRouteId);
+  if (tool) {
+    // 重新查询该数据源
+    chatApi.chat({
+      query: `查询 ${tool.name}`,
+      mode: 'simple',
+    });
+  }
+}
+
+// 场景3: 相关推荐
+const recommendations = retrievedTools
+  .filter(t => t.score > 0.7)
+  .slice(1, 4) // 排除第一个（已使用），取接下来的3个
+  .map(t => ({
+    title: t.name,
+    description: t.description,
+    onClick: () => switchToTool(t.route_id),
+  }));
+```
+
+### Vue 组件示例
+
+```vue
+<template>
+  <div class="retrieved-tools">
+    <h3>系统考虑的数据源</h3>
+    <div v-for="tool in retrievedTools" :key="tool.route_id" class="tool-card">
+      <div class="tool-header">
+        <span class="tool-name">{{ tool.name }}</span>
+        <span class="tool-score">{{ (tool.score * 100).toFixed(0) }}% 匹配</span>
+      </div>
+      <p class="tool-description">{{ tool.description }}</p>
+      <button @click="switchToTool(tool.route_id)">查看此数据源</button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue';
+import type { ChatResponse } from '@/types/api';
+
+const props = defineProps<{
+  response: ChatResponse;
+}>();
+
+const retrievedTools = computed(() =>
+  props.response.metadata?.retrieved_tools || []
+);
+
+function switchToTool(routeId: string) {
+  // 实现切换逻辑
+}
+</script>
+```
+
+### 重要记忆
+- **description 已限制长度**：后端限制为 100 字符，前端可直接使用，无需再次截断
+- **score 为相似度评分**：范围 0.0-1.0，越高表示与用户查询越相关
+- **route 包含参数占位符**：如 `/bilibili/ranking/:rid/:day?`，需要根据实际需求填充参数
+- **空列表是正常的**：某些情况下 RAG 可能只返回一个工具，retrieved_tools 可能为空数组
 
 ## 后续扩展规划
 
