@@ -6,12 +6,6 @@
 import logging
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
-import sys
-from pathlib import Path
-
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 from orchestrator.rag_in_action import RAGInAction
 from integration.data_executor import DataExecutor, FetchResult

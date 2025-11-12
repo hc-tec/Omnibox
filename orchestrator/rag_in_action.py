@@ -3,13 +3,8 @@ RAG-in-Action 完整流程
 职责：协调RAG检索和查询解析，实现端到端的处理
 """
 import logging
-import sys
-from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 from rag_system.rag_pipeline import RAGPipeline
 from query_processor.llm_client import LLMClient, create_llm_client
@@ -17,7 +12,6 @@ from query_processor.prompt_builder import PromptBuilder
 from query_processor.parser import QueryParser
 from query_processor.path_builder import PathBuilder
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

@@ -32,7 +32,6 @@ except ImportError:  # 兼容直接运行脚本的场景
         RETRIEVAL_CONFIG,
     )
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

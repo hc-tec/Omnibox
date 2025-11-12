@@ -56,7 +56,13 @@ class MockChatService:
         self.data_query_service = None
         logger.warning("使用 MockChatService（跳过RAG/LLM初始化）")
 
-    def chat(self, user_query: str, filter_datasource: Optional[str] = None, use_cache: bool = True) -> SimpleChatResponse:
+    def chat(
+        self,
+        user_query: str,
+        filter_datasource: Optional[str] = None,
+        use_cache: bool = True,
+        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+    ) -> SimpleChatResponse:
         """返回模拟响应，满足测试和本地无依赖场景"""
         normalized = (user_query or "").strip()
         if not normalized:
@@ -286,6 +292,7 @@ async def chat(
             filter_datasource=request.filter_datasource,
             use_cache=request.use_cache,
             layout_snapshot=request.layout_snapshot,
+            mode=request.mode,  # 新增：传递查询模式
         )
 
         metadata = None

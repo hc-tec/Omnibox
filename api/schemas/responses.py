@@ -76,6 +76,11 @@ class ChatRequest(BaseModel):
         default=None,
         description="前端上报的布局快照（可选）",
     )
+    mode: str = Field(
+        "auto",
+        description="查询模式：auto(自动识别)/simple(简单查询)/research(复杂研究)",
+        regex="^(auto|simple|research)$",
+    )
 
 
 class ChatResponse(BaseModel):

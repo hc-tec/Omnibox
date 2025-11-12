@@ -12,6 +12,8 @@
 - `../docs/frontend-electron-shadcn-design.md` - 前端 Electron + Shadcn UI 实现指南（组件能力、布局渲染、状态管理、交互规范）
 - `../docs/backend-intelligent-panel-overview.md` - 面向前端的后端面板联调指南（数据结构、字段语义、布局约束）
 - `panel-nested-components-design.md` - **面板组件嵌套架构设计**（支持 Card、Tabs 等容器组件嵌套子组件）
+- `../docs/langgraph-agents-design.md` - LangGraph 多代理研究工作流（V2 动态自适应方案）
+- `../docs/langgraph-agents-frontend-design.md` - LangGraph 动态研究在 Desktop Intelligence Studio 中的前端实时呈现方案
 
 ### 前端架构（必读）
 - rontend-design-guidelines.md - 前端界面/组件设计规范（布局、shadcn 使用、MediaCardGrid 等，2025-11 已补充 `layout_size` 语义＆ Electron 调试/打包说明）
@@ -47,6 +49,13 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251111-langgraph-agents-refactor.md` - **LangGraph Agents 代码审查与全面修复**（P0-P2 问题修复，测试补充）[✅ 完成]
+  - `workflow/langgraph-agents-p0-verification-report.md` - P0 阶段验证报告
+  - `workflow/langgraph-agents-p1-completion-report.md` - P1 阶段完成报告
+  - `workflow/langgraph-agents-p2-completion-report.md` - P2 阶段完成报告
+  - `workflow/langgraph-agents-integration-plan.md` - 系统整合方案设计
+  - `workflow/langgraph-agents-integration-usage.md` - **集成使用指南**（后端+前端）
+  - `workflow/langgraph-agents-frontend-implementation.md` - **前端实现方案**（Vue 3 + shadcn-vue）
 - `workflow/251031-rss-aggregation-layered-architecture.md` - 实现RSS聚合系统分层架构
 - `workflow/251031-rss-aggregation-architecture-refine.md` - RSS聚合架构落地改进方案，补充本地依赖、同步异步策略与接口设计
 - `workflow/251101-intelligent-panel-backend.md` - 智能数据面板后端整改与质量保障方案

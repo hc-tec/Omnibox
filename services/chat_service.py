@@ -6,13 +6,7 @@
 import logging
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field, asdict
-import sys
-from pathlib import Path
 from uuid import uuid4
-
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 from services.intent_service import IntentService, get_intent_service
 from services.data_query_service import DataQueryService, DataQueryResult
@@ -80,6 +74,7 @@ class ChatService:
         self,
         data_query_service: DataQueryService,
         intent_service: Optional[IntentService] = None,
+        research_service=None,  # 新增：研究服务（可选）
         manage_data_service: bool = False,
         component_planner_config: Optional[ComponentPlannerConfig] = None,
     ):
@@ -89,11 +84,13 @@ class ChatService:
         Args:
             data_query_service: 数据查询服务实例
             intent_service: 意图识别服务（可选，默认使用全局单例）
+            research_service: 研究服务实例（可选，用于复杂研究任务）
             manage_data_service: 是否由ChatService负责关闭 data_query_service
             component_planner_config: 组件规划器配置（可选）
         """
         self.data_query_service = data_query_service
         self.intent_service = intent_service or get_intent_service()
+        self.research_service = research_service  # 新增
         self._manage_data_service = manage_data_service
         self.panel_generator = PanelGenerator()
         self.component_planner_config = component_planner_config or ComponentPlannerConfig()
@@ -113,6 +110,7 @@ class ChatService:
         filter_datasource: Optional[str] = None,
         use_cache: bool = True,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+        mode: str = "auto",  # 新增：auto / simple / research
     ) -> ChatResponse:
         """
         处理用户查询。
@@ -121,13 +119,26 @@ class ChatService:
             user_query: 用户输入的自然语言查询
             filter_datasource: 过滤特定数据源（可选）
             use_cache: 是否使用缓存
+            layout_snapshot: 当前面板布局快照（可选）
+            mode: 查询模式 - auto(自动)/simple(简单查询)/research(复杂研究)
 
         Returns:
             ChatResponse 对象
         """
-        logger.info("收到对话请求: %s", user_query)
+        logger.info("收到对话请求: %s (mode=%s)", user_query, mode)
 
         try:
+            # 阶段0：如果显式指定研究模式
+            if mode == "research":
+                if not self.research_service:
+                    logger.warning("研究模式被请求但 ResearchService 未初始化，回退到简单查询")
+                else:
+                    return self._handle_research(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        intent_confidence=1.0,
+                    )
+
             # 阶段1：意图识别
             intent_result = self.intent_service.recognize(user_query)
             logger.debug(
@@ -434,6 +445,92 @@ class ChatService:
             parts.append("（公共服务）")
 
         return "".join(parts)
+
+    def _handle_research(
+        self,
+        user_query: str,
+        filter_datasource: Optional[str],
+        intent_confidence: float,
+    ) -> ChatResponse:
+        """
+        处理复杂研究意图（多轮动态研究）。
+
+        Args:
+            user_query: 用户查询
+            filter_datasource: 过滤数据源（可选）
+            intent_confidence: 意图置信度
+
+        Returns:
+            ChatResponse 对象
+        """
+        logger.debug("处理复杂研究意图")
+
+        if not self.research_service:
+            return ChatResponse(
+                success=False,
+                intent_type="error",
+                message="研究服务未启用，请使用简单查询模式",
+                metadata={"error": "research_service_not_available"},
+            )
+
+        try:
+            # 调用 ResearchService 执行研究
+            research_result = self.research_service.research(
+                user_query=user_query,
+                filter_datasource=filter_datasource,
+            )
+
+            if research_result.success:
+                # 格式化执行步骤
+                execution_steps = [
+                    {
+                        "step_id": step.step_id,
+                        "node": step.node_name,
+                        "action": step.action,
+                        "status": step.status,
+                        "timestamp": step.timestamp,
+                    }
+                    for step in research_result.execution_steps
+                ]
+
+                metadata = {
+                    "mode": "research",
+                    "intent_confidence": intent_confidence,
+                    "total_steps": len(research_result.execution_steps),
+                    "execution_steps": execution_steps,
+                    "data_stash_count": len(research_result.data_stash),
+                    **research_result.metadata,
+                }
+
+                return ChatResponse(
+                    success=True,
+                    intent_type="research",
+                    message=research_result.final_report,
+                    metadata=metadata,
+                )
+            else:
+                return ChatResponse(
+                    success=False,
+                    intent_type="research",
+                    message=f"研究任务失败：{research_result.error}",
+                    metadata={
+                        "mode": "research",
+                        "error": research_result.error,
+                        "intent_confidence": intent_confidence,
+                    },
+                )
+
+        except Exception as exc:
+            logger.error(f"研究任务执行失败: {exc}", exc_info=True)
+            return ChatResponse(
+                success=False,
+                intent_type="research",
+                message=f"研究任务执行失败：{exc}",
+                metadata={
+                    "mode": "research",
+                    "error": str(exc),
+                },
+            )
 
     def close(self):
         """关闭服务并释放资源。"""
