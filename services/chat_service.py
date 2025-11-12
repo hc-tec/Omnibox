@@ -1,15 +1,15 @@
-"""
+﻿"""
 对话服务
 职责：作为统一入口，整合意图识别、数据查询与智能数据面板输出。
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field, asdict
 from uuid import uuid4
 
 from services.intent_service import IntentService, get_intent_service
-from services.data_query_service import DataQueryService, DataQueryResult
+from services.data_query_service import DataQueryService, DataQueryResult, QueryDataset
 from api.schemas.panel import PanelPayload, DataBlock, SourceInfo
 from services.panel.panel_generator import (
     PanelGenerator,
@@ -191,20 +191,19 @@ class ChatService:
         )
 
         if query_result.status == "success":
-            item_count = self._infer_item_count(query_result)
-
+            datasets = query_result.datasets or []
             panel_result = self._build_panel(
                 query_result=query_result,
+                datasets=datasets,
                 intent_confidence=intent_confidence,
                 user_query=user_query,
-                item_count=item_count,
                 layout_snapshot=layout_snapshot,
             )
 
             message = self._format_success_message(
-                feed_title=query_result.feed_title,
-                item_count=item_count,
-                source=query_result.source,
+                datasets=datasets,
+                fallback_feed=query_result.feed_title,
+                fallback_source=query_result.source,
             )
 
             metadata: Dict[str, Any] = {
@@ -218,6 +217,7 @@ class ChatService:
                 "planner_reasons": panel_result.debug.get("planner_reasons"),
                 "planner_engine": panel_result.debug.get("planner_engine"),
                 "debug": panel_result.debug,
+                "datasets": self._summarize_datasets(datasets, query_result),
             }
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
@@ -330,21 +330,71 @@ class ChatService:
     def _build_panel(
         self,
         query_result: DataQueryResult,
+        datasets: List[QueryDataset],
         intent_confidence: float,
         user_query: str,
-        item_count: Optional[int] = None,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
     ) -> PanelGenerationResult:
-        """将数据查询结果转换为智能面板结构。"""
-        source_info = SourceInfo(
-            datasource=self._guess_datasource(query_result.generated_path),
-            route=query_result.generated_path or "",
-            params={},
-            fetched_at=None,
-            request_id=None,
-        )
+        """将数据查询结果（可含多数据集）转换为 PanelPayload。"""
+        # datasets 为空列表或 None 时，使用 query_result 构造单个数据集
+        normalized = datasets or [self._dataset_from_result(query_result)]
+        block_inputs: List[PanelBlockInput] = []
+        planner_reasons_acc: List[str] = []
+        planner_engines: List[str] = []
 
+        for index, dataset in enumerate(normalized, start=1):
+            source_info = SourceInfo(
+                datasource=self._guess_datasource(dataset.generated_path),
+                route=dataset.generated_path or "",
+                params={},
+                fetched_at=None,
+                request_id=None,
+            )
+
+            planned_components, planner_reasons, planner_engine = self._plan_components_for_source(
+                source_info.route,
+                user_query=user_query,
+                layout_snapshot=layout_snapshot,
+                item_count=self._infer_dataset_item_count(dataset),
+            )
+            planner_engines.append(planner_engine)
+            planner_reasons_acc.extend([f"[dataset-{index}] {reason}" for reason in planner_reasons])
+
+            block_input = PanelBlockInput(
+                block_id=f"data_block_{uuid4().hex[:8]}",
+                records=self._dataset_records(dataset),
+                source_info=source_info,
+                title=dataset.feed_title,
+                stats={"intent_confidence": intent_confidence, "dataset_index": index},
+                requested_components=planned_components,
+            )
+            block_inputs.append(block_input)
+
+        result = self.panel_generator.generate(
+            mode="append",
+            block_inputs=block_inputs,
+            history_token=None,
+        )
+        result.debug.setdefault("planner_reasons", planner_reasons_acc)
+        result.debug.setdefault("planner_engine", self._merge_planner_engines(planner_engines))
+        result.debug.setdefault(
+            "requested_components",
+            [block_input.requested_components for block_input in block_inputs],
+        )
+        if layout_snapshot:
+            result.debug.setdefault("layout_snapshot", layout_snapshot)
+        return result
+
+    def _plan_components_for_source(
+        self,
+        route: str,
+        user_query: str,
+        layout_snapshot: Optional[List[Dict[str, Any]]],
+        item_count: int,
+    ) -> Tuple[Optional[List[str]], List[str], str]:
         planner_engine = "rule"
+        planner_reasons: List[str] = []
+        planned_components: Optional[List[str]] = None
 
         try:
             planner_context = PlannerContext(
@@ -354,11 +404,11 @@ class ChatService:
                 layout_mode=None,
                 layout_snapshot=layout_snapshot,
             )
-            manifest = get_route_manifest(source_info.route)
+            manifest = get_route_manifest(route)
             decision = None
             if self.llm_planner and self.llm_planner.is_available():
                 decision = self.llm_planner.plan(
-                    route=source_info.route,
+                    route=route,
                     manifest=manifest,
                     context=planner_context,
                     config=self.component_planner_config,
@@ -367,53 +417,63 @@ class ChatService:
                     planner_engine = "llm"
             if decision is None:
                 decision = plan_components_for_route(
-                    source_info.route,
+                    route,
                     config=self.component_planner_config,
                     context=planner_context,
                     manifest=manifest,
                 )
-            planner_reasons = decision.reasons if decision else []
-            planned_components = decision.components if decision else None
-            if planned_components is not None and len(planned_components) == 0:
-                # 将空列表视为“未指定”，以免误触发 PanelGenerator 的跳过逻辑
-                planned_components = None
+            if decision:
+                planner_reasons = decision.reasons
+                planned_components = decision.components
+                if planned_components is not None and len(planned_components) == 0:
+                    planned_components = None
         except Exception as exc:
-            logger.warning(f"组件规划失败，使用默认策略: {exc}")
+            logger.warning("组件规划失败，使用默认策略: %s", exc)
             planner_reasons = [f"planner_error: {exc}"]
             planned_components = None
             planner_engine = "error"
 
-        block_input = PanelBlockInput(
-            block_id=f"data_block_{uuid4().hex[:8]}",
-            records=[query_result.payload] if query_result.payload else query_result.items,
-            source_info=source_info,
-            title=query_result.feed_title,
-            stats={"intent_confidence": intent_confidence},
-            requested_components=planned_components,
-        )
-
-        result = self.panel_generator.generate(
-            mode="append",
-            block_inputs=[block_input],
-            history_token=None,
-        )
-        result.debug.setdefault("planner_reasons", planner_reasons)
-        result.debug.setdefault("planner_engine", planner_engine)
-        result.debug.setdefault("requested_components", planned_components)
-        if layout_snapshot:
-            result.debug.setdefault("layout_snapshot", layout_snapshot)
-        return result
+        return planned_components, planner_reasons, planner_engine
 
     @staticmethod
-    def _infer_item_count(query_result: DataQueryResult) -> int:
-        if query_result.payload and isinstance(query_result.payload, dict):
-            payload_items = query_result.payload.get("items")
+    def _dataset_from_result(query_result: DataQueryResult) -> QueryDataset:
+        return QueryDataset(
+            route_id=None,
+            provider=None,
+            name=query_result.feed_title,
+            generated_path=query_result.generated_path,
+            items=query_result.items,
+            feed_title=query_result.feed_title,
+            source=query_result.source,
+            cache_hit=query_result.cache_hit,
+            reasoning=query_result.reasoning,
+            payload=query_result.payload,
+        )
+
+    @staticmethod
+    def _dataset_records(dataset: QueryDataset) -> List[Dict[str, Any]]:
+        if dataset.payload and isinstance(dataset.payload, dict):
+            payload_items = dataset.payload.get("items")
             if isinstance(payload_items, list):
-                return len(payload_items)
-            payload_item = query_result.payload.get("item")
-            if isinstance(payload_item, list):
-                return len(payload_item)
-        return len(query_result.items or [])
+                return payload_items
+        return dataset.items or []
+
+    @staticmethod
+    def _infer_dataset_item_count(dataset: QueryDataset) -> int:
+        records = ChatService._dataset_records(dataset)
+        return len(records)
+
+    @staticmethod
+    def _merge_planner_engines(engines: List[str]) -> str:
+        if not engines:
+            return "rule"
+        if len(set(engines)) == 1:
+            return engines[0]
+        if "llm" in engines:
+            return "llm"
+        if "error" in engines and "rule" in engines:
+            return "mixed"
+        return engines[0]
 
     @staticmethod
     def _guess_datasource(generated_path: Optional[str]) -> str:
@@ -425,28 +485,51 @@ class ChatService:
             return "unknown"
         return stripped.split("/")[0]
 
-    @staticmethod
     def _format_success_message(
-        feed_title: Optional[str],
-        item_count: int,
-        source: Optional[str],
+        self,
+        datasets: List[QueryDataset],
+        fallback_feed: Optional[str],
+        fallback_source: Optional[str],
     ) -> str:
-        """格式化成功消息。"""
+        if not datasets:
+            if fallback_feed:
+                return f"已获取 {fallback_feed} 的数据卡片"
+            return "已获取数据卡片"
+
+        if len(datasets) == 1:
+            dataset = datasets[0]
+            feed = dataset.feed_title or dataset.name or fallback_feed or "数据"
+            source_hint = self._format_source_hint(dataset.source or fallback_source)
+            return f"已获取 {feed}（{len(dataset.items or [])} 条{source_hint}）"
+
         parts = []
+        for dataset in datasets:
+            feed = dataset.feed_title or dataset.name or "数据"
+            source_hint = self._format_source_hint(dataset.source)
+            parts.append(f"{feed}（{len(dataset.items or [])} 条{source_hint}）")
+        return f"已获取 {len(datasets)} 组数据：" + "；".join(parts)
 
-        if feed_title:
-            parts.append(f"已获取「{feed_title}」")
-        else:
-            parts.append("已获取数据")
-
-        parts.append(f"共{item_count}条")
-
+    @staticmethod
+    def _format_source_hint(source: Optional[str]) -> str:
         if source == "local":
-            parts.append("（本地服务）")
-        elif source == "fallback":
-            parts.append("（公共服务）")
+            return "本地"
+        if source == "fallback":
+            return "公共"
+        return "远程"
 
-        return "".join(parts)
+    def _summarize_datasets(self, datasets: List[QueryDataset], query_result: DataQueryResult) -> List[Dict[str, Any]]:
+        summary: List[Dict[str, Any]] = []
+        records = datasets or [self._dataset_from_result(query_result)]
+        for dataset in records:
+            summary.append(
+                {
+                    "route": dataset.generated_path,
+                    "feed_title": dataset.feed_title,
+                    "source": dataset.source,
+                    "item_count": len(dataset.items or []),
+                }
+            )
+        return summary
 
     def _handle_research(
         self,

@@ -58,6 +58,29 @@
         </Alert>
       </div>
 
+      <div v-if="task.previews && task.previews.length" class="mt-4 space-y-3">
+        <div
+          v-for="preview in task.previews"
+          :key="preview.preview_id"
+          class="rounded-xl border border-border/60 bg-muted/20 p-3"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-sm font-semibold">{{ preview.title }}</p>
+            <Badge variant="outline">实时</Badge>
+          </div>
+          <ul class="mt-2 space-y-1 text-xs text-muted-foreground">
+            <li
+              v-for="(item, idx) in preview.items"
+              :key="`${preview.preview_id}-${idx}`"
+              class="truncate"
+            >
+              {{ formatPreviewItem(item) }}
+            </li>
+            <li v-if="preview.items.length === 0" class="text-muted-foreground/70">暂无数据</li>
+          </ul>
+        </div>
+      </div>
+
       <div
         v-if="task.metadata"
         class="mt-4 border-t border-border/60 pt-3 text-[12px] text-muted-foreground space-y-1"
@@ -159,4 +182,14 @@ const statusClass = computed(() => ({
   'border-green-500': props.task.status === 'completed',
   'border-red-500': props.task.status === 'error',
 }));
+
+const formatPreviewItem = (item: Record<string, unknown> | undefined) => {
+  if (!item || typeof item !== 'object') {
+    return String(item ?? '');
+  }
+  return Object.entries(item)
+    .slice(0, 3)
+    .map(([key, value]) => `${key}: ${String(value ?? '')}`)
+    .join(' · ');
+};
 </script>

@@ -252,6 +252,20 @@ class ResearchService:
         task_identifier = config.task_id or f"task-{uuid4().hex}"
         logger.info("开始研究任务: %s (task=%s)", config.user_query, task_identifier)
 
+        # 创建面板预览回调闭包（捕获 task_id）
+        def emit_panel_preview(payload: Dict[str, Any]) -> None:
+            """工具调用时使用的面板预览回调，闭包捕获当前 task_id"""
+            event = {
+                "type": StreamEventType.PANEL_PREVIEW,
+                "task_id": task_identifier,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": payload,
+            }
+            self.task_hub.publish_event(task_identifier, event)
+
+        # 注入到 tool_context，供 emit_panel_preview 工具使用
+        self.runtime.tool_context.extras["emit_panel_preview"] = emit_panel_preview
+
         try:
             base_state = dict(config.initial_state) if config.initial_state else {}
             base_state.setdefault("original_query", config.user_query)
@@ -358,6 +372,10 @@ class ResearchService:
                 metadata={"query": config.user_query, "task_id": task_identifier},
                 error=str(exc),
             )
+
+        finally:
+            # 清理注入的回调，避免内存泄漏
+            self.runtime.tool_context.extras.pop("emit_panel_preview", None)
 
 
     def _parse_event(
@@ -475,6 +493,7 @@ class ResearchService:
             "data": {"message": message},
         }
         self.task_hub.publish_event(task_id, event)
+
 
     @staticmethod
     def _extract_human_request(event: Dict[str, Any], node_name: str) -> Optional[str]:

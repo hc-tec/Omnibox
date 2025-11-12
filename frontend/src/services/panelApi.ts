@@ -6,8 +6,8 @@ import type {
   StreamRequestPayload,
 } from "../shared/types/panel";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8002/api/v1";
-const WS_BASE = import.meta.env.VITE_WS_BASE ?? "ws://localhost:8002/api/v1/chat/stream";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8003/api/v1";
+const WS_BASE = import.meta.env.VITE_WS_BASE ?? "ws://localhost:8003/api/v1/chat/stream";
 
 export async function requestPanel(params: ChatRequestParams): Promise<PanelResponse> {
   const response = await axios.post<PanelResponse>(`${API_BASE}/chat`, {

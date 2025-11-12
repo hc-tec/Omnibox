@@ -1,4 +1,4 @@
-好的，让我们马上开始。
+﻿好的，让我们马上开始。
 
 我们V1方案的核心问题是“瀑布式”——**规划一次，执行到底**。这既脆弱又浪费。
 
@@ -380,3 +380,13 @@ def fetch_public_data(query: str) -> List[Dict]:
   * `fetch_public_data` (智能工具) **负责“专业脏活”**（“查外部？好，我来查UID、调RSSHub、做清洗”）。
 
 这完全符合我们V2设计的“高内聚、低耦合”的架构目标。
+## 新增：多路数据查询与实时面板推送
+
+- **多路 Panel 数据**：Planner 仍然只调用一次 `ChatService.chat`，但 `DataQueryService` 现在会根据 RAG 检索到的多个候选路由生成 `datasets` 列表，最多 3 组。
+  - 每个数据集包含 `generated_path / feed_title / items`，`PanelGenerator` 会一次性把这些数据渲染成多张卡片。
+  - 元数据新增 `datasets`，方便前端或调试工具直接展示“热搜 + 专题”组合。
+- **emit_panel_preview 工具**：LangGraph 内置名为 `emit_panel_preview` 的工具，Planner 可以在研究链路任意节点调用它查询公共数据并向前端推送轻量级卡片。
+  - 工具参数：`query`（必填）、`filter_datasource`（可选）、`max_items`（默认 6 条）。
+  - 工具执行成功后会通过 TaskHub 推送 `panel_preview` WebSocket 事件，payload 中带有 `previews` 数组，前端可即时展示。
+- **前端改动**：`ResearchLiveCard` 监听 `panel_preview` 并维护最多 5 张预览卡片，Action Inbox 无需改动；若需要同步到主画布，可直接调用 `panelStore.fetchPanel` 追加。
+

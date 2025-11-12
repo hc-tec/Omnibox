@@ -1,4 +1,4 @@
-# LangGraph Agents 集成使用指南
+﻿# LangGraph Agents 集成使用指南
 
 ## 快速开始
 
@@ -419,6 +419,23 @@ def query_data_tool(...):
     return {"items": items}
 ```
 
+
+---
+
+## 新增能力（2025-11）
+
+### 多路数据卡片
+- DataQueryService 现会根据 `retrieved_tools` 自动尝试 2~3 条候选路由，返回 `datasets` 数组；
+- ChatService 会为每个数据集生成独立的 PanelBlock，前端即可在一次查询中看到 “B站热搜 + 指定 UP 投稿” 等组合面板；
+- 元数据中新增 `datasets` 字段，包含 `route` / `feed_title` / `item_count`，便于调试。
+
+### 研究阶段的面板预览
+- 新增 LangGraph 工具 `emit_panel_preview`，LangGraph Planner 可在任意节点调用，内部还是走 DataQueryService；
+- WebSocket 事件新增 `panel_preview`，负载示例：`{"previews": [{"title": "B 站热搜", "items": [...]}]}`；
+- 前端 `ResearchLiveCard` 会即时展示最多 5 张预览卡片（每卡 6 条记录），无需等研究结束；
+- 若业务端需要同步到主面板，可在接收到事件后调用现有 panel store 追加逻辑。
+
+
 ---
 
 ## 下一步
@@ -436,3 +453,4 @@ def query_data_tool(...):
 - `.agentdocs/workflow/251111-langgraph-agents-refactor.md` - LangGraph Agents 重构文档
 - `docs/langgraph-agents-design.md` - LangGraph 设计文档
 - `docs/langgraph-agents-frontend-design.md` - 前端集成设计
+

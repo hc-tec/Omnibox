@@ -30,6 +30,7 @@ class StreamEventType(str, Enum):
     COMPLETE = "complete"  # 任务完成
     ERROR = "error"  # 错误事件
     CANCELLED = "cancelled"  # 取消事件
+    PANEL_PREVIEW = "panel_preview"  # 数据卡片预览（前端实时展示）
 
 
 class StepStatus(str, Enum):

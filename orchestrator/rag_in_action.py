@@ -206,6 +206,52 @@ class RAGInAction:
                 "retrieved_tools": [],
             }
 
+
+    def plan_with_tool(self, user_query: str, tool_def: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        针对指定工具重新规划参数，便于一次查询生成多路数据。
+
+        该方法用于多路由查询场景：当 RAG 检索返回多个候选工具时，
+        可以针对每个候选工具单独调用此方法，生成对应的路径参数。
+
+        Args:
+            user_query: 用户查询文本
+            tool_def: 工具定义字典，包含 route_id、name、parameters 等字段
+
+        Returns:
+            Dict 包含以下字段：
+                - status: 状态（success/error/needs_clarification）
+                - generated_path: 生成的 RSSHub 路径
+                - selected_tool: 选中的工具信息
+                - parameters_filled: 填充后的参数
+                - reasoning: 推理过程或错误信息
+        """
+        prompt = self.prompt_builder.build(user_query=user_query, tools=[tool_def])
+        parse_result = self.query_parser.parse(prompt)
+
+        if parse_result.get("status") != "success":
+            return parse_result
+
+        try:
+            verified_path = self.path_builder.build(
+                route_def=tool_def,
+                parameters=parse_result.get("parameters_filled", {}),
+            )
+            parse_result["generated_path"] = verified_path
+            parse_result.setdefault(
+                "selected_tool",
+                {
+                    "route_id": tool_def.get("route_id"),
+                    "provider": tool_def.get("datasource") or tool_def.get("provider_id"),
+                    "name": tool_def.get("name"),
+                },
+            )
+        except Exception as exc:
+            parse_result["status"] = "error"
+            parse_result["reasoning"] = f"路径验证失败: {exc}"
+
+        return parse_result
+
     def _print_result(self, result: Dict[str, Any]) -> None:
         """打印处理结果（美化输出）"""
         print("\n[处理结果]")

@@ -144,6 +144,7 @@ def test_chat_service_ignores_empty_planner_components(monkeypatch):
 
     chat._build_panel(
         query_result=_make_success_query_result(),
+        datasets=[],
         intent_confidence=0.87,
         user_query="demo",
     )

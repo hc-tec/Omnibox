@@ -49,6 +49,7 @@ export interface ResearchTask {
   };
   error?: string;
   metadata?: ResearchResponse["metadata"];
+  previews?: ResearchPreview[];
   created_at: string;
   updated_at: string;
 }
@@ -68,9 +69,18 @@ export interface ResearchResponse {
   };
 }
 
+export interface ResearchPreview {
+  preview_id: string;
+  title: string;
+  items: Array<Record<string, unknown>>;
+  generated_path?: string;
+  source?: string | null;
+  created_at: string;
+}
+
 /** WebSocket 消息 */
 export interface ResearchWebSocketMessage {
-  type: 'step' | 'human_in_loop' | 'complete' | 'error';
+  type: 'step' | 'human_in_loop' | 'complete' | 'error' | 'human_response_ack' | 'cancelled' | 'panel_preview';
   task_id: string;
   data?: any;
 }

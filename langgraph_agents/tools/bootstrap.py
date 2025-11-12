@@ -3,9 +3,10 @@
 from .registry import ToolRegistry
 from .public_data import register_public_data_tool
 from .private_notes import register_private_notes_tool
+from .panel_stream import register_panel_stream_tool
 
 
 def register_default_tools(registry: ToolRegistry) -> None:
     register_public_data_tool(registry)
     register_private_notes_tool(registry)
-
+    register_panel_stream_tool(registry)

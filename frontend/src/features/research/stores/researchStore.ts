@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { ResearchTask, QueryMode, ResearchResponse, ExecutionStep } from '../types/researchTypes';
+import type { ResearchTask, QueryMode, ResearchResponse, ExecutionStep, ResearchPreview } from '../types/researchTypes';
 import { ResearchStreamClient } from '../services/researchStream';
 import type { ResearchStreamEvent } from '../services/researchStream';
+
+// 常量定义
+const MAX_PREVIEW_CARDS = 5; // 最多保留的预览卡片数量
 
 export const useResearchStore = defineStore('research', () => {
   // 状态
@@ -41,6 +44,7 @@ export const useResearchStore = defineStore('research', () => {
       mode,
       status: 'processing',
       execution_steps: [],
+      previews: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -163,6 +167,9 @@ export const useResearchStore = defineStore('research', () => {
       case 'human_response_ack':
         markTaskProcessing(taskId);
         break;
+      case 'panel_preview':
+        appendPreview(taskId, event.data);
+        break;
       case 'complete':
         completeTask(
           taskId,
@@ -179,6 +186,28 @@ export const useResearchStore = defineStore('research', () => {
       default:
         break;
     }
+  }
+
+  function appendPreview(taskId: string, payload: any) {
+    const task = tasks.value.get(taskId);
+    if (!task) return;
+    const list = task.previews ?? (task.previews = []);
+    const incoming = Array.isArray(payload?.previews) ? payload.previews : (payload ? [payload] : []);
+    incoming.forEach((entry: any, index) => {
+      const normalized: ResearchPreview = {
+        preview_id: entry?.preview_id || `${taskId}-${Date.now()}-${index}`,
+        title: entry?.title || task.query,
+        items: Array.isArray(entry?.items) ? entry.items : [],
+        generated_path: entry?.generated_path,
+        source: entry?.source ?? null,
+        created_at: new Date().toISOString(),
+      };
+      list.unshift(normalized);
+    });
+    if (list.length > MAX_PREVIEW_CARDS) {
+      list.splice(MAX_PREVIEW_CARDS);
+    }
+    task.updated_at = new Date().toISOString();
   }
 
   return {
