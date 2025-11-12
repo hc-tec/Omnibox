@@ -29,7 +29,8 @@
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/ -v --tb=short)",
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/ -v --tb=short)",
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_research_task_hub.py tests/services/test_chat_service.py -v --tb=short)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_research_config.py -v --tb=short)"
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_research_config.py -v --tb=short)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/services/test_chat_service.py -v --tb=short)"
     ],
     "deny": [],
     "ask": []

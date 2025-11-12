@@ -144,7 +144,6 @@ HTTPS_PROXY=http://proxy.com:8080
 | 环境变量 | 类型 | 默认值 | 说明 |
 |---------|------|--------|------|
 | `RSSHUB_BASE_URL` | str | http://localhost:1200 | 本地RSSHub服务地址 |
-| `RSSHUB_FALLBACK_URL` | str | https://rsshub.app | 本地不可用时的降级地址 |
 | `RSSHUB_HEALTH_CHECK_TIMEOUT` | int | 3 | 健康检查超时时间（秒） |
 | `RSSHUB_REQUEST_TIMEOUT` | int | 30 | RSS请求超时时间（秒） |
 | `RSSHUB_MAX_RETRIES` | int | 2 | 请求失败重试次数 |
@@ -185,20 +184,15 @@ docker-compose logs rsshub
 - `redis`：缓存服务
 - `browserless`：浏览器渲染支持
 
-**降级机制**：
+**本地依赖**：
 
-系统会自动检测本地RSSHub健康状态：
-- ✅ 本地服务正常 → 使用 `RSSHUB_BASE_URL`（默认 http://localhost:1200）
-- ❌ 本地服务不可用 → 自动降级到 `RSSHUB_FALLBACK_URL`（默认 https://rsshub.app）
-
-降级时会在日志中明确标记，并在响应中返回 `source: "fallback"` 字段。
+系统默认仅依赖本地 RSSHub，如果服务未启动，请求会直接失败并在日志中提示“本地获取失败”。确保 `deploy/docker-compose.yml` 已运行或将 `RSSHUB_BASE_URL` 指向可用的自建实例。
 
 **配置示例**：
 
 ```env
 # 默认配置（推荐）
 RSSHUB_BASE_URL=http://localhost:1200
-RSSHUB_FALLBACK_URL=https://rsshub.app
 
 # 使用自定义部署
 RSSHUB_BASE_URL=http://192.168.1.100:1200

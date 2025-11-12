@@ -113,7 +113,10 @@ class RAGInAction:
                 }
 
             # 提取路由定义
-            retrieved_tools = [route_def for _, _, route_def in rag_results]
+            retrieved_tools = [
+                self._enrich_retrieved_tool(route_id, score, route_def)
+                for route_id, score, route_def in rag_results
+            ]
 
             if verbose:
                 logger.debug(f"检索到 {len(retrieved_tools)} 个相关工具")
@@ -205,6 +208,36 @@ class RAGInAction:
                 "clarification_question": "抱歉，处理您的请求时出现了错误。",
                 "retrieved_tools": [],
             }
+
+    @staticmethod
+    def _enrich_retrieved_tool(route_id: str, score: float, route_def: Dict[str, Any]) -> Dict[str, Any]:
+        """附加检索得分和路由模板，便于前端透明展示。"""
+
+        enriched = dict(route_def)
+        enriched.setdefault("route_id", route_id)
+        enriched["score"] = score
+        enriched.setdefault("route", RAGInAction._extract_route_path(route_def))
+        if route_def.get("example_path") and not enriched.get("example_path"):
+            enriched["example_path"] = route_def.get("example_path")
+        return enriched
+
+    @staticmethod
+    def _extract_route_path(route_def: Dict[str, Any]) -> Optional[str]:
+        path_template = route_def.get("route")
+        if path_template:
+            return path_template
+
+        path_template = route_def.get("path_template")
+        if isinstance(path_template, list) and path_template:
+            return path_template[0]
+        if isinstance(path_template, str):
+            return path_template
+
+        example_path = route_def.get("example_path")
+        if example_path:
+            return example_path
+
+        return None
 
 
     def plan_with_tool(self, user_query: str, tool_def: Dict[str, Any]) -> Dict[str, Any]:

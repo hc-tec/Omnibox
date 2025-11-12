@@ -12,7 +12,7 @@ class ResponseMetadata(BaseModel):
 
     intent_type: Optional[str] = Field(
         None,
-        description="识别的意图类型（data_query/chitchat）",
+        description="识别的意图类型（chitchat/simple_query/complex_research/langgraph/error）",
     )
     intent_confidence: Optional[float] = Field(
         None,
@@ -64,6 +64,15 @@ class ResponseMetadata(BaseModel):
     retrieved_tools: Optional[List[Dict[str, Any]]] = Field(
         None, description="RAG 检索到的候选工具列表"
     )
+    research_type: Optional[str] = Field(
+        None, description="研究类型（complex_research/langgraph）"
+    )
+    query_plan: Optional[Dict[str, Any]] = Field(
+        None, description="查询规划信息（仅 complex_research 模式）"
+    )
+    sub_queries: Optional[List[Dict[str, Any]]] = Field(
+        None, description="子查询列表及其执行结果（仅 complex_research 模式）"
+    )
 
 
 class LayoutSnapshotItem(BaseModel):
@@ -92,8 +101,8 @@ class ChatRequest(BaseModel):
     )
     mode: str = Field(
         "auto",
-        description="查询模式：auto(自动识别)/simple(简单查询)/research(复杂研究)",
-        pattern="^(auto|simple|research)$",
+        description="查询模式：auto(智能路由)/simple(简单查询)/research(复杂研究)/langgraph(LangGraph工作流)",
+        pattern="^(auto|simple|research|langgraph)$",
     )
     client_task_id: Optional[str] = Field(
         default=None,

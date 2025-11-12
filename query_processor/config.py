@@ -156,10 +156,6 @@ class RSSHubSettings(BaseSettings):
         default="http://localhost:1200",
         description="RSSHub基础URL（默认本地部署）"
     )
-    fallback_url: str = Field(
-        default="https://rsshub.app",
-        description="RSSHub降级URL（本地不可用时使用）"
-    )
     health_check_timeout: int = Field(
         default=3,
         gt=0,

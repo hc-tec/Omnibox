@@ -29,6 +29,10 @@ class LLMClient(ABC):
         """
         raise NotImplementedError
 
+    def chat(self, messages, **kwargs) -> str:
+        """聊天接口（子类可根据需要实现）。"""
+        raise NotImplementedError("chat() 未在该 LLM 客户端实现")
+
 
 class OpenAIClient(LLMClient):
     """基于LangChain的OpenAI聊天模型客户端"""
@@ -42,7 +46,7 @@ class OpenAIClient(LLMClient):
     ):
         try:
             from langchain_openai import ChatOpenAI
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
         except ImportError as exc:
             raise ImportError(
                 "请先安装 langchain-openai 依赖: pip install langchain-openai"
@@ -51,6 +55,7 @@ class OpenAIClient(LLMClient):
         self._ChatOpenAI = ChatOpenAI
         self._HumanMessage = HumanMessage
         self._SystemMessage = SystemMessage
+        self._AIMessage = AIMessage
 
         # 优先使用参数，否则从配置读取
         api_key = api_key or llm_settings.openai_api_key
@@ -101,6 +106,42 @@ class OpenAIClient(LLMClient):
 
         return str(content)
 
+    def chat(self, messages, **kwargs) -> str:
+        lc_messages = []
+        has_system = False
+        for message in messages:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+            if role == "system":
+                lc_messages.append(self._SystemMessage(content=content))
+                has_system = True
+            elif role == "assistant":
+                lc_messages.append(self._AIMessage(content=content))
+            else:
+                lc_messages.append(self._HumanMessage(content=content))
+
+        if self.system_prompt and not has_system:
+            lc_messages.insert(0, self._SystemMessage(content=self.system_prompt))
+
+        temperature = kwargs.get("temperature")
+        max_tokens = kwargs.get("max_tokens")
+        invoke_kwargs = {}
+        if temperature is not None:
+            invoke_kwargs["temperature"] = temperature
+        if max_tokens is not None:
+            invoke_kwargs["max_tokens"] = max_tokens
+
+        response = self.client.invoke(lc_messages, **invoke_kwargs)
+
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(
+                piece.get("text", "") if isinstance(piece, dict) else str(piece)
+                for piece in content
+            )
+
+        return str(content)
+
 
 class AnthropicClient(LLMClient):
     """基于LangChain的Anthropic聊天模型客户端"""
@@ -123,7 +164,7 @@ class AnthropicClient(LLMClient):
         """
         try:
             from langchain_anthropic import ChatAnthropic
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
         except ImportError as exc:
             raise ImportError(
                 "请先安装 langchain-anthropic 依赖: pip install langchain-anthropic"
@@ -132,6 +173,7 @@ class AnthropicClient(LLMClient):
         self._ChatAnthropic = ChatAnthropic
         self._HumanMessage = HumanMessage
         self._SystemMessage = SystemMessage
+        self._AIMessage = AIMessage
 
         # 优先使用参数，否则从配置读取
         api_key = api_key or llm_settings.anthropic_api_key
@@ -185,6 +227,42 @@ class AnthropicClient(LLMClient):
 
         return str(content)
 
+    def chat(self, messages, **kwargs) -> str:
+        lc_messages = []
+        has_system = False
+        for message in messages:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+            if role == "system":
+                lc_messages.append(self._SystemMessage(content=content))
+                has_system = True
+            elif role == "assistant":
+                lc_messages.append(self._AIMessage(content=content))
+            else:
+                lc_messages.append(self._HumanMessage(content=content))
+
+        if self.system_prompt and not has_system:
+            lc_messages.insert(0, self._SystemMessage(content=self.system_prompt))
+
+        temperature = kwargs.get("temperature")
+        max_tokens = kwargs.get("max_tokens")
+        invoke_kwargs = {}
+        if temperature is not None:
+            invoke_kwargs["temperature"] = temperature
+        if max_tokens is not None:
+            invoke_kwargs["max_tokens"] = max_tokens
+
+        response = self.client.invoke(lc_messages, **invoke_kwargs)
+
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(
+                piece.get("text", "") if isinstance(piece, dict) else str(piece)
+                for piece in content
+            )
+
+        return str(content)
+
 
 class CustomLLMClient(LLMClient):
     """自定义LLM客户端（使用回调函数）"""
@@ -197,6 +275,15 @@ class CustomLLMClient(LLMClient):
     def generate(self, prompt: str, **kwargs) -> str:
         logger.debug("调用自定义LLM: %s", self.name)
         return self.generate_func(prompt)
+
+    def chat(self, messages, **kwargs) -> str:
+        parts = []
+        for message in messages:
+            role = message.get("role", "user").upper()
+            content = message.get("content", "")
+            parts.append(f"[{role}] {content}")
+        prompt = "\n".join(parts)
+        return self.generate(prompt, **kwargs)
 
 
 def create_llm_client(

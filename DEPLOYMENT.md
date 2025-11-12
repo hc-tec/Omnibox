@@ -111,7 +111,6 @@ OPENAI_MODEL=gpt-4o-mini
 
 # RSSHub配置（使用默认值即可）
 RSSHUB_BASE_URL=http://localhost:1200
-RSSHUB_FALLBACK_URL=https://rsshub.app
 ```
 
 ### 3. 启动RSSHub服务（推荐）
@@ -202,8 +201,7 @@ LLM_MAX_RETRIES=2                # 失败重试次数
 # ============================================================
 
 # RSSHub服务地址
-RSSHUB_BASE_URL=http://localhost:1200      # 本地RSSHub（优先使用）
-RSSHUB_FALLBACK_URL=https://rsshub.app     # 降级地址（本地不可用时）
+RSSHUB_BASE_URL=http://localhost:1200      # 本地RSSHub（必须可用）
 
 # 超时和重试设置
 RSSHUB_HEALTH_CHECK_TIMEOUT=3    # 健康检查超时（秒）

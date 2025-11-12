@@ -8,7 +8,9 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field, asdict
 from uuid import uuid4
 
-from services.intent_service import IntentService, get_intent_service
+from services.llm_intent_classifier import LLMIntentClassifier, IntentClassification
+from services.llm_query_planner import LLMQueryPlanner, QueryPlan, SubQuery
+from services.parallel_query_executor import ParallelQueryExecutor, SubQueryResult
 from services.data_query_service import DataQueryService, DataQueryResult, QueryDataset
 from api.schemas.panel import PanelPayload, DataBlock, SourceInfo
 from services.panel.panel_generator import (
@@ -23,6 +25,7 @@ from services.panel.component_planner import (
 )
 from services.panel.llm_component_planner import LLMComponentPlanner
 from services.panel.adapters import get_route_manifest
+from query_processor.llm_client import create_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -65,42 +68,87 @@ class ChatService:
     对话服务（同步实现）。
 
     统一入口，负责：
-    1. 意图识别（数据查询 / 闲聊）
-    2. 调度数据查询服务
-    3. 生成智能数据面板结构
+    1. 三层智能意图识别（chitchat / simple_query / complex_research）
+    2. 简单查询：单次 RAG 调用
+    3. 复杂研究：LLM 查询规划 + 并行执行多个 RAG 查询
+    4. 生成智能数据面板结构
     """
 
     def __init__(
         self,
         data_query_service: DataQueryService,
-        intent_service: Optional[IntentService] = None,
-        research_service=None,  # 新增：研究服务（可选）
+        llm_client=None,  # LLM 客户端，用于意图分类和查询规划
+        research_service=None,  # 研究服务（可选，用于 LangGraph 工作流）
         manage_data_service: bool = False,
         component_planner_config: Optional[ComponentPlannerConfig] = None,
+        max_parallel_queries: int = 3,  # 并行查询最大数量
+        query_timeout: int = 30,  # 单个查询超时时间（秒）
     ):
         """
         初始化对话服务。
 
         Args:
             data_query_service: 数据查询服务实例
-            intent_service: 意图识别服务（可选，默认使用全局单例）
-            research_service: 研究服务实例（可选，用于复杂研究任务）
-            manage_data_service: 是否由ChatService负责关闭 data_query_service
+            llm_client: LLM 客户端实例（用于意图分类和查询规划，可选）
+            research_service: 研究服务实例（可选，用于 LangGraph 复杂研究工作流）
+            manage_data_service: 是否由 ChatService 负责关闭 data_query_service
             component_planner_config: 组件规划器配置（可选）
+            max_parallel_queries: 并行查询的最大工作线程数（默认 3）
+            query_timeout: 每个查询的超时时间，秒（默认 30）
         """
         self.data_query_service = data_query_service
-        self.intent_service = intent_service or get_intent_service()
-        self.research_service = research_service  # 新增
+        self.research_service = research_service
         self._manage_data_service = manage_data_service
         self.panel_generator = PanelGenerator()
         self.component_planner_config = component_planner_config or ComponentPlannerConfig()
 
+        # 初始化 LLM 客户端（如果未提供，则创建默认客户端）
+        if llm_client is None:
+            try:
+                llm_client = create_llm_client()
+                logger.info("使用默认 LLM 客户端")
+            except Exception as exc:
+                logger.warning(f"LLM 客户端创建失败: {exc}")
+                llm_client = None
+
+        # 初始化三层架构组件
+        self.intent_classifier = None
+        self.query_planner = None
+        self.parallel_executor = None
+
+        if llm_client:
+            try:
+                # Layer 1: 意图分类器
+                self.intent_classifier = LLMIntentClassifier(llm_client)
+                logger.info("LLM 意图分类器初始化完成")
+
+                # Layer 2: 查询规划器
+                self.query_planner = LLMQueryPlanner(llm_client)
+                logger.info("LLM 查询规划器初始化完成")
+
+                # Layer 3: 并行查询执行器
+                self.parallel_executor = ParallelQueryExecutor(
+                    data_query_service=data_query_service,
+                    max_workers=max_parallel_queries,
+                    timeout_per_query=query_timeout,
+                )
+                logger.info(
+                    "并行查询执行器初始化完成 (max_workers=%d, timeout=%ds)",
+                    max_parallel_queries,
+                    query_timeout,
+                )
+            except Exception as exc:
+                logger.warning(f"三层架构组件初始化失败: {exc}")
+                self.intent_classifier = None
+                self.query_planner = None
+                self.parallel_executor = None
+
         # 初始化 LLM 组件规划器（作为规则引擎的备选方案）
         try:
-            self.llm_planner = LLMComponentPlanner()
+            self.llm_component_planner = LLMComponentPlanner()
         except Exception as exc:
             logger.warning(f"LLM 组件规划器初始化失败，将仅使用规则引擎: {exc}")
-            self.llm_planner = None
+            self.llm_component_planner = None
 
         logger.info("ChatService 初始化完成")
 
@@ -110,18 +158,23 @@ class ChatService:
         filter_datasource: Optional[str] = None,
         use_cache: bool = True,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
-        mode: str = "auto",  # 新增：auto / simple / research
+        mode: str = "auto",  # auto / simple / research / langgraph
         client_task_id: Optional[str] = None,
     ) -> ChatResponse:
         """
-        处理用户查询。
+        处理用户查询（三层智能路由）。
 
         Args:
             user_query: 用户输入的自然语言查询
             filter_datasource: 过滤特定数据源（可选）
             use_cache: 是否使用缓存
             layout_snapshot: 当前面板布局快照（可选）
-            mode: 查询模式 - auto(自动)/simple(简单查询)/research(复杂研究)
+            mode: 查询模式
+                - auto: 自动智能路由（使用 LLM 意图分类）
+                - simple: 强制简单查询（单次 RAG）
+                - research: 强制复杂研究（查询规划 + 并行执行）
+                - langgraph: 强制使用 LangGraph 工作流
+            client_task_id: 客户端任务 ID（可选）
 
         Returns:
             ChatResponse 对象
@@ -129,29 +182,76 @@ class ChatService:
         logger.info("收到对话请求: %s (mode=%s)", user_query, mode)
 
         try:
-            # 阶段0：如果显式指定研究模式
-            if mode == "research":
+            # 阶段0：如果显式指定 LangGraph 研究模式
+            if mode == "langgraph":
                 if not self.research_service:
-                    logger.warning("研究模式被请求但 ResearchService 未初始化，回退到简单查询")
+                    logger.warning("LangGraph 模式被请求但 ResearchService 未初始化，回退到简单查询")
                 else:
-                    return self._handle_research(
+                    return self._handle_langgraph_research(
                         user_query=user_query,
                         filter_datasource=filter_datasource,
                         intent_confidence=1.0,
                         client_task_id=client_task_id,
                     )
 
-            # 阶段1：意图识别
-            intent_result = self.intent_service.recognize(user_query)
-            logger.debug(
-                "意图识别结果: %s (置信度 %.2f)",
-                intent_result.intent_type,
+            # 阶段0.5：如果显式指定简单查询或复杂研究
+            if mode == "simple":
+                return self._handle_simple_query(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=1.0,
+                    layout_snapshot=layout_snapshot,
+                )
+
+            if mode == "research":
+                if not self.query_planner or not self.parallel_executor:
+                    logger.warning("研究模式被请求但三层架构未初始化，回退到简单查询")
+                    return self._handle_simple_query(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        use_cache=use_cache,
+                        intent_confidence=1.0,
+                        layout_snapshot=layout_snapshot,
+                    )
+                else:
+                    return self._handle_complex_research(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        use_cache=use_cache,
+                        intent_confidence=1.0,
+                        layout_snapshot=layout_snapshot,
+                    )
+
+            # 阶段1：LLM 意图分类（三层架构第一层）
+            if not self.intent_classifier:
+                # 降级：如果 LLM 意图分类器不可用，默认为简单查询
+                logger.warning("LLM 意图分类器不可用，默认使用简单查询模式")
+                return self._handle_simple_query(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=0.5,
+                    layout_snapshot=layout_snapshot,
+                )
+
+            intent_result: IntentClassification = self.intent_classifier.classify(user_query)
+            logger.info(
+                "意图分类结果: %s (置信度 %.2f) - %s",
+                intent_result.intent,
                 intent_result.confidence,
+                intent_result.reasoning,
             )
 
             # 阶段2：根据意图路由
-            if intent_result.intent_type == "data_query":
-                return self._handle_data_query(
+            if intent_result.intent == "chitchat":
+                return self._handle_chitchat(
+                    user_query=user_query,
+                    intent_confidence=intent_result.confidence,
+                )
+
+            elif intent_result.intent == "simple_query":
+                return self._handle_simple_query(
                     user_query=user_query,
                     filter_datasource=filter_datasource,
                     use_cache=use_cache,
@@ -159,10 +259,36 @@ class ChatService:
                     layout_snapshot=layout_snapshot,
                 )
 
-            return self._handle_chitchat(
-                user_query=user_query,
-                intent_confidence=intent_result.confidence,
-            )
+            elif intent_result.intent == "complex_research":
+                # 检查三层架构组件是否可用
+                if not self.query_planner or not self.parallel_executor:
+                    logger.warning("复杂研究意图但三层架构未初始化，回退到简单查询")
+                    return self._handle_simple_query(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        use_cache=use_cache,
+                        intent_confidence=intent_result.confidence,
+                        layout_snapshot=layout_snapshot,
+                    )
+                else:
+                    return self._handle_complex_research(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        use_cache=use_cache,
+                        intent_confidence=intent_result.confidence,
+                        layout_snapshot=layout_snapshot,
+                    )
+
+            else:
+                # 未知意图，降级为简单查询
+                logger.warning(f"未知意图类型: {intent_result.intent}，降级为简单查询")
+                return self._handle_simple_query(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=intent_result.confidence,
+                    layout_snapshot=layout_snapshot,
+                )
 
         except Exception as exc:
             logger.error("对话处理失败: %s", exc, exc_info=True)
@@ -173,7 +299,7 @@ class ChatService:
                 metadata={"error": str(exc)},
             )
 
-    def _handle_data_query(
+    def _handle_simple_query(
         self,
         user_query: str,
         filter_datasource: Optional[str],
@@ -181,8 +307,8 @@ class ChatService:
         intent_confidence: float,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
-        """处理数据查询意图。"""
-        logger.debug("处理数据查询意图")
+        """处理简单查询意图（单次 RAG 调用）。"""
+        logger.debug("处理简单查询意图")
 
         query_result = self.data_query_service.query(
             user_query=user_query,
@@ -256,6 +382,8 @@ class ChatService:
                 metadata=metadata,
             )
 
+        formatted_tools = self._format_retrieved_tools(query_result.retrieved_tools)
+
         if query_result.status == "needs_clarification":
             return ChatResponse(
                 success=False,
@@ -265,6 +393,7 @@ class ChatService:
                     "status": "needs_clarification",
                     "reasoning": query_result.reasoning,
                     "intent_confidence": intent_confidence,
+                    "retrieved_tools": formatted_tools,
                 },
             )
 
@@ -277,6 +406,7 @@ class ChatService:
                     "status": "not_found",
                     "reasoning": query_result.reasoning,
                     "intent_confidence": intent_confidence,
+                    "retrieved_tools": formatted_tools,
                 },
             )
 
@@ -289,6 +419,7 @@ class ChatService:
                 "reasoning": query_result.reasoning,
                 "intent_confidence": intent_confidence,
                 "generated_path": query_result.generated_path,
+                "retrieved_tools": formatted_tools,
             },
         )
 
@@ -324,9 +455,202 @@ class ChatService:
         return ChatResponse(
             success=True,
             intent_type="chitchat",
-            message="我是RSS数据聚合助手。您可以问我关于各种平台数据的问题，比如“虎扑步行街最新帖子”、“B站热门视频”等。",
+            message='我是RSS数据聚合助手。您可以问我关于各种平台数据的问题，比如"虎扑步行街最新帖子"、"B站热门视频"等。',
             metadata={"intent_confidence": intent_confidence},
         )
+
+    def _handle_complex_research(
+        self,
+        user_query: str,
+        filter_datasource: Optional[str],
+        use_cache: bool,
+        intent_confidence: float,
+        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+    ) -> ChatResponse:
+        """
+        处理复杂研究意图（LLM 查询规划 + 并行执行）。
+
+        流程：
+        1. 使用 LLMQueryPlanner 分解查询为多个子查询
+        2. 使用 ParallelQueryExecutor 并行执行所有子查询
+        3. 聚合结果并生成面板
+
+        Args:
+            user_query: 用户查询
+            filter_datasource: 过滤数据源（可选）
+            use_cache: 是否使用缓存
+            intent_confidence: 意图置信度
+            layout_snapshot: 布局快照（可选）
+
+        Returns:
+            ChatResponse 对象
+        """
+        logger.info("处理复杂研究意图: %s", user_query)
+
+        try:
+            # 第一步：LLM 查询规划（三层架构第二层）
+            query_plan: QueryPlan = self.query_planner.plan(user_query)
+
+            if not query_plan.sub_queries:
+                logger.warning("查询规划未生成子查询，回退到简单查询")
+                return self._handle_simple_query(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=intent_confidence,
+                    layout_snapshot=layout_snapshot,
+                )
+
+            logger.info(
+                "查询规划完成: %d 个子查询 - %s",
+                len(query_plan.sub_queries),
+                query_plan.reasoning,
+            )
+
+            # 第二步：并行执行子查询（三层架构第三层）
+            sub_query_results: List[SubQueryResult] = self.parallel_executor.execute_parallel(
+                sub_queries=query_plan.sub_queries,
+                use_cache=use_cache,
+            )
+
+            # 第三步：聚合结果
+            success_results = [
+                result for result in sub_query_results
+                if result.result and result.result.status == "success"
+            ]
+
+            if not success_results:
+                # 所有子查询都失败
+                error_messages = [
+                    f"- {result.sub_query.query}: {result.error}"
+                    for result in sub_query_results
+                    if result.error
+                ]
+                return ChatResponse(
+                    success=False,
+                    intent_type="complex_research",
+                    message=f"复杂研究失败，所有子查询均未成功：\n" + "\n".join(error_messages),
+                    metadata={
+                        "query_plan": query_plan.reasoning,
+                        "sub_query_count": len(query_plan.sub_queries),
+                        "success_count": 0,
+                        "intent_confidence": intent_confidence,
+                    },
+                )
+
+            # 第四步：构建聚合数据集
+            aggregated_datasets: List[QueryDataset] = []
+            for result in success_results:
+                query_result = result.result
+                datasets = query_result.datasets or []
+                if datasets:
+                    aggregated_datasets.extend(datasets)
+                else:
+                    # 如果没有 datasets，从 result 构造一个
+                    aggregated_datasets.append(self._dataset_from_result(query_result))
+
+            # 第五步：生成面板（复用 _build_panel 逻辑）
+            # 使用第一个成功的 query_result 作为主结果
+            primary_result = success_results[0].result
+            panel_result = self._build_panel(
+                query_result=primary_result,
+                datasets=aggregated_datasets,
+                intent_confidence=intent_confidence,
+                user_query=user_query,
+                layout_snapshot=layout_snapshot,
+            )
+
+            # 第六步：构造响应消息
+            message_parts = []
+            for result in success_results:
+                query_result = result.result
+                feed = query_result.feed_title or "数据"
+                message_parts.append(f"{feed}（{len(query_result.items or [])} 条）")
+
+            message = f"已完成复杂研究，获取 {len(success_results)} 组数据：" + "；".join(message_parts)
+
+            # 第七步：构造元数据
+            metadata: Dict[str, Any] = {
+                "generated_path": primary_result.generated_path,
+                "source": primary_result.source,
+                "cache_hit": primary_result.cache_hit,
+                "intent_confidence": intent_confidence,
+                "feed_title": primary_result.feed_title,
+                "component_confidence": panel_result.component_confidence,
+                "requested_components": panel_result.debug.get("requested_components"),
+                "planner_reasons": panel_result.debug.get("planner_reasons"),
+                "planner_engine": panel_result.debug.get("planner_engine"),
+                "debug": panel_result.debug,
+                "datasets": self._summarize_datasets(aggregated_datasets, primary_result),
+                "retrieved_tools": self._format_retrieved_tools(primary_result.retrieved_tools),
+                # 复杂研究特有元数据
+                "research_type": "complex_research",
+                "query_plan": {
+                    "reasoning": query_plan.reasoning,
+                    "sub_query_count": len(query_plan.sub_queries),
+                    "success_count": len(success_results),
+                    "failure_count": len(sub_query_results) - len(success_results),
+                    "estimated_time": query_plan.estimated_time,
+                },
+                "sub_queries": [
+                    {
+                        "query": result.sub_query.query,
+                        "datasource": result.sub_query.datasource,
+                        "status": "success" if result.result else "failed",
+                        "error": result.error,
+                        "execution_time": result.execution_time,
+                        "item_count": len(result.result.items) if result.result else 0,
+                    }
+                    for result in sub_query_results
+                ],
+            }
+
+            # 提取警告信息
+            blocks_debug = panel_result.debug.get("blocks", [])
+            warnings = []
+            for block in blocks_debug:
+                if block.get("using_default_adapter"):
+                    warnings.append({
+                        "type": "missing_adapter",
+                        "message": block.get("adapter_warning", "No adapter registered"),
+                        "block_id": block.get("data_block_id"),
+                    })
+                if block.get("using_fallback"):
+                    warnings.append({
+                        "type": "fallback_rendering",
+                        "message": block.get("fallback_reason", "Using fallback component"),
+                        "block_id": block.get("data_block_id"),
+                    })
+                if block.get("skipped"):
+                    warnings.append({
+                        "type": "component_skipped",
+                        "message": block.get("skip_reason", "Component generation skipped"),
+                        "block_id": block.get("data_block_id"),
+                    })
+
+            if warnings:
+                metadata["warnings"] = warnings
+
+            return ChatResponse(
+                success=True,
+                intent_type="complex_research",
+                message=message,
+                data=panel_result.payload,
+                data_blocks=panel_result.data_blocks,
+                metadata=metadata,
+            )
+
+        except Exception as exc:
+            logger.error("复杂研究处理失败: %s", exc, exc_info=True)
+            return ChatResponse(
+                success=False,
+                intent_type="complex_research",
+                message=f"复杂研究失败：{exc}",
+                metadata={
+                    "error": str(exc),
+                    "intent_confidence": intent_confidence,
+                },
+            )
 
     def _build_panel(
         self,
@@ -407,8 +731,8 @@ class ChatService:
             )
             manifest = get_route_manifest(route)
             decision = None
-            if self.llm_planner and self.llm_planner.is_available():
-                decision = self.llm_planner.plan(
+            if self.llm_component_planner and self.llm_component_planner.is_available():
+                decision = self.llm_component_planner.plan(
                     route=route,
                     manifest=manifest,
                     context=planner_context,
@@ -552,13 +876,33 @@ class ChatService:
                 "route_id": tool.get("route_id"),
                 "name": tool.get("name"),
                 "provider": tool.get("datasource") or tool.get("provider_id"),
-                "description": tool.get("description", "")[:100],  # 限制描述长度
-                "score": tool.get("score"),  # RAG 检索相似度分数
-                "route": tool.get("route"),  # 路由模板
+                "description": (tool.get("description") or "")[:120],
+                "score": tool.get("score"),
+                "route": ChatService._resolve_tool_route(tool),
+                "example_path": tool.get("example_path"),
             })
         return formatted
 
-    def _handle_research(
+    @staticmethod
+    def _resolve_tool_route(tool: Dict[str, Any]) -> Optional[str]:
+        if tool.get("route"):
+            return tool["route"]
+
+        path_template = tool.get("path_template")
+        if isinstance(path_template, list) and path_template:
+            return path_template[0]
+        if isinstance(path_template, str):
+            return path_template
+
+        if tool.get("generated_path"):
+            return tool.get("generated_path")
+
+        if tool.get("example_path"):
+            return tool.get("example_path")
+
+        return None
+
+    def _handle_langgraph_research(
         self,
         user_query: str,
         filter_datasource: Optional[str],
@@ -566,17 +910,18 @@ class ChatService:
         client_task_id: Optional[str] = None,
     ) -> ChatResponse:
         """
-        处理复杂研究意图（多轮动态研究）。
+        处理 LangGraph 研究工作流（多轮动态研究）。
 
         Args:
             user_query: 用户查询
             filter_datasource: 过滤数据源（可选）
             intent_confidence: 意图置信度
+            client_task_id: 客户端任务 ID（可选）
 
         Returns:
             ChatResponse 对象
         """
-        logger.debug("处理复杂研究意图")
+        logger.debug("处理 LangGraph 研究工作流")
 
         if not self.research_service:
             return ChatResponse(
@@ -657,6 +1002,13 @@ class ChatService:
         if self._manage_data_service and self.data_query_service:
             self.data_query_service.close()
             logger.info("ChatService 已关闭（管理 DataQueryService 资源）")
+
+        if self.parallel_executor:
+            try:
+                self.parallel_executor.shutdown()
+                logger.info("ParallelQueryExecutor 已关闭")
+            except Exception as exc:  # pragma: no cover
+                logger.warning("ParallelQueryExecutor 关闭失败: %s", exc)
 
         if self.research_service and hasattr(self.research_service, "close"):
             try:

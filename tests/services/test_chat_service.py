@@ -26,8 +26,8 @@ import services.chat_service as chat_service_module
 
 
 @pytest.fixture(autouse=True)
-def disable_llm_planner(monkeypatch):
-    """避免测试过程中真正初始化 LLMComponentPlanner。"""
+def disable_llm_components(monkeypatch):
+    """避免测试过程中真正初始化 LLMComponentPlanner 和三层架构组件。"""
 
     class _DummyLLMPlanner:
         def __init__(self, *args, **kwargs):
@@ -36,10 +36,18 @@ def disable_llm_planner(monkeypatch):
         def is_available(self) -> bool:
             return False
 
+    # 禁用 LLMComponentPlanner
     monkeypatch.setattr(
         chat_service_module,
         "LLMComponentPlanner",
         lambda *args, **kwargs: _DummyLLMPlanner(),
+    )
+
+    # 禁用 LLM 客户端创建，避免触发三层架构初始化
+    monkeypatch.setattr(
+        chat_service_module,
+        "create_llm_client",
+        lambda *args, **kwargs: None,
     )
 
 
@@ -53,11 +61,6 @@ def _make_success_query_result() -> DataQueryResult:
         source="local",
         cache_hit="rss_cache",
     )
-
-
-class _DummyIntentService:
-    def recognize(self, *args, **kwargs):
-        return types.SimpleNamespace(intent_type="data_query", confidence=0.92)
 
 
 class _DummyDataQueryService:
@@ -92,7 +95,7 @@ def _empty_panel_result():
 def test_chat_service_exposes_panel_warnings(monkeypatch):
     query_result = _make_success_query_result()
     data_service = _DummyDataQueryService(query_result)
-    chat = ChatService(data_query_service=data_service, intent_service=_DummyIntentService())
+    chat = ChatService(data_query_service=data_service)
 
     layout = LayoutTree(mode="append", nodes=[LayoutNode(type="row", id="row-1", children=[], props={})], history_token=None)
     payload = PanelPayload(mode="append", layout=layout, blocks=[])
@@ -118,7 +121,7 @@ def test_chat_service_exposes_panel_warnings(monkeypatch):
     )
     chat.panel_generator = _RecordingPanelGenerator(stub_result)
 
-    response = chat.chat("show me data")
+    response = chat.chat("show me data", mode="simple")
 
     warning_types = [entry["type"] for entry in response.metadata.get("warnings", [])]
     assert warning_types == [
@@ -136,8 +139,8 @@ def test_chat_service_ignores_empty_planner_components(monkeypatch):
     )
 
     data_service = _DummyDataQueryService(_make_success_query_result())
-    chat = ChatService(data_query_service=data_service, intent_service=_DummyIntentService())
-    chat.llm_planner = None
+    chat = ChatService(data_query_service=data_service)
+    chat.llm_component_planner = None
 
     recording_generator = _RecordingPanelGenerator(_empty_panel_result())
     chat.panel_generator = recording_generator
@@ -176,22 +179,52 @@ class _StubResearchService:
         )
 
 
-def test_chat_service_handles_research_mode():
+def test_chat_service_handles_langgraph_research_mode():
+    """测试 LangGraph 研究工作流模式（原 research 模式现改名为 langgraph）。"""
     data_service = _DummyDataQueryService(_make_success_query_result())
     research_stub = _StubResearchService()
     chat = ChatService(
         data_query_service=data_service,
-        intent_service=_DummyIntentService(),
         research_service=research_stub,
     )
 
     client_task_id = "task-client-123"
-    response = chat.chat("需要复杂研究", mode="research", client_task_id=client_task_id)
+    response = chat.chat("需要复杂研究", mode="langgraph", client_task_id=client_task_id)
 
     assert research_stub.calls == [("需要复杂研究", None, client_task_id)]
-    assert response.intent_type == "research"
+    assert response.intent_type == "research"  # LangGraph 工作流的 intent_type 仍为 "research"
     assert response.metadata["mode"] == "research"
     assert response.metadata["total_steps"] == 1
     assert response.metadata["execution_steps"][0]["step_id"] == 1
     assert response.metadata["task_id"] == client_task_id
     assert response.message == "研究完成"
+
+
+def test_chat_service_exposes_retrieved_tools_on_clarification():
+    retrieved_tools = [
+        {
+            "route_id": "demo.route",
+            "name": "Demo Route",
+            "datasource": "demo",
+            "description": "测试路由",
+            "path_template": ["/demo/:category"],
+            "score": 0.91,
+        }
+    ]
+    query_result = DataQueryResult(
+        status="needs_clarification",
+        items=[],
+        reasoning="需要具体栏目",
+        clarification_question="你想看哪个栏目？",
+        retrieved_tools=retrieved_tools,
+    )
+
+    data_service = _DummyDataQueryService(query_result)
+    chat = ChatService(data_query_service=data_service)
+
+    response = chat.chat("demo", mode="simple")
+
+    tools = response.metadata["retrieved_tools"]
+    assert tools[0]["route"] == "/demo/:category"
+    assert tools[0]["score"] == pytest.approx(0.91)
+    assert tools[0]["description"] == "测试路由"

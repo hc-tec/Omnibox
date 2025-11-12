@@ -14,7 +14,7 @@
 | `items` | `List[Dict[str, Any]]` | 默认值为 `[payload]`，保留给历史消费者 |
 | `payload` | `Dict[str, Any]` | RSSHub 原始 JSON；若响应非对象，则包装为 `{"value": ...}` |
 | `feed_title` / `feed_link` / `feed_description` | `Optional[str]` | 直接透传 RSSHub 元数据 |
-| `source` | `"local" \| "fallback"` | 使用的 RSSHub 基础地址 |
+| `source` | `"local"` | 数据来源（当前仅支持本地RSSHub） |
 | `fetched_at` | `str` | ISO8601 时间戳 |
 | `error_message` | `Optional[str]` | 失败时的错误说明 |
 

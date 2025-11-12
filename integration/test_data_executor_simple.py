@@ -105,7 +105,6 @@ def run_config_demo():
     executor = create_data_executor_from_config()
     print("✓ 从配置创建成功")
     print(f"  本地地址: {executor.base_url}")
-    print(f"  降级地址: {executor.fallback_url}")
     print(f"  请求超时: {executor.request_timeout}秒")
     executor.close()
 
@@ -122,8 +121,7 @@ def main():
         run_config_demo()
 
         if not healthy:
-            print("\n提示：本地RSSHub未启动，已使用降级地址")
-            print("启动命令: cd deploy && docker-compose up -d")
+            print("\n提示：本地RSSHub未启动，请先启动本地服务：cd deploy && docker-compose up -d")
 
     except Exception as exc:
         logger.error("测试过程中发生错误", exc_info=True)

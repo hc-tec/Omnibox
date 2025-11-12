@@ -103,7 +103,6 @@ def test_from_config():
     executor = create_data_executor_from_config()
     print("✓ 从配置创建成功")
     print(f"  本地地址: {executor.base_url}")
-    print(f"  降级地址: {executor.fallback_url}")
     print(f"  健康检查超时: {executor.health_check_timeout}秒")
     print(f"  请求超时: {executor.request_timeout}秒")
     print(f"  最大重试: {executor.max_retries}次")
@@ -127,8 +126,7 @@ def main():
         print("=" * 80)
 
         if not healthy:
-            print("\n提示：本地RSSHub未启动，已自动降级到公共服务")
-            print("启动本地RSSHub: cd deploy && docker-compose up -d")
+            print("\n提示：本地RSSHub未启动，请先启动本地服务：cd deploy && docker-compose up -d")
 
     except Exception as exc:
         logger.error(f"测试失败: {exc}", exc_info=True)

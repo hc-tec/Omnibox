@@ -148,7 +148,6 @@ OPENAI_BASE_URL=https://api.openai.com/v1  # 或其他兼容服务
 
 # RSSHub 配置（通常使用默认值即可）
 RSSHUB_BASE_URL=http://localhost:1200
-RSSHUB_FALLBACK_URL=https://rsshub.app
 `
 
 ### 第五步：启动 Electron 桌面端
@@ -667,9 +666,7 @@ docker-compose logs rsshub
 # 3. 测试连接
 curl http://localhost:1200/github/trending
 
-# 4. 如果本地服务不可用，会自动切换到公共服务
-# 在 .env 中配置备用地址
-RSSHUB_FALLBACK_URL=https://rsshub.app
+# 4. 若本地服务不可用，请先启动 deploy/docker-compose.yml 提供的 RSSHub
 ```
 
 ### Q5: 如何自定义可视化组件？
@@ -732,6 +729,15 @@ git commit -m "docs: 更新适配器开发指南"
 # 测试补充
 git commit -m "test: 添加组件规划器边界测试"
 ```
+
+---
+
+## 🔭 研究模式实时卡片速览
+
+- **多路 Panel 数据**：一次查询即可返回多条 `datasets`（例如 “B 站热搜 + 指定 UP 投稿”），后端自动将其转成多张卡片；`ChatService.metadata.datasets` 会列出每组数据的 `route / feed_title / item_count`，便于调试。
+- **WebSocket `panel_preview` 事件**：研究流程（`mode=research`）中可调用 `emit_panel_preview` 工具把阶段性数据推送到前端，事件 payload 形如 `{ "previews": [{ "title": "...", "items": [...] }] }`，`ResearchLiveCard` 会即时展示。
+- **启用条件**：确保 `client_task_id` 与 `/research/stream` WebSocket 已连接，必要时通过 `VITE_RESEARCH_WS_BASE` / `VITE_API_BASE` 配置前端访问路径。
+- **可选同步**：如需把预览同步进主画布，可在收到 `panel_preview` 事件后调用现有 `panelStore.fetchPanel` 或自定义 append 逻辑。
 
 ---
 

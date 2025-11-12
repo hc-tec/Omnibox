@@ -200,7 +200,7 @@ print(f"缓存命中: {metadata['cache_hit']}")
 ### DataQueryService错误
 - RAG失败: 返回`not_found`状态
 - RSS获取失败: 返回`error`状态
-- 网络问题: DataExecutor自动重试和降级
+- 网络问题: DataExecutor在本地多次重试仍失败时直接返回错误，由上层提示运维
 
 ### ChatService错误
 - 意图识别失败: fallback为data_query

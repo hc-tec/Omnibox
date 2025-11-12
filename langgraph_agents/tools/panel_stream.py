@@ -42,10 +42,19 @@ def register_panel_stream_tool(registry: ToolRegistry) -> None:
     )
     def emit_panel_preview(call: ToolCall, context: ToolExecutionContext) -> ToolExecutionPayload:
         dq = context.data_query_service
-        emitter = (context.extras or {}).get("emit_panel_preview")
+        extras = context.extras or {}
+        emitter = extras.get("emit_panel_preview")
 
-        if dq is None or emitter is None:
-            raise RuntimeError("ResearchService 未注入 DataQueryService 或事件回调，无法推送面板数据")
+        if dq is None:
+            raise RuntimeError("DataQueryService 未注入，无法推送面板数据")
+
+        if emitter is None:
+            logger.warning("emit_panel_preview 工具未注入回调，跳过实时卡片推送")
+            return ToolExecutionPayload(
+                call=call,
+                raw_output={"type": "panel_preview", "skipped": True, "reason": "callback_not_available"},
+                status="success",
+            )
 
         query = call.args.get("query")
         if not query:

@@ -245,9 +245,12 @@ def initialize_services():
             logger.warning(f"ResearchService 初始化失败，研究功能将不可用: {res_exc}")
             research_service = None
 
-        # 初始化 ChatService（注入 ResearchService）
+        # 初始化 ChatService（注入 LLM 客户端和 ResearchService）
+        # 为三层架构创建独立的 LLM 客户端
+        intent_llm = create_llm_client(provider)
         _chat_service = ChatService(
             data_query_service,
+            llm_client=intent_llm,
             research_service=research_service,
             manage_data_service=True,
         )
@@ -412,7 +415,7 @@ async def health_check() -> dict:
                 if data_executor.ensure_rsshub_alive():
                     rsshub_status = "local"
                 else:
-                    rsshub_status = "fallback"
+                    rsshub_status = "unavailable"
             else:
                 rsshub_status = "unknown"
         except Exception as exc:
@@ -445,7 +448,7 @@ async def health_check() -> dict:
     "/metrics",
     response_model=dict,
     summary="运维指标",
-    description="获取系统运行指标（缓存命中率、降级次数、响应耗时等）"
+    description="获取系统运行指标（缓存命中率、RSSHub可用性、响应耗时等）"
 )
 async def get_metrics() -> dict:
     """
@@ -453,7 +456,7 @@ async def get_metrics() -> dict:
 
     返回系统运行统计：
     - 缓存命中率（RAG/RSS）
-    - RSSHub降级率
+    - RSSHub可用性
     - API成功率
     - WebSocket连接数
     - 响应耗时统计（平均/P95）

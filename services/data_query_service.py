@@ -93,6 +93,8 @@ class DataQueryService:
     ) -> DataQueryResult:
         logger.info("开始数据查询: %s", user_query)
 
+        retrieved_tools: List[Dict[str, Any]] = []
+
         try:
             rag_cache_key = user_query if not filter_datasource else f"{user_query}||{filter_datasource}"
             rag_result, rag_cache_hit = self._resolve_rag_result(
@@ -101,6 +103,7 @@ class DataQueryService:
                 cache_key=rag_cache_key,
                 use_cache=use_cache,
             )
+            retrieved_tools = rag_result.get("retrieved_tools") or []
 
             status = rag_result.get("status")
             if status == "needs_clarification":
@@ -110,6 +113,7 @@ class DataQueryService:
                     reasoning=rag_result.get("reasoning", ""),
                     clarification_question=rag_result.get("clarification_question"),
                     cache_hit=rag_cache_hit,
+                    retrieved_tools=retrieved_tools,
                 )
             if status == "not_found":
                 return DataQueryResult(
@@ -118,6 +122,7 @@ class DataQueryService:
                     reasoning=rag_result.get("reasoning", "未找到匹配的工具"),
                     clarification_question=rag_result.get("clarification_question"),
                     cache_hit=rag_cache_hit,
+                    retrieved_tools=retrieved_tools,
                 )
             if status != "success":
                 return DataQueryResult(
@@ -125,6 +130,7 @@ class DataQueryService:
                     items=[],
                     reasoning=rag_result.get("reasoning", "RAG 处理失败"),
                     cache_hit=rag_cache_hit,
+                    retrieved_tools=retrieved_tools,
                 )
 
             datasets, failures = self._collect_datasets(
@@ -151,7 +157,7 @@ class DataQueryService:
                     reasoning="；".join(reasoning_notes),
                     payload=primary.payload,
                     datasets=datasets,
-                    retrieved_tools=rag_result.get("retrieved_tools", []),
+                    retrieved_tools=retrieved_tools,
                 )
 
             failure_reason = failures[0] if failures else rag_result.get("reasoning", "未能获取可用数据")
@@ -160,6 +166,7 @@ class DataQueryService:
                 items=[],
                 reasoning=failure_reason,
                 cache_hit=rag_cache_hit,
+                retrieved_tools=retrieved_tools,
             )
 
         except Exception as exc:
@@ -168,6 +175,7 @@ class DataQueryService:
                 status="error",
                 items=[],
                 reasoning=f"查询过程中发生异常: {exc}",
+                retrieved_tools=retrieved_tools,
             )
 
     def close(self):

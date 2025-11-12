@@ -9,7 +9,7 @@
 **位置**: `integration/data_executor.py`
 
 **职责**:
-- 调用RSSHub API（本地优先，支持降级到公共服务）
+- 调用RSSHub API（仅本地部署，失败直接返回错误）
 - 健康检查和连接管理
 - 数据标准化（FeedItem模型）
 - 错误处理和重试
@@ -34,7 +34,7 @@ finally:
 ```
 
 **关键特性**:
-1. **本地优先降级机制** - 优先使用`http://localhost:1200`，失败后降级到`https://rsshub.app`
+1. **本地优先** - 依赖自托管 RSSHub (`http://localhost:1200`)，失败会直接返回错误并记录日志
 2. **URL编码安全** - 正确处理特殊字符（`#`、中文等），避免HTTP fragment截断
 3. **万物皆可RSS** - FeedItem模型支持视频、社交动态、论坛、商品等多种数据类型
 4. **媒体信息提取** - 自动从RSSHub的enclosure字段提取图片/视频/音频URL
@@ -42,7 +42,7 @@ finally:
 **重要记忆**:\n- 默认由调用方管理 DataQueryService 生命周期；若设置 manage_data_service=True，ChatService 会在关闭时一并释放资源
 - 所有RSSHub路径必须通过DataExecutor访问，不允许直接拼接URL
 - 特殊字符路径（如`/hupu/bbs/#步行街主干道/1`）会被正确编码
-- 返回的FetchResult包含`source`字段（local/fallback），用于监控降级情况
+- 返回的FetchResult包含`source`字段（当前仅会是`local`），用于数据来源追踪
 
 ### CacheService - TTL缓存管理
 **位置**: `integration/cache_service.py`
@@ -155,7 +155,6 @@ if os.getenv("RSSHUB_TEST_REAL", "0") != "1":
 **配置项**:
 ```python
 RSSHUB_BASE_URL = "http://localhost:1200"  # 本地RSSHub地址
-RSSHUB_FALLBACK_URL = "https://rsshub.app"  # 降级地址
 RSSHUB_HEALTH_CHECK_TIMEOUT = 3  # 健康检查超时（秒）
 RSSHUB_REQUEST_TIMEOUT = 30  # 请求超时（秒）
 RSSHUB_MAX_RETRIES = 2  # 最大重试次数
@@ -211,9 +210,9 @@ class FeedItem:
 ## 错误处理规范
 
 ### DataExecutor错误处理
-1. **健康检查失败** - 自动切换到fallback URL
+1. **健康检查失败** - 记录异常并提示“本地RSSHub不可用”，不再自动切换远端服务
 2. **请求超时/失败** - 重试`max_retries`次
-3. **降级记录** - 日志中写明降级原因
+3. **失败记录** - 日志中写明失败原因，便于排查本地部署
 4. **异常封装** - 返回`FetchResult`，`status="error"`，附带错误信息
 
 ### CacheService错误处理
@@ -381,7 +380,7 @@ POST /api/v1/chat
 ```python
 GET /api/v1/health
 - 响应: 健康状态 (chat_service, rsshub, rag, cache)
-- 检查: RSSHub本地/降级状态
+- 检查: RSSHub本地可用状态
 ```
 
 **生命周期管理**:
@@ -696,6 +695,8 @@ ws.onmessage = (event) => {
 3. 相关推荐（基于检索结果推荐相关数据源）
 4. 调试信息（开发时查看 RAG 效果和评分）
 
+> **注意**：无论查询最终状态是 `success`、`needs_clarification`、`not_found` 还是 `error`，都会透出同一次 RAG 检索得到的候选工具，方便用户在失败场景下也能看到“系统已经考虑过什么”。
+
 ### 数据格式
 
 ```json
@@ -716,7 +717,8 @@ ws.onmessage = (event) => {
         "provider": "bilibili",
         "description": "B站各分区排行榜",
         "score": 0.78,
-        "route": "/bilibili/ranking/:rid/:day?"
+        "route": "/bilibili/ranking/:rid/:day?",
+        "example_path": "/bilibili/ranking/0/3"
       }
     ],
     "generated_path": "/bilibili/hot-search",
@@ -810,7 +812,7 @@ function switchToTool(routeId: string) {
 
 1. **Redis缓存** - CacheService设计支持替换为Redis，不改业务代码
 2. **异步支持** - Service层可补充async包装方法，通过`asyncio.to_thread`调用同步实现
-3. **监控指标** - 降级次数、缓存命中率、响应耗时等
+3. **监控指标** - RSSHub 可用性、缓存命中率、响应耗时等
 4. **LLM闲聊** - ChatService的闲聊响应可接入真实LLM，提供更自然的对话
 5. **流式优化** - 实现Service层回调机制，在RAG/数据获取阶段实时推送中间结果（目前是模拟）
 

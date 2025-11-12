@@ -46,7 +46,7 @@ class DataExecutor:
     职责：
     - 调用RSSHub获取RSS数据（JSON格式）
     - 健康检查
-    - 本地优先+降级机制
+    - 本地优先
     - 数据标准化
 
     使用示例：
@@ -60,7 +60,6 @@ class DataExecutor:
     def __init__(
         self,
         base_url: str = "http://localhost:1200",
-        fallback_url: str = "https://rsshub.app",
         health_check_timeout: int = 3,
         request_timeout: int = 30,
         max_retries: int = 2,
@@ -70,13 +69,11 @@ class DataExecutor:
 
         Args:
             base_url: 本地RSSHub地址
-            fallback_url: 降级RSSHub地址
             health_check_timeout: 健康检查超时（秒）
             request_timeout: 请求超时（秒）
             max_retries: 最大重试次数
         """
         self.base_url = base_url.rstrip('/')
-        self.fallback_url = fallback_url.rstrip('/')
         self.health_check_timeout = health_check_timeout
         self.request_timeout = request_timeout
         self.max_retries = max_retries
@@ -91,10 +88,7 @@ class DataExecutor:
         self._local_healthy: Optional[bool] = None
         self._last_health_check: Optional[datetime] = None
 
-        logger.info(
-            f"DataExecutor初始化: 本地={self.base_url}, "
-            f"降级={self.fallback_url}"
-        )
+        logger.info("DataExecutor初始化: 本地=%s", self.base_url)
 
     def ensure_rsshub_alive(self) -> bool:
         """
@@ -132,9 +126,8 @@ class DataExecutor:
         获取并解析RSS数据（JSON格式）
 
         策略：
-        1. 优先尝试本地RSSHub
-        2. 失败则降级到公共RSSHub
-        3. 两者都失败则返回错误
+        1. 尝试本地RSSHub
+        2. 失败则返回错误
 
         Args:
             path: RSSHub路径，如 "/hupu/bbs/bxj/1"
@@ -151,19 +144,9 @@ class DataExecutor:
         result = self._try_fetch(self.base_url, path, "local")
 
         if result.status == "success":
-            logger.info(f"✓ 本地获取成功: {len(result.items)}条数据")
-            return result
-
-        # 2. 降级到公共服务
-        logger.warning(
-            f"本地获取失败，降级到公共RSSHub: {self.fallback_url}"
-        )
-        result = self._try_fetch(self.fallback_url, path, "fallback")
-
-        if result.status == "success":
-            logger.info(f"✓ 降级获取成功: {len(result.items)}条数据")
+            logger.info("✓ 本地获取成功: %d条数据", len(result.items))
         else:
-            logger.error(f"✗ 所有来源均失败: {result.error_message}")
+            logger.error("✗ 本地获取失败: %s", result.error_message)
 
         return result
 
@@ -341,7 +324,6 @@ def create_data_executor_from_config() -> DataExecutor:
 
         return DataExecutor(
             base_url=rsshub_settings.base_url,
-            fallback_url=rsshub_settings.fallback_url,
             health_check_timeout=rsshub_settings.health_check_timeout,
             request_timeout=rsshub_settings.request_timeout,
             max_retries=rsshub_settings.max_retries,
