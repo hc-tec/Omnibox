@@ -147,6 +147,7 @@ HTTPS_PROXY=http://proxy.com:8080
 | `RSSHUB_HEALTH_CHECK_TIMEOUT` | int | 3 | 健康检查超时时间（秒） |
 | `RSSHUB_REQUEST_TIMEOUT` | int | 30 | RSS请求超时时间（秒） |
 | `RSSHUB_MAX_RETRIES` | int | 2 | 请求失败重试次数 |
+| `DATA_QUERY_SINGLE_ROUTE` | bool | 0 | 为精准请求只执行 primary route |
 
 **重要说明**：
 

@@ -18,6 +18,7 @@ class SubQuery:
     datasource: Optional[str] = None  # 目标数据源（可选）
     priority: int = 1  # 优先级（1=最高）
     reasoning: str = ""  # 为什么需要这个子查询
+    task_type: str = "data_fetch"  # data_fetch/analysis/report
 
 
 @dataclass
@@ -67,6 +68,7 @@ class LLMQueryPlanner:
             "query": "具体的查询文本",
             "datasource": "平台名称（可选）",
             "priority": 1,
+            "task_type": "data_fetch|analysis|report",
             "reasoning": "为什么需要这个子查询"
         }
     ],
@@ -127,6 +129,7 @@ class LLMQueryPlanner:
 - 如果查询已经足够具体，不需要拆分，返回单个子查询即可
 - datasource 可以省略，让 RAG 系统自动识别
 - priority 用于控制执行顺序（目前暂未使用，默认并行）
+- task_type 必须在 `data_fetch`（抓取数据）、`analysis`（对已有数据做分析）或 `report`（总结/回答）之间选择，默认 `data_fetch`
 """
 
     def __init__(self, llm_client):
@@ -221,7 +224,8 @@ class LLMQueryPlanner:
                     query=item.get("query", original_query),
                     datasource=item.get("datasource"),
                     priority=item.get("priority", 1),
-                    reasoning=item.get("reasoning", "")
+                    reasoning=item.get("reasoning", ""),
+                    task_type=item.get("task_type", "data_fetch") or "data_fetch",
                 ))
 
             # 验证：至少要有一个子查询

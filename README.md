@@ -148,6 +148,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1  # 或其他兼容服务
 
 # RSSHub 配置（通常使用默认值即可）
 RSSHUB_BASE_URL=http://localhost:1200
+# 数据查询策略（1=仅执行 primary route）
+DATA_QUERY_SINGLE_ROUTE=1
 `
 
 ### 第五步：启动 Electron 桌面端

@@ -49,6 +49,9 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `code-review-20251113.md` - **Codex 生成代码审查报告**（P0 bug修复、P1架构改进、测试补充）[✅ 完成]
+
+## 已完成任务文档
 - `workflow/251111-langgraph-agents-refactor.md` - **LangGraph Agents 代码审查与全面修复**（P0-P2 问题修复，测试补充）[✅ 完成]
   - `workflow/langgraph-agents-p0-verification-report.md` - P0 阶段验证报告
   - `workflow/langgraph-agents-p1-completion-report.md` - P1 阶段完成报告
@@ -96,8 +99,16 @@
 - FastAPI 层通过 `CHAT_SERVICE_MODE` 控制服务初始化（auto/mock/production），测试环境推荐设为 `mock`
 - **DataQueryResult 携带 retrieved_tools 字段**，包含 RAG 检索到的候选工具列表（route_id/name/score 等），供前端展示 AI 推理过程（2025-11）
 - **ChatService 格式化 retrieved_tools**，通过 `_format_retrieved_tools()` 方法限制描述长度、提取关键字段，避免前端 payload 过大
+- `DATA_QUERY_SINGLE_ROUTE=1` 会让 DataQueryService 默认仅执行 primary route；ChatService 在 `filter_datasource` 场景下也会自动启用单路模式
+- LLM Query Planner 返回的每个子查询都必须包含 `task_type`（data_fetch / analysis / report），ChatService 会据此决定是否触发 RAG 还是复用已有数据做总结
+- **_build_dataset_preview 均匀采样** - 在多数据集场景下，预览数据会在所有数据集间均匀分配采样配额（`max_items // len(datasets)`），确保每个数据集都有代表性样本
+- **LLM 响应空值检查** - 所有 LLM 调用后必须检查 `response is None or not response.strip()`，避免空响应导致的 AttributeError
 
 ### 配置管理
+- **服务层配置优先使用** - 通过 `services/config.py` 的 `get_data_query_config()` 获取配置，禁止使用 `os.getenv()` 硬编码
+- **配置单例模式** - `DataQueryConfig` 使用全局单例，测试时通过 `reset_data_query_config()` 重置
+- **Pydantic V2 兼容** - 所有配置类使用 `SettingsConfigDict`，设置 `extra='ignore'` 避免冲突
+- **环境变量映射** - 配置项通过 `alias` 参数映射环境变量，支持 `.env` 文件自动加载
 - RSSHub配置统一使用`RSSHubSettings`（`query_processor/config.py`）
 - `PathSettings.base_url`已废弃，不要使用
 - 所有Python依赖在根目录`requirements.txt`统一维护

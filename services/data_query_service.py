@@ -78,11 +78,13 @@ class DataQueryService:
         rag_in_action: RAGInAction,
         data_executor: Optional[DataExecutor] = None,
         cache_service: Optional[CacheService] = None,
+        single_route_default: bool = False,
     ):
         self.rag_in_action = rag_in_action
         self.data_executor = data_executor or DataExecutor()
         self.cache = cache_service or get_cache_service()
         self._own_executor = data_executor is None
+        self.single_route_default = single_route_default
 
         logger.info("DataQueryService 初始化完成")
 
@@ -91,6 +93,7 @@ class DataQueryService:
         user_query: str,
         filter_datasource: Optional[str] = None,
         use_cache: bool = True,
+        prefer_single_route: Optional[bool] = None,
     ) -> DataQueryResult:
         logger.info("开始数据查询: %s", user_query)
 
@@ -144,6 +147,7 @@ class DataQueryService:
                 rag_result=rag_result,
                 cache_hint=rag_cache_hit,
                 use_cache=use_cache,
+                prefer_single_route=self._resolve_single_route_mode(prefer_single_route, filter_datasource),
             )
 
             if datasets:
@@ -239,11 +243,12 @@ class DataQueryService:
         rag_result: Dict[str, Any],
         cache_hint: str,
         use_cache: bool,
+        prefer_single_route: bool,
     ) -> Tuple[List[QueryDataset], List[str]]:
         datasets: List[QueryDataset] = []
         failures: List[str] = []
 
-        for task in self._plan_tasks(user_query, rag_result, cache_hint):
+        for task in self._plan_tasks(user_query, rag_result, cache_hint, prefer_single_route):
             dataset = self._fetch_dataset(task, use_cache)
             if dataset:
                 datasets.append(dataset)
@@ -251,6 +256,27 @@ class DataQueryService:
                 failures.append(task.get("name") or task.get("route_id") or "unknown_route")
 
         return datasets, failures
+
+    def _resolve_single_route_mode(
+        self,
+        prefer_single_route: Optional[bool],
+        filter_datasource: Optional[str],
+    ) -> bool:
+        if prefer_single_route is not None:
+            return prefer_single_route
+        if filter_datasource:
+            return True
+        return self.single_route_default
+
+    @staticmethod
+    def _sanitize_generated_path(path: Optional[str]) -> Optional[str]:
+        if not path:
+            return path
+        normalized = path.rstrip("/")
+        if normalized.endswith("开启内嵌视频") or normalized.endswith("关闭内嵌视频"):
+            normalized = normalized[: -len("开启内嵌视频")]
+            normalized = normalized.rstrip("/")
+        return normalized or path
 
     @staticmethod
     def _build_rag_trace(rag_result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -294,6 +320,7 @@ class DataQueryService:
         user_query: str,
         rag_result: Dict[str, Any],
         cache_hint: str,
+        prefer_single_route: bool,
     ) -> List[Dict[str, Any]]:
         tasks: List[Dict[str, Any]] = []
 
@@ -305,11 +332,14 @@ class DataQueryService:
                     "route_id": primary_tool.get("route_id"),
                     "provider": primary_tool.get("provider"),
                     "name": primary_tool.get("name"),
-                    "generated_path": primary_path,
+                    "generated_path": self._sanitize_generated_path(primary_path),
                     "reasoning": rag_result.get("reasoning", ""),
                     "cache_hint": cache_hint,
                 }
             )
+
+        if prefer_single_route:
+            return tasks[:1]
 
         retrieved_tools = rag_result.get("retrieved_tools") or []
         for tool_def in retrieved_tools:
@@ -342,7 +372,7 @@ class DataQueryService:
                     "route_id": route_id,
                     "provider": tool_def.get("datasource") or tool_def.get("provider_id"),
                     "name": tool_def.get("name"),
-                    "generated_path": generated_path,
+                    "generated_path": self._sanitize_generated_path(generated_path),
                     "reasoning": plan.get("reasoning", ""),
                     "cache_hint": "none",
                 }

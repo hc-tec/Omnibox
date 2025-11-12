@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field, asdict
 from uuid import uuid4
 
+from services.config import get_data_query_config
 from services.llm_intent_classifier import LLMIntentClassifier, IntentClassification
 from services.llm_query_planner import LLMQueryPlanner, QueryPlan, SubQuery
 from services.parallel_query_executor import ParallelQueryExecutor, SubQueryResult
@@ -83,6 +84,7 @@ class ChatService:
         component_planner_config: Optional[ComponentPlannerConfig] = None,
         max_parallel_queries: int = 3,  # 并行查询最大数量
         query_timeout: int = 30,  # 单个查询超时时间（秒）
+        force_single_route: Optional[bool] = None,
     ):
         """
         初始化对话服务。
@@ -102,6 +104,12 @@ class ChatService:
         self.panel_generator = PanelGenerator()
         self.component_planner_config = component_planner_config or ComponentPlannerConfig()
 
+        # 使用统一配置管理
+        self.config = get_data_query_config()
+        if force_single_route is None:
+            force_single_route = self.config.single_route_default
+        self._force_single_route = force_single_route
+
         # 初始化 LLM 客户端（如果未提供，则创建默认客户端）
         if llm_client is None:
             try:
@@ -115,6 +123,7 @@ class ChatService:
         self.intent_classifier = None
         self.query_planner = None
         self.parallel_executor = None
+        self._llm_client = llm_client
 
         if llm_client:
             try:
@@ -327,6 +336,7 @@ class ChatService:
             user_query=user_query,
             filter_datasource=filter_datasource,
             use_cache=use_cache,
+             prefer_single_route=self._should_force_single_route(filter_datasource),
         )
         llm_debug = self._clone_llm_logs(llm_logs)
 
@@ -564,10 +574,26 @@ class ChatService:
                 query_plan.reasoning,
             )
 
-            # 第二步：并行执行子查询（三层架构第三层）
+            data_sub_queries = [sq for sq in query_plan.sub_queries if sq.task_type == "data_fetch"]
+            if not data_sub_queries:
+                logger.warning("查询规划未包含 data_fetch 子查询，回退到简单查询")
+                return self._handle_simple_query(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=intent_confidence,
+                    layout_snapshot=layout_snapshot,
+                    llm_logs=llm_debug,
+                )
+            analysis_sub_queries = [
+                sq for sq in query_plan.sub_queries if sq.task_type in {"analysis", "report"}
+            ]
+
+            # 第二步：并行执行数据子查询（三层架构第三层）
             sub_query_results: List[SubQueryResult] = self.parallel_executor.execute_parallel(
-                sub_queries=query_plan.sub_queries,
+                sub_queries=data_sub_queries,
                 use_cache=use_cache,
+                prefer_single_route=True,
             )
 
             # 第三步：聚合结果
@@ -622,6 +648,12 @@ class ChatService:
                 layout_snapshot=layout_snapshot,
             )
 
+            # 第五步：执行分析子查询（LLM 总结）
+            analysis_summaries = self._run_analysis_sub_queries(
+                analysis_sub_queries,
+                aggregated_datasets,
+            )
+
             # 第六步：构造响应消息
             message_parts = []
             for result in success_results:
@@ -630,6 +662,8 @@ class ChatService:
                 message_parts.append(f"{feed}（{len(query_result.items or [])} 条）")
 
             message = f"已完成复杂研究，获取 {len(success_results)} 组数据：" + "；".join(message_parts)
+            if analysis_summaries:
+                message += "\n分析总结：" + "；".join(item["summary"] for item in analysis_summaries)
 
             # 第七步：构造元数据
             rag_traces = [
@@ -680,10 +714,28 @@ class ChatService:
                         "error": result.error,
                         "execution_time": result.execution_time,
                         "item_count": len(result.result.items) if result.result else 0,
+                        "task_type": result.sub_query.task_type,
                     }
                     for result in sub_query_results
                 ],
             }
+            if analysis_summaries:
+                metadata["analysis"] = analysis_summaries
+                metadata["sub_queries"].extend(
+                    [
+                        {
+                            "query": entry["query"],
+                            "datasource": "analysis",
+                            "status": "analysis",
+                            "error": None,
+                            "execution_time": entry.get("execution_time"),
+                            "item_count": entry.get("item_count"),
+                            "analysis_summary": entry["summary"],
+                            "task_type": entry.get("task_type", "analysis"),
+                        }
+                        for entry in analysis_summaries
+                    ]
+                )
 
             # 提取警告信息
             blocks_debug = debug_info.get("blocks", [])
@@ -878,6 +930,115 @@ class ChatService:
         if "error" in engines and "rule" in engines:
             return "mixed"
         return engines[0]
+
+    def _should_force_single_route(self, filter_datasource: Optional[str]) -> bool:
+        if filter_datasource:
+            return True
+        return self._force_single_route
+
+    def _run_analysis_sub_queries(
+        self,
+        analysis_sub_queries: List[SubQuery],
+        datasets: List[QueryDataset],
+    ) -> List[Dict[str, Any]]:
+        """
+        执行分析类子查询，对已有数据进行LLM总结。
+
+        Args:
+            analysis_sub_queries: 分析类子查询列表
+            datasets: 数据集列表
+
+        Returns:
+            分析总结列表
+        """
+        if not analysis_sub_queries or not datasets or not self._llm_client:
+            return []
+
+        dataset_summary, total_items = self._build_dataset_preview(datasets)
+        if not dataset_summary or total_items == 0:
+            return []
+
+        summaries: List[Dict[str, Any]] = []
+        for sub_query in analysis_sub_queries:
+            prompt = self._build_analysis_prompt(sub_query.query, dataset_summary)
+            try:
+                response = self._llm_client.chat(
+                    messages=[
+                        {"role": "system", "content": "你是一名资深的数据分析师，擅长归纳总结。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                )
+
+                # 添加空值检查，确保LLM返回有效响应
+                if response is None or not response.strip():
+                    raise ValueError("LLM 返回空响应")
+
+                summaries.append({
+                    "query": sub_query.query,
+                    "summary": response.strip(),
+                    "item_count": total_items,
+                    "task_type": sub_query.task_type or "analysis",
+                })
+            except Exception as exc:
+                logger.warning("分析子查询失败: %s", exc)
+                summaries.append({
+                    "query": sub_query.query,
+                    "summary": f"分析失败：{exc}",
+                    "task_type": sub_query.task_type or "analysis",
+                })
+        return summaries
+
+    @staticmethod
+    def _build_analysis_prompt(analysis_query: str, dataset_summary: str) -> str:
+        return (
+            f"用户需要回答的问题是：{analysis_query}\n"
+            "以下是最近抓取到的数据，请基于这些数据总结内容趋势、主题或方向。"
+            "务必引用数据中的具体现象，输出要点式总结。\n"
+            f"{dataset_summary}\n"
+            "请给出不超过4条的分析结论。"
+        )
+
+    def _build_dataset_preview(self, datasets: List[QueryDataset], max_items: int = 20) -> Tuple[str, int]:
+        """
+        构建数据集预览文本，在多个数据集间均匀分配采样数量。
+
+        Args:
+            datasets: 数据集列表
+            max_items: 最大采样数量
+
+        Returns:
+            (预览文本, 实际采样数量)
+        """
+        if not datasets:
+            return "", 0
+
+        lines: List[str] = []
+        count = 0
+
+        # 计算每个数据集的采样数量（均匀分配）
+        items_per_dataset = max(1, max_items // len(datasets))
+
+        for dataset in datasets:
+            header = dataset.feed_title or dataset.generated_path or "数据集"
+            lines.append(f"[{header}]")
+            records = self._dataset_records(dataset)
+
+            # 限制当前数据集的采样数量
+            dataset_count = 0
+            for record in records:
+                if count >= max_items:
+                    break
+                if dataset_count >= items_per_dataset:
+                    break
+
+                title = record.get("title") or record.get("name") or record.get("keyword") or "未命名"
+                desc = record.get("description") or record.get("summary") or ""
+                lines.append(f"- {title}: {desc[:120]}")
+                count += 1
+                dataset_count += 1
+
+        return "\n".join(lines), count
 
     @staticmethod
     def _clone_llm_logs(llm_logs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:

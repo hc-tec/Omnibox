@@ -213,6 +213,7 @@ def initialize_services():
         from services.data_query_service import DataQueryService
         from services.chat_service import ChatService
         from services.research_service import ResearchService
+        from services.config import get_data_query_config
         from query_processor.llm_client import create_llm_client
         from query_processor.config import llm_settings
 
@@ -220,7 +221,8 @@ def initialize_services():
 
         # 初始化 RAG 和数据查询服务
         rag_in_action = create_rag_in_action()
-        data_query_service = DataQueryService(rag_in_action)
+        query_config = get_data_query_config()
+        data_query_service = DataQueryService(rag_in_action, single_route_default=query_config.single_route_default)
 
         # 初始化 ResearchService（支持复杂研究）
         research_service = None

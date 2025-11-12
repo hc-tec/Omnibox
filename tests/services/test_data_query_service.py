@@ -112,6 +112,31 @@ def test_data_query_service_returns_multiple_datasets():
     assert result.retrieved_tools == retrieved_tools
 
 
+def test_data_query_service_respects_single_route_flag():
+    retrieved_tools = [
+        {"route_id": "secondary", "name": "Secondary", "datasource": "demo"},
+    ]
+    plans = {
+        "secondary": {"status": "success", "generated_path": "/secondary"},
+    }
+    fetch_map = {
+        "/primary": _fetch_result("/primary", "Primary Feed"),
+        "/secondary": _fetch_result("/secondary", "Secondary Feed"),
+    }
+
+    service = DataQueryService(
+        rag_in_action=_StubRAG(retrieved_tools, plans),
+        data_executor=_StubExecutor(fetch_map),
+        cache_service=_DummyCache(),
+    )
+
+    result = service.query("单路查询", use_cache=False, prefer_single_route=True)
+
+    assert result.status == "success"
+    assert len(result.datasets) == 1
+    assert result.datasets[0].generated_path == "/primary"
+
+
 class _ClarificationRAG(_StubRAG):
     def process(self, user_query, filter_datasource=None, verbose=False):
         return {

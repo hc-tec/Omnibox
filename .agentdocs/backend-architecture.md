@@ -39,10 +39,12 @@ finally:
 3. **万物皆可RSS** - FeedItem模型支持视频、社交动态、论坛、商品等多种数据类型
 4. **媒体信息提取** - 自动从RSSHub的enclosure字段提取图片/视频/音频URL
 
-**重要记忆**:\n- 默认由调用方管理 DataQueryService 生命周期；若设置 manage_data_service=True，ChatService 会在关闭时一并释放资源
+**重要记忆**:
+- 默认由调用方管理 DataQueryService 生命周期；若设置 manage_data_service=True，ChatService 会在关闭时一并释放资源
 - 所有RSSHub路径必须通过DataExecutor访问，不允许直接拼接URL
 - 特殊字符路径（如`/hupu/bbs/#步行街主干道/1`）会被正确编码
 - 返回的FetchResult包含`source`字段（当前仅会是`local`），用于数据来源追踪
+- `DATA_QUERY_SINGLE_ROUTE=1` 或 `prefer_single_route=True` 时，DataQueryService 仅执行 primary route；未显式开启时才会尝试 RAG 的其它候选
 
 ### CacheService - TTL缓存管理
 **位置**: `integration/cache_service.py`
@@ -148,6 +150,47 @@ if os.getenv("RSSHUB_TEST_REAL", "0") != "1":
 - 手动测试脚本使用`pytest.skip(..., allow_module_level=True)`退出
 
 ## 配置管理
+
+### 服务层配置（推荐使用）
+**位置**: `services/config.py` - `DataQueryConfig`
+
+**配置项**:
+```python
+DATA_QUERY_SINGLE_ROUTE = "0"          # 单路模式开关（1=启用，0=禁用）
+DATA_QUERY_MULTI_ROUTE_LIMIT = "3"     # 多路查询时的最大路由数量
+DATA_QUERY_ANALYSIS_PREVIEW_MAX_ITEMS = "20"  # 分析总结时的最大数据采样数
+DATA_QUERY_DESCRIPTION_MAX_LENGTH = "120"     # 描述文本的最大长度
+```
+
+**使用规范**:
+```python
+from services.config import get_data_query_config
+
+# 获取配置单例
+config = get_data_query_config()
+
+# 访问配置项
+if config.single_route_default:
+    # 启用单路模式
+    pass
+
+# 测试时重置配置
+from services.config import reset_data_query_config
+reset_data_query_config()
+```
+
+**关键特性**:
+1. **Pydantic V2 兼容** - 使用 `SettingsConfigDict` 配置
+2. **环境变量自动映射** - 支持 `.env` 文件和系统环境变量
+3. **单例模式** - 全局唯一配置实例，避免重复初始化
+4. **忽略额外字段** - `extra='ignore'` 避免与其他配置冲突
+5. **类型安全** - 运行时自动类型转换和验证
+
+**重要记忆**:
+- **禁止硬编码环境变量** - 所有服务层配置必须通过 `get_data_query_config()` 获取，不允许使用 `os.getenv()`
+- **配置优先级** - 环境变量 > `.env` 文件 > 代码默认值
+- **测试隔离** - 测试中使用 `reset_data_query_config()` 重置单例，避免测试间干扰
+- **布尔值解析** - 支持 "1"/"true"/"yes" -> True, "0"/"false"/"no" -> False
 
 ### RSSHub配置
 **位置**: `query_processor/config.py` - `RSSHubSettings`
@@ -286,7 +329,7 @@ from orchestrator.rag_in_action import create_rag_in_action
 
 # 创建服务
 rag_in_action = create_rag_in_action()
-service = DataQueryService(rag_in_action)
+service = DataQueryService(rag_in_action, single_route_default=True)
 
 # 使用上下文管理器（推荐）
 with DataQueryService(rag_in_action) as service:
@@ -301,7 +344,7 @@ with DataQueryService(rag_in_action) as service:
 2. **智能缓存键** - RAG缓存包含filter_datasource参数
 3. **资源管理** - 自动创建和释放DataExecutor
 4. **统一结果** - DataQueryResult包含status/items/cache_hit/source/datasets/retrieved_tools等信息
-5. **多路由查询** - 自动尝试 RAG 检索到的前 3 个候选路由，返回多个数据集（2025-11 新增）
+5. **多路由查询** - 默认尝试 RAG 检索到的前 3 个候选路由，必要时可开启单路模式
 6. **RAG 检索透明化** - 返回 retrieved_tools 字段，前端可展示 AI 推理过程（2025-11 新增）
 
 **DataQueryResult 核心字段**:

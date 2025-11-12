@@ -63,7 +63,8 @@ class ParallelQueryExecutor:
     def execute_parallel(
         self,
         sub_queries: List[SubQuery],
-        use_cache: bool = True
+        use_cache: bool = True,
+        prefer_single_route: bool = False,
     ) -> List[SubQueryResult]:
         """
         并行执行多个子查询
@@ -71,6 +72,7 @@ class ParallelQueryExecutor:
         Args:
             sub_queries: 子查询列表
             use_cache: 是否使用缓存
+            prefer_single_route: 是否优先使用单路模式（仅执行primary route，忽略RAG候选路由）
 
         Returns:
             List[SubQueryResult]: 所有子查询的执行结果
@@ -88,7 +90,8 @@ class ParallelQueryExecutor:
                 self._execute_single_query,
                 sub_query,
                 use_cache,
-                idx
+                idx,
+                prefer_single_route,
             )
             futures[future] = sub_query
 
@@ -157,7 +160,8 @@ class ParallelQueryExecutor:
         self,
         sub_query: SubQuery,
         use_cache: bool,
-        index: int
+        index: int,
+        prefer_single_route: bool,
     ) -> SubQueryResult:
         """
         执行单个子查询
@@ -180,7 +184,8 @@ class ParallelQueryExecutor:
             result = self.data_query_service.query(
                 user_query=sub_query.query,
                 filter_datasource=sub_query.datasource,
-                use_cache=use_cache
+                use_cache=use_cache,
+                prefer_single_route=prefer_single_route,
             )
 
             execution_time = time.time() - start_time
