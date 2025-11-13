@@ -45,7 +45,8 @@
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m alembic revision --autogenerate -m \"init subscription tables with cascade delete\")",
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_subscription_controller.py -v --tb=short)",
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_subscription_controller.py -v --tb=line -q)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_subscription_controller.py -v -q --tb=line)"
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_subscription_controller.py -v -q --tb=line)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []

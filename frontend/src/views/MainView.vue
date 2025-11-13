@@ -33,6 +33,9 @@
               {{ option.label }}
             </button>
           </div>
+          <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="navigateToSubscriptions">
+            订阅管理
+          </button>
           <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="toggleTheme">
             {{ isLight ? "Dark" : "Light" }}
           </button>
@@ -155,6 +158,10 @@ const toggleTheme = () => {
 
 const focusCommandBar = () => {
   commandPaletteRef.value?.open();
+};
+
+const navigateToSubscriptions = async () => {
+  await router.push({ path: '/subscriptions' });
 };
 
 const handleReset = () => {
