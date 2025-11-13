@@ -47,6 +47,15 @@ rag_system/vector_db/
 rag_system/semantic_docs/
 rag_system/rag_system.log
 
+# Runtime data directory (databases, caches, etc.)
+runtime/
+
+# SQLite database files (in case generated in wrong location)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # OS files
 Thumbs.db
 .DS_Store

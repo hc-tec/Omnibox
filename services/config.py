@@ -1,11 +1,14 @@
 """
 服务层配置
 
-统一管理 ChatService 和 DataQueryService 的配置项，避免环境变量硬编码分散在多处。
+统一管理 ChatService、DataQueryService 和 DatabaseConnection 的配置项，
+避免环境变量硬编码分散在多处。
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+import os
+from pathlib import Path
 
 
 class DataQueryConfig(BaseSettings):
@@ -72,3 +75,74 @@ def reset_data_query_config():
     """
     global _config_instance
     _config_instance = None
+
+
+class DatabaseConfig(BaseSettings):
+    """
+    数据库配置
+
+    管理 SQLite 数据库的位置、文件名等配置。
+    遵循 runtime-persistence-plan.md 的设计原则。
+    """
+
+    # 数据库目录（默认为项目根目录下的 runtime）
+    database_dir: str = Field(
+        default="runtime",
+        alias="DATABASE_DIR",
+        description="数据库文件存放目录（相对于项目根目录）",
+    )
+
+    # 数据库文件名
+    database_name: str = Field(
+        default="omni.db",
+        alias="DATABASE_NAME",
+        description="数据库文件名",
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    def get_database_url(self) -> str:
+        """
+        获取完整的数据库 URL
+
+        Returns:
+            SQLite 数据库 URL，格式: sqlite:///runtime/omni.db
+        """
+        # 获取项目根目录（假设 config.py 在 services/ 目录下）
+        project_root = Path(__file__).parent.parent
+        db_dir = project_root / self.database_dir
+
+        # 确保目录存在
+        db_dir.mkdir(parents=True, exist_ok=True)
+
+        db_path = db_dir / self.database_name
+        return f"sqlite:///{db_path}"
+
+
+# 数据库配置全局单例
+_db_config_instance = None
+
+
+def get_database_config() -> DatabaseConfig:
+    """
+    获取数据库配置单例
+
+    Returns:
+        DatabaseConfig 实例
+    """
+    global _db_config_instance
+    if _db_config_instance is None:
+        _db_config_instance = DatabaseConfig()
+    return _db_config_instance
+
+
+def reset_database_config():
+    """
+    重置数据库配置单例（主要用于测试）
+    """
+    global _db_config_instance
+    _db_config_instance = None

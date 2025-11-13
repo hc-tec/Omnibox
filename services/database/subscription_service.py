@@ -1,0 +1,401 @@
+"""订阅管理服务
+
+负责订阅的 CRUD 操作和 ID 映射查询。
+
+按照 subscription-system-design.md v2.2 设计方案实现：
+- 分离实体和动作
+- 支持多种搜索方式（模糊匹配/语义搜索）
+- 自动从 ActionRegistry 获取支持的动作列表
+"""
+
+from sqlmodel import Session, select, or_
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+import json
+import logging
+
+from .models import Subscription, SubscriptionEmbedding
+from .connection import get_db_connection
+from services.subscription.action_registry import ActionRegistry
+
+logger = logging.getLogger(__name__)
+
+
+class SubscriptionService:
+    """订阅管理服务（修订版 v2.2）
+
+    负责实体订阅的 CRUD 操作和 ID 映射查询。
+    不再直接存储 resource_type 和路径模板，改为存储 entity_type。
+
+    使用示例：
+    ```python
+    from services.database import SubscriptionService
+
+    service = SubscriptionService()
+
+    # 创建订阅
+    subscription = service.create_subscription(
+        display_name="科技美学",
+        platform="bilibili",
+        entity_type="user",
+        identifiers={"uid": "12345"},
+        description="数码测评UP主",
+        aliases=["科技美学", "科技美学Official"],
+        tags=["数码", "科技"]
+    )
+
+    # 解析实体ID
+    identifiers = service.resolve_entity(
+        entity_name="科技美学",
+        platform="bilibili",
+        entity_type="user"
+    )
+    # 返回: {"uid": "12345"}
+    ```
+    """
+
+    def __init__(self):
+        self.db = get_db_connection()
+
+    def list_subscriptions(
+        self,
+        user_id: Optional[int] = None,
+        platform: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0
+    ) -> List[Subscription]:
+        """列出订阅（支持多种过滤）
+
+        Args:
+            user_id: 用户ID（Stage 4 之前为 None，忽略用户隔离）
+            platform: 平台过滤
+            entity_type: 实体类型过滤
+            is_active: 是否激活
+            limit: 返回数量
+            offset: 偏移量
+
+        Returns:
+            订阅列表
+        """
+        with self.db.get_session() as session:
+            statement = select(Subscription)
+
+            # 用户过滤（Stage 4 之前忽略）
+            if user_id is not None:
+                statement = statement.where(Subscription.user_id == user_id)
+
+            # 平台过滤
+            if platform:
+                statement = statement.where(Subscription.platform == platform)
+
+            # 实体类型过滤
+            if entity_type:
+                statement = statement.where(Subscription.entity_type == entity_type)
+
+            # 激活状态过滤
+            if is_active is not None:
+                statement = statement.where(Subscription.is_active == is_active)
+
+            # 分页
+            statement = statement.limit(limit).offset(offset)
+
+            # 按创建时间倒序
+            statement = statement.order_by(Subscription.created_at.desc())
+
+            return list(session.exec(statement).all())
+
+    def get_subscription(self, subscription_id: int) -> Optional[Subscription]:
+        """获取订阅详情
+
+        Args:
+            subscription_id: 订阅ID
+
+        Returns:
+            订阅对象，如果不存在则返回 None
+        """
+        with self.db.get_session() as session:
+            return session.get(Subscription, subscription_id)
+
+    def create_subscription(
+        self,
+        display_name: str,
+        platform: str,
+        entity_type: str,  # ← 修订：不是 resource_type
+        identifiers: Dict[str, Any],
+        user_id: Optional[int] = None,  # ← 新增：用户ID
+        **kwargs
+    ) -> Subscription:
+        """创建订阅
+
+        Args:
+            display_name: 显示名称（如"科技美学"）
+            platform: 平台（bilibili/zhihu/...）
+            entity_type: 实体类型（user/column/repo，不是 user_video!）
+            identifiers: API标识字典（如 {"uid": "12345"}）
+            user_id: 用户ID（Stage 4 之前为 None）
+            **kwargs: 其他可选参数（avatar_url, description, aliases, tags）
+
+        Returns:
+            创建的订阅对象
+        """
+        with self.db.get_session() as session:
+            # 自动获取支持的动作
+            supported_actions = ActionRegistry.get_supported_actions(
+                platform, entity_type
+            )
+
+            # 确保 aliases 包含 display_name（修复：复制列表避免副作用）
+            aliases = list(kwargs.get("aliases", []))  # ← 复制列表
+            if display_name not in aliases:
+                aliases.insert(0, display_name)
+
+            # 标准化 identifiers JSON（修复：确保唯一约束生效）
+            # 按键排序，确保相同数据生成相同字符串
+            identifiers_json = json.dumps(
+                identifiers,
+                ensure_ascii=False,
+                sort_keys=True  # ← 关键：按键排序
+            )
+
+            subscription = Subscription(
+                display_name=display_name,
+                platform=platform,
+                entity_type=entity_type,
+                identifiers=identifiers_json,
+                supported_actions=json.dumps(supported_actions, ensure_ascii=False),
+                aliases=json.dumps(aliases, ensure_ascii=False),
+                tags=json.dumps(kwargs.get("tags", []), ensure_ascii=False),
+                avatar_url=kwargs.get("avatar_url"),
+                description=kwargs.get("description"),
+                user_id=user_id  # ← 新增
+            )
+
+            session.add(subscription)
+            session.commit()
+            session.refresh(subscription)
+
+            logger.info(
+                f"✅ 创建订阅成功: {display_name} "
+                f"({platform}/{entity_type}, id={subscription.id})"
+            )
+
+            # TODO: 触发向量化（Phase 2 实现）
+            # self._trigger_embedding(subscription)
+
+            return subscription
+
+    def update_subscription(
+        self,
+        subscription_id: int,
+        **updates
+    ) -> Optional[Subscription]:
+        """更新订阅
+
+        Args:
+            subscription_id: 订阅ID
+            **updates: 要更新的字段
+
+        Returns:
+            更新后的订阅对象，如果不存在则返回 None
+        """
+        with self.db.get_session() as session:
+            subscription = session.get(Subscription, subscription_id)
+            if not subscription:
+                return None
+
+            # 检查 platform 或 entity_type 是否变更（修复：需要同步刷新 supported_actions）
+            platform_changed = "platform" in updates and updates["platform"] != subscription.platform
+            entity_type_changed = "entity_type" in updates and updates["entity_type"] != subscription.entity_type
+
+            # 应用更新
+            for key, value in updates.items():
+                if key in ["aliases", "tags", "supported_actions"]:
+                    # JSON 字段需要序列化
+                    setattr(subscription, key, json.dumps(value, ensure_ascii=False))
+                elif key == "identifiers":
+                    # identifiers 也是 JSON 字段（标准化排序）
+                    setattr(subscription, key, json.dumps(value, ensure_ascii=False, sort_keys=True))
+                else:
+                    setattr(subscription, key, value)
+
+            # 如果 platform 或 entity_type 变更，重新获取 supported_actions
+            if platform_changed or entity_type_changed:
+                new_platform = updates.get("platform", subscription.platform)
+                new_entity_type = updates.get("entity_type", subscription.entity_type)
+                supported_actions = ActionRegistry.get_supported_actions(
+                    new_platform, new_entity_type
+                )
+                subscription.supported_actions = json.dumps(supported_actions, ensure_ascii=False)
+                logger.info(
+                    f"🔄 重新获取 supported_actions: {new_platform}/{new_entity_type} "
+                    f"-> {supported_actions}"
+                )
+
+            subscription.updated_at = datetime.now()
+
+            session.add(subscription)
+            session.commit()
+            session.refresh(subscription)
+
+            logger.info(f"✅ 更新订阅成功: id={subscription_id}")
+
+            # 如果关键信息变更，重新向量化
+            if any(k in updates for k in [
+                "display_name", "description", "aliases", "tags"
+            ]):
+                # TODO: 触发向量化（Phase 2 实现）
+                # self._trigger_embedding(subscription)
+                pass
+
+            return subscription
+
+    def delete_subscription(self, subscription_id: int) -> bool:
+        """删除订阅
+
+        Args:
+            subscription_id: 订阅ID
+
+        Returns:
+            是否删除成功
+        """
+        with self.db.get_session() as session:
+            subscription = session.get(Subscription, subscription_id)
+            if not subscription:
+                return False
+
+            session.delete(subscription)
+            session.commit()
+
+            logger.info(f"✅ 删除订阅成功: id={subscription_id}")
+
+            # TODO: 同时删除向量数据（ChromaDB）
+            # vector_store.delete_subscription(subscription_id)
+
+            return True
+
+    def search_subscriptions(
+        self,
+        query: str,
+        platform: Optional[str] = None,
+        search_type: str = "fuzzy"
+    ) -> List[Subscription]:
+        """搜索订阅
+
+        Args:
+            query: 搜索查询（自然语言）
+            platform: 平台过滤（可选）
+            search_type: 搜索类型
+                - fuzzy: 模糊匹配（display_name/aliases）
+                - semantic: 语义搜索（需要向量化，Phase 2 实现）
+
+        Returns:
+            订阅列表
+        """
+        if search_type == "semantic":
+            # TODO: Phase 2 实现语义搜索
+            logger.warning("语义搜索尚未实现，回退到模糊匹配")
+            return self._fuzzy_search(query, platform)
+        else:
+            return self._fuzzy_search(query, platform)
+
+    def _fuzzy_search(
+        self,
+        query: str,
+        platform: Optional[str]
+    ) -> List[Subscription]:
+        """模糊搜索（修复：在 Python 层过滤 JSON 字段）
+
+        注意：JSON 字段的 SQL LIKE 查询不可靠，改为先获取候选记录，
+        然后在 Python 中解析 JSON 并精确匹配。
+        """
+        with self.db.get_session() as session:
+            # 先获取所有符合平台条件的订阅（或全部）
+            statement = select(Subscription)
+            if platform:
+                statement = statement.where(Subscription.platform == platform)
+
+            all_subscriptions = list(session.exec(statement).all())
+
+            # 在 Python 中过滤
+            results = []
+            query_lower = query.lower()
+
+            for sub in all_subscriptions:
+                # 检查 display_name
+                if query_lower in sub.display_name.lower():
+                    results.append(sub)
+                    continue
+
+                # 检查 description
+                if sub.description and query_lower in sub.description.lower():
+                    results.append(sub)
+                    continue
+
+                # 检查 aliases（解析 JSON）
+                try:
+                    aliases = json.loads(sub.aliases)
+                    if any(query_lower in alias.lower() for alias in aliases):
+                        results.append(sub)
+                        continue
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+                # 检查 tags（解析 JSON）
+                try:
+                    tags = json.loads(sub.tags)
+                    if any(query_lower in tag.lower() for tag in tags):
+                        results.append(sub)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+            return results
+
+    def resolve_entity(
+        self,
+        entity_name: str,
+        platform: str,
+        entity_type: str  # ← 修订：不是 resource_type
+    ) -> Optional[Dict[str, Any]]:
+        """解析实体标识符（修订版）
+
+        输入：\"科技美学\", platform=\"bilibili\", entity_type=\"user\"
+        输出：{\"uid\": \"12345\", \"uname\": \"科技美学Official\"}
+
+        修订：不再需要 resource_type，因为我们只查找实体。
+
+        这是核心方法，供查询解析时调用。
+        """
+        # 1. 先尝试精确匹配
+        subscriptions = self.search_subscriptions(
+            query=entity_name,
+            platform=platform,
+            search_type="fuzzy"
+        )
+
+        # 2. 过滤实体类型（修订：不再过滤 resource_type）
+        matched = [
+            sub for sub in subscriptions
+            if sub.entity_type == entity_type and sub.display_name == entity_name
+        ]
+
+        if matched:
+            return json.loads(matched[0].identifiers)
+
+        # 3. 尝试 aliases 匹配
+        alias_matched = [
+            sub for sub in subscriptions
+            if sub.entity_type == entity_type
+            and entity_name in json.loads(sub.aliases)
+        ]
+
+        if alias_matched:
+            return json.loads(alias_matched[0].identifiers)
+
+        # 4. 找不到
+        logger.warning(
+            f"无法解析实体: entity_name='{entity_name}', "
+            f"platform='{platform}', entity_type='{entity_type}'"
+        )
+        return None
