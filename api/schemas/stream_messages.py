@@ -274,9 +274,14 @@ class ResearchPanelMessage(BaseModel):
     stream_id: str = Field(..., description="流ID")
     task_id: str = Field(..., description="研究任务ID")
     step_id: str = Field(..., description="关联的步骤ID")
+    step_index: Optional[int] = Field(None, description="步骤序号（1-based）")
     panel_payload: dict[str, Any] = Field(
         ...,
         description="面板数据 payload（PanelResult.payload）"
+    )
+    panel_data_blocks: dict[str, Any] = Field(
+        default_factory=dict,
+        description="面板数据块（PanelResult.data_blocks）"
     )
     source_query: str = Field(..., description="数据来源查询")
     timestamp: str = Field(
@@ -311,6 +316,7 @@ class ResearchAnalysisMessage(BaseModel):
     stream_id: str = Field(..., description="流ID")
     task_id: str = Field(..., description="研究任务ID")
     step_id: str = Field(..., description="关联的步骤ID")
+    step_index: Optional[int] = Field(None, description="步骤序号（1-based）")
     analysis_text: str = Field(..., description="分析文本（支持增量推送）")
     is_complete: bool = Field(
         default=False,

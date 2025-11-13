@@ -164,14 +164,17 @@ const wsBaseUrl = ref(
         case "research_panel":
           viewStore.handleResearchPanel({
             step_id: message.step_id,
+            step_index: message.step_index,
             source_query: message.source_query,
             panel_payload: message.panel_payload,
+            data_blocks: message.panel_data_blocks ?? {},
             timestamp: message.timestamp,
           } as ResearchPanel);
           break;
         case "research_analysis":
           viewStore.handleResearchAnalysis({
             step_id: message.step_id,
+            step_index: message.step_index,
             analysis_text: message.analysis_text,
             is_complete: message.is_complete,
             timestamp: message.timestamp,

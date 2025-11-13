@@ -977,7 +977,12 @@ class ChatService:
                             "stream_id": stream_id,
                             "task_id": task_id,
                             "step_id": step_id,
+                            "step_index": idx + 1,
                             "panel_payload": panel_result.payload.model_dump(),
+                            "panel_data_blocks": {
+                                key: block.model_dump()
+                                for key, block in (panel_result.data_blocks or {}).items()
+                            },
                             "source_query": sub_query.query,
                             "timestamp": datetime.now().isoformat(),
                         }
@@ -1094,6 +1099,7 @@ class ChatService:
                                 "stream_id": stream_id,
                                 "task_id": task_id,
                                 "step_id": step_id,
+                                "step_index": idx + 1,
                                 "analysis_text": response.strip(),
                                 "is_complete": True,
                                 "timestamp": datetime.now().isoformat(),

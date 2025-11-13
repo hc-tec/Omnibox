@@ -11,7 +11,7 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { PanelPayload } from "@/shared/types/panel";
+import type { PanelPayload, DataBlock } from "@/shared/types/panel";
 
 /**
  * 研究步骤状态
@@ -40,8 +40,10 @@ export interface ResearchStep {
  */
 export interface ResearchPanel {
   step_id: string;
+  step_index?: number;
   source_query: string;
   panel_payload: PanelPayload;
+  data_blocks: Record<string, DataBlock>;
   timestamp: string;
 }
 
@@ -50,6 +52,7 @@ export interface ResearchPanel {
  */
 export interface ResearchAnalysis {
   step_id: string;
+  step_index?: number;
   analysis_text: string;
   is_complete: boolean;
   timestamp: string;
@@ -219,7 +222,10 @@ export const useResearchViewStore = defineStore("researchView", () => {
    * 处理研究面板消息
    */
   function handleResearchPanel(panel: ResearchPanel) {
-    state.value.panels.push(panel);
+    state.value.panels.push({
+      ...panel,
+      data_blocks: panel.data_blocks ?? {},
+    });
   }
 
   /**
