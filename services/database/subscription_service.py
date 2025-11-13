@@ -57,6 +57,47 @@ class SubscriptionService:
     def __init__(self):
         self.db = get_db_connection()
 
+    def count_subscriptions(
+        self,
+        user_id: Optional[int] = None,
+        platform: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        is_active: Optional[bool] = None
+    ) -> int:
+        """统计订阅总数（修复：支持精确分页）
+
+        Args:
+            user_id: 用户ID（Stage 4 之前为 None，忽略用户隔离）
+            platform: 平台过滤
+            entity_type: 实体类型过滤
+            is_active: 是否激活
+
+        Returns:
+            符合条件的订阅总数
+        """
+        with self.db.get_session() as session:
+            from sqlmodel import func
+
+            statement = select(func.count(Subscription.id))
+
+            # 用户过滤
+            effective_user_id = user_id if user_id is not None else 0
+            statement = statement.where(Subscription.user_id == effective_user_id)
+
+            # 平台过滤
+            if platform:
+                statement = statement.where(Subscription.platform == platform)
+
+            # 实体类型过滤
+            if entity_type:
+                statement = statement.where(Subscription.entity_type == entity_type)
+
+            # 激活状态过滤
+            if is_active is not None:
+                statement = statement.where(Subscription.is_active == is_active)
+
+            return session.exec(statement).one()
+
     def list_subscriptions(
         self,
         user_id: Optional[int] = None,
@@ -82,9 +123,10 @@ class SubscriptionService:
         with self.db.get_session() as session:
             statement = select(Subscription)
 
-            # 用户过滤（Stage 4 之前忽略）
-            if user_id is not None:
-                statement = statement.where(Subscription.user_id == user_id)
+            # 用户过滤
+            # Stage 4 之前默认使用 user_id=0（单用户模式）
+            effective_user_id = user_id if user_id is not None else 0
+            statement = statement.where(Subscription.user_id == effective_user_id)
 
             # 平台过滤
             if platform:
@@ -124,7 +166,7 @@ class SubscriptionService:
         platform: str,
         entity_type: str,  # ← 修订：不是 resource_type
         identifiers: Dict[str, Any],
-        user_id: Optional[int] = None,  # ← 新增：用户ID
+        user_id: Optional[int] = None,  # ← 新增：用户ID（Stage 4 之前默认为 0）
         **kwargs
     ) -> Subscription:
         """创建订阅
@@ -147,7 +189,8 @@ class SubscriptionService:
             )
 
             # 确保 aliases 包含 display_name（修复：复制列表避免副作用）
-            aliases = list(kwargs.get("aliases", []))  # ← 复制列表
+            # 修复：确保 aliases 永远不为 None，默认为空列表
+            aliases = list(kwargs.get("aliases") or [])  # ← 复制列表，None 转为 []
             if display_name not in aliases:
                 aliases.insert(0, display_name)
 
@@ -159,6 +202,13 @@ class SubscriptionService:
                 sort_keys=True  # ← 关键：按键排序
             )
 
+            # 修复：在单用户阶段使用 user_id=0 而不是 NULL
+            # SQLite 中 NULL != NULL，会导致唯一约束失效
+            effective_user_id = user_id if user_id is not None else 0
+
+            # 修复：确保 tags 永远不为 None，默认为空列表
+            tags = kwargs.get("tags") or []
+
             subscription = Subscription(
                 display_name=display_name,
                 platform=platform,
@@ -166,10 +216,10 @@ class SubscriptionService:
                 identifiers=identifiers_json,
                 supported_actions=json.dumps(supported_actions, ensure_ascii=False),
                 aliases=json.dumps(aliases, ensure_ascii=False),
-                tags=json.dumps(kwargs.get("tags", []), ensure_ascii=False),
+                tags=json.dumps(tags, ensure_ascii=False),
                 avatar_url=kwargs.get("avatar_url"),
                 description=kwargs.get("description"),
-                user_id=user_id  # ← 新增
+                user_id=effective_user_id
             )
 
             session.add(subscription)
@@ -212,8 +262,9 @@ class SubscriptionService:
             # 应用更新
             for key, value in updates.items():
                 if key in ["aliases", "tags", "supported_actions"]:
-                    # JSON 字段需要序列化
-                    setattr(subscription, key, json.dumps(value, ensure_ascii=False))
+                    # JSON 字段需要序列化（修复：确保 None 转为空列表）
+                    safe_value = value if value is not None else []
+                    setattr(subscription, key, json.dumps(safe_value, ensure_ascii=False))
                 elif key == "identifiers":
                     # identifiers 也是 JSON 字段（标准化排序）
                     setattr(subscription, key, json.dumps(value, ensure_ascii=False, sort_keys=True))
@@ -279,6 +330,8 @@ class SubscriptionService:
         self,
         query: str,
         platform: Optional[str] = None,
+        user_id: Optional[int] = None,  # ← 新增：用户过滤（安全）
+        is_active: Optional[bool] = True,  # ← 新增：只搜索激活的订阅
         search_type: str = "fuzzy"
     ) -> List[Subscription]:
         """搜索订阅
@@ -286,6 +339,8 @@ class SubscriptionService:
         Args:
             query: 搜索查询（自然语言）
             platform: 平台过滤（可选）
+            user_id: 用户ID（Stage 4 之前默认 0，用于权限控制）
+            is_active: 是否只搜索激活的订阅（默认 True）
             search_type: 搜索类型
                 - fuzzy: 模糊匹配（display_name/aliases）
                 - semantic: 语义搜索（需要向量化，Phase 2 实现）
@@ -296,25 +351,39 @@ class SubscriptionService:
         if search_type == "semantic":
             # TODO: Phase 2 实现语义搜索
             logger.warning("语义搜索尚未实现，回退到模糊匹配")
-            return self._fuzzy_search(query, platform)
+            return self._fuzzy_search(query, platform, user_id, is_active)
         else:
-            return self._fuzzy_search(query, platform)
+            return self._fuzzy_search(query, platform, user_id, is_active)
 
     def _fuzzy_search(
         self,
         query: str,
-        platform: Optional[str]
+        platform: Optional[str],
+        user_id: Optional[int],
+        is_active: Optional[bool]
     ) -> List[Subscription]:
         """模糊搜索（修复：在 Python 层过滤 JSON 字段）
 
         注意：JSON 字段的 SQL LIKE 查询不可靠，改为先获取候选记录，
         然后在 Python 中解析 JSON 并精确匹配。
+
+        修复：添加 user_id 和 is_active 过滤，防止越权。
         """
         with self.db.get_session() as session:
-            # 先获取所有符合平台条件的订阅（或全部）
+            # 先在 SQL 层过滤（user_id, platform, is_active）
             statement = select(Subscription)
+
+            # 用户过滤（修复：防止多用户越权）
+            effective_user_id = user_id if user_id is not None else 0
+            statement = statement.where(Subscription.user_id == effective_user_id)
+
+            # 平台过滤
             if platform:
                 statement = statement.where(Subscription.platform == platform)
+
+            # 激活状态过滤（修复：防止停用订阅被搜索到）
+            if is_active is not None:
+                statement = statement.where(Subscription.is_active == is_active)
 
             all_subscriptions = list(session.exec(statement).all())
 
@@ -356,7 +425,9 @@ class SubscriptionService:
         self,
         entity_name: str,
         platform: str,
-        entity_type: str  # ← 修订：不是 resource_type
+        entity_type: str,  # ← 修订：不是 resource_type
+        user_id: Optional[int] = None,  # ← 新增：用户过滤（安全）
+        is_active: bool = True  # ← 新增：只解析激活的订阅
     ) -> Optional[Dict[str, Any]]:
         """解析实体标识符（修订版）
 
@@ -364,13 +435,16 @@ class SubscriptionService:
         输出：{\"uid\": \"12345\", \"uname\": \"科技美学Official\"}
 
         修订：不再需要 resource_type，因为我们只查找实体。
+        修复：添加 user_id 和 is_active 过滤，防止越权泄露。
 
         这是核心方法，供查询解析时调用。
         """
-        # 1. 先尝试精确匹配
+        # 1. 先尝试精确匹配（修复：传递 user_id 和 is_active）
         subscriptions = self.search_subscriptions(
             query=entity_name,
             platform=platform,
+            user_id=user_id,
+            is_active=is_active,
             search_type="fuzzy"
         )
 

@@ -42,7 +42,10 @@
       "Bash(if exist test_subscription.db del test_subscription.db)",
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -c \"import os; [os.remove(f) for f in [''omni.db'', ''test_subscription.db''] if os.path.exists(f)]; print(''已删除旧数据库文件'')\")",
       "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -c \"import os; import glob; [os.remove(f) for f in glob.glob(''alembic/versions/*.py'') if ''__pycache__'' not in f]; print(''已删除旧迁移文件'')\")",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m alembic revision --autogenerate -m \"init subscription tables with cascade delete\")"
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m alembic revision --autogenerate -m \"init subscription tables with cascade delete\")",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_subscription_controller.py -v --tb=short)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_subscription_controller.py -v --tb=line -q)",
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/api/test_subscription_controller.py -v -q --tb=line)"
     ],
     "deny": [],
     "ask": []
