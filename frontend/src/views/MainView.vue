@@ -55,6 +55,7 @@
               :key="task.task_id"
               :task="task"
               @delete="handleDeleteTask"
+              @open="handleOpenTask"
             />
           </div>
 
@@ -176,6 +177,31 @@ const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) 
 
 const handleDeleteTask = (taskId: string) => {
   researchStore.deleteTask(taskId);
+};
+
+const handleOpenTask = async (taskId: string) => {
+  const task = researchStore.getTask(taskId);
+  if (!task) return;
+
+  // 保存原始状态，用于错误回滚
+  const originalStatus = task.status;
+
+  try {
+    researchStore.markTaskProcessing(taskId);
+    persistResearchTaskQuery(taskId, task.query);
+    await router.push({
+      path: `/research/${taskId}`,
+      query: { query: task.query },
+    });
+  } catch (error) {
+    // 路由跳转失败时回滚状态
+    console.error('Failed to navigate to research view:', error);
+    const currentTask = researchStore.getTask(taskId);
+    if (currentTask) {
+      currentTask.status = originalStatus;
+      currentTask.updated_at = new Date().toISOString();
+    }
+  }
 };
 
 const setSizePreset = (preset: PanelSizePreset) => {

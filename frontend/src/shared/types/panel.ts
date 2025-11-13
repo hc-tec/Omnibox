@@ -93,6 +93,7 @@ export interface PanelResponse {
   data_blocks: Record<string, DataBlock>;
   metadata?: {
     intent_type?: string | null;
+    research_type?: string | null;
     intent_confidence?: number | null;
     generated_path?: string | null;
     source?: string | null;
@@ -102,6 +103,11 @@ export interface PanelResponse {
     reasoning?: string | null;
     component_confidence?: Record<string, number>;
     debug?: Record<string, unknown>;
+    sub_queries?: Array<{ query: string; task_type?: string }> | null;
+    query_plan?: {
+      sub_query_count?: number;
+      estimated_steps?: number;
+    } | null;
   };
 }
 

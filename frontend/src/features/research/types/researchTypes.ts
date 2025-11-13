@@ -48,8 +48,9 @@ export interface ResearchTask {
     timestamp: string;
   };
   error?: string;
-  metadata?: ResearchResponse["metadata"];
+  metadata?: Record<string, unknown>;
   previews?: ResearchPreview[];
+  auto_detected?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -59,13 +60,20 @@ export interface ResearchResponse {
   success: boolean;
   message: string;
   metadata?: {
-    mode: string;
+    mode?: string;
     total_steps?: number;
     execution_steps?: ExecutionStep[];
     data_stash_count?: number;
     thread_id?: string;
     task_id?: string;
     intent_confidence?: number;
+    intent_type?: string | null;
+    research_type?: string | null;
+    sub_queries?: Array<{ query: string; task_type?: string }> | null;
+    query_plan?: {
+      sub_query_count?: number;
+      estimated_steps?: number;
+    } | null;
   };
 }
 

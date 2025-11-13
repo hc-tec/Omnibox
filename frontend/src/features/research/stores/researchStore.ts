@@ -1,9 +1,22 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { ResearchTask, QueryMode, ResearchResponse, ExecutionStep, ResearchPreview } from '../types/researchTypes';
+import type {
+  ResearchTask,
+  QueryMode,
+  ResearchResponse,
+  ExecutionStep,
+  ResearchPreview,
+  ResearchTaskStatus,
+} from '../types/researchTypes';
 
 // 常量定义
 const MAX_PREVIEW_CARDS = 5; // 最多保留的预览卡片数量
+
+interface CreateTaskOptions {
+  status?: ResearchTaskStatus;
+  metadata?: ResearchTask["metadata"];
+  autoDetected?: boolean;
+}
 
 export const useResearchStore = defineStore('research', () => {
   // 状态
@@ -12,9 +25,27 @@ export const useResearchStore = defineStore('research', () => {
   const queryMode = ref<QueryMode>('auto');
 
   // 计算属性
+  /**
+   * 需要在主界面显示的任务
+   * 包括：idle（待启动的建议任务）、processing（处理中）、human_in_loop（等待人工输入）
+   */
   const activeTasks = computed(() =>
     Array.from(tasks.value.values()).filter(
-      t => t.status === 'processing' || t.status === 'human_in_loop'
+      t =>
+        t.status === 'processing' ||
+        t.status === 'human_in_loop' ||
+        t.status === 'idle'
+    )
+  );
+
+  /**
+   * 正在运行的任务（不包括 idle）
+   */
+  const runningTasks = computed(() =>
+    Array.from(tasks.value.values()).filter(
+      t =>
+        t.status === 'processing' ||
+        t.status === 'human_in_loop'
     )
   );
 
@@ -33,15 +64,17 @@ export const useResearchStore = defineStore('research', () => {
   const pendingCount = computed(() => pendingHumanTasks.value.length);
 
   // Actions
-  function createTask(query: string, mode: QueryMode, presetTaskId?: string): string {
+  function createTask(query: string, mode: QueryMode, presetTaskId?: string, options?: CreateTaskOptions): string {
     const taskId = presetTaskId ?? `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const task: ResearchTask = {
       task_id: taskId,
       query,
       mode,
-      status: 'processing',
+      status: options?.status ?? 'processing',
       execution_steps: [],
       previews: [],
+      metadata: options?.metadata,
+      auto_detected: options?.autoDetected ?? false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -50,11 +83,11 @@ export const useResearchStore = defineStore('research', () => {
     return taskId;
   }
 
-  function ensureTask(taskId: string, query: string, mode: QueryMode = 'research'): string {
+  function ensureTask(taskId: string, query: string, mode: QueryMode = 'research', options?: CreateTaskOptions): string {
     if (tasks.value.has(taskId)) {
       return taskId;
     }
-    return createTask(query, mode, taskId);
+    return createTask(query, mode, taskId, options);
   }
 
   function updateTaskStep(taskId: string, stepData: any) {
@@ -126,8 +159,24 @@ export const useResearchStore = defineStore('research', () => {
     if (task) {
       task.status = 'processing';
       task.human_request = undefined;
+      // auto_detected 是任务创建来源的历史事实，不应该因为状态转换而改变
       task.updated_at = new Date().toISOString();
     }
+  }
+
+  function getTask(taskId: string): ResearchTask | undefined {
+    return tasks.value.get(taskId);
+  }
+
+  /**
+   * 更新任务的 metadata（不会修改任务状态）
+   */
+  function updateTaskMetadata(taskId: string, metadata: ResearchTask["metadata"]) {
+    const task = tasks.value.get(taskId);
+    if (!task) return;
+
+    task.metadata = metadata;
+    task.updated_at = new Date().toISOString();
   }
 
   function appendPreview(taskId: string, payload: any) {
@@ -135,7 +184,7 @@ export const useResearchStore = defineStore('research', () => {
     if (!task) return;
     const list = task.previews ?? (task.previews = []);
     const incoming = Array.isArray(payload?.previews) ? payload.previews : (payload ? [payload] : []);
-    incoming.forEach((entry: any, index) => {
+    incoming.forEach((entry: any, index: number) => {
       const normalized: ResearchPreview = {
         preview_id: entry?.preview_id || `${taskId}-${Date.now()}-${index}`,
         title: entry?.title || task.query,
@@ -159,6 +208,7 @@ export const useResearchStore = defineStore('research', () => {
     queryMode,
     // Computed
     activeTasks,
+    runningTasks,
     completedTasks,
     pendingHumanTasks,
     pendingCount,
@@ -172,6 +222,8 @@ export const useResearchStore = defineStore('research', () => {
     deleteTask,
     clearCompletedTasks,
     markTaskProcessing,
+    getTask,
+    updateTaskMetadata,
     appendPreview,
   };
 });
