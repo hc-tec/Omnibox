@@ -97,14 +97,15 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251113-subscription-system-implementation.md` - **订阅管理系统实施任务**（进行中 - Stage 1-2 已完成 ✅）✨NEW
-  - Phase 1: 基础订阅管理（数据库 + Service + API + 前端）
-  - 4 个阶段详细 TODO 清单（共 8 个核心任务）
-  - ✅ Stage 1-2: 数据库基础 + 订阅管理服务（已完成，9 个测试用例全部通过）
-  - 🚧 Stage 3: API 接口（待开始，2天）
-  - 🚧 Stage 4: 前端界面（待开始，3天）
-  - 预计工作量：7-10 天，预计完成：2025-11-23
-  - 当前进度：40%（2/4 阶段完成）
+- `workflow/251113-subscription-system-implementation.md` - **订阅管理系统 Phase 1 实施任务**（已完成 ✅）
+  - 基础订阅管理（数据库 + Service + API + 前端）
+  - Stage 1-4 全部完成，20 个测试用例全部通过
+- `workflow/251114-subscription-phase2-intelligent-parsing.md` - **订阅系统 Phase 2: 智能解析**（进行中 ⏳）✨NEW
+  - QueryParser（LLM 驱动查询解析）
+  - SubscriptionVectorStore（语义搜索）
+  - SubscriptionResolver（端到端解析）
+  - LangGraph 集成（SimpleChatNode + fetch_public_data）
+  - 5 个 Stage，预计 3-5 天
 - `workflow/251113-langgraph-v4.4-implementation.md` - **LangGraph V4.4 架构实施任务**（已批准，待开始）
   - 5 个阶段详细 TODO 清单（共 34 个子任务）
   - V4.0: 显式依赖解析（1天）

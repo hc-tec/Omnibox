@@ -54,8 +54,27 @@ class SubscriptionService:
     ```
     """
 
-    def __init__(self):
+    def __init__(self, vector_store=None):
+        """初始化订阅服务
+
+        Args:
+            vector_store: 向量存储实例（可选，用于语义搜索）
+        """
         self.db = get_db_connection()
+        self._vector_store = vector_store
+
+    @property
+    def vector_store(self):
+        """延迟加载向量存储（避免循环导入）"""
+        if self._vector_store is None:
+            try:
+                from services.subscription.vector_service import SubscriptionVectorStore
+                self._vector_store = SubscriptionVectorStore()
+                logger.info("向量存储已加载")
+            except Exception as e:
+                logger.warning(f"向量存储加载失败: {e}")
+                self._vector_store = None
+        return self._vector_store
 
     def count_subscriptions(
         self,
@@ -231,8 +250,8 @@ class SubscriptionService:
                 f"({platform}/{entity_type}, id={subscription.id})"
             )
 
-            # TODO: 触发向量化（Phase 2 实现）
-            # self._trigger_embedding(subscription)
+            # 触发向量化（Phase 2）
+            self._trigger_embedding(subscription)
 
             return subscription
 
@@ -296,9 +315,7 @@ class SubscriptionService:
             if any(k in updates for k in [
                 "display_name", "description", "aliases", "tags"
             ]):
-                # TODO: 触发向量化（Phase 2 实现）
-                # self._trigger_embedding(subscription)
-                pass
+                self._trigger_embedding(subscription)
 
             return subscription
 
@@ -321,8 +338,12 @@ class SubscriptionService:
 
             logger.info(f"✅ 删除订阅成功: id={subscription_id}")
 
-            # TODO: 同时删除向量数据（ChromaDB）
-            # vector_store.delete_subscription(subscription_id)
+            # 同时删除向量数据（ChromaDB）
+            if self.vector_store:
+                try:
+                    self.vector_store.delete_subscription(subscription_id)
+                except Exception as e:
+                    logger.warning(f"删除向量数据失败: {e}")
 
             return True
 
@@ -332,26 +353,31 @@ class SubscriptionService:
         platform: Optional[str] = None,
         user_id: Optional[int] = None,  # ← 新增：用户过滤（安全）
         is_active: Optional[bool] = True,  # ← 新增：只搜索激活的订阅
-        search_type: str = "fuzzy"
+        search_type: str = "fuzzy",
+        top_k: int = 5,  # ← Phase 2: 语义搜索返回数量
+        min_similarity: float = 0.7  # ← Phase 2: 最小相似度阈值
     ) -> List[Subscription]:
         """搜索订阅
 
         Args:
             query: 搜索查询（自然语言）
             platform: 平台过滤（可选）
-            user_id: 用户ID（Stage 4 之前默认 0，用于权限控制）
+            user_id: 用户ID（None = 游客模式，查询公共订阅）
             is_active: 是否只搜索激活的订阅（默认 True）
             search_type: 搜索类型
                 - fuzzy: 模糊匹配（display_name/aliases）
                 - semantic: 语义搜索（需要向量化，Phase 2 实现）
+            top_k: 语义搜索返回数量（仅 search_type="semantic" 有效）
+            min_similarity: 最小相似度阈值（仅 search_type="semantic" 有效）
 
         Returns:
             订阅列表
         """
         if search_type == "semantic":
-            # TODO: Phase 2 实现语义搜索
-            logger.warning("语义搜索尚未实现，回退到模糊匹配")
-            return self._fuzzy_search(query, platform, user_id, is_active)
+            # Phase 2: 语义搜索
+            return self._semantic_search(
+                query, platform, user_id, is_active, top_k, min_similarity
+            )
         else:
             return self._fuzzy_search(query, platform, user_id, is_active)
 
@@ -373,9 +399,9 @@ class SubscriptionService:
             # 先在 SQL 层过滤（user_id, platform, is_active）
             statement = select(Subscription)
 
-            # 用户过滤（修复：防止多用户越权）
-            effective_user_id = user_id if user_id is not None else 0
-            statement = statement.where(Subscription.user_id == effective_user_id)
+            # 用户过滤（游客模式：user_id=None 时不过滤）
+            if user_id is not None:
+                statement = statement.where(Subscription.user_id == user_id)
 
             # 平台过滤
             if platform:
@@ -473,3 +499,110 @@ class SubscriptionService:
             f"platform='{platform}', entity_type='{entity_type}'"
         )
         return None
+
+    def _trigger_embedding(self, subscription: Subscription) -> None:
+        """触发订阅向量化（Phase 2）
+
+        Args:
+            subscription: 订阅对象
+        """
+        if not self.vector_store:
+            logger.debug("向量存储未启用，跳过向量化")
+            return
+
+        try:
+            # 构建订阅数据字典
+            subscription_data = {
+                "display_name": subscription.display_name,
+                "platform": subscription.platform,
+                "entity_type": subscription.entity_type,
+                "description": subscription.description,
+                "aliases": subscription.aliases,  # JSON 字符串
+                "tags": subscription.tags  # JSON 字符串
+            }
+
+            # 向量化
+            self.vector_store.add_subscription(
+                subscription.id,
+                subscription_data
+            )
+
+            logger.info(f"✅ 订阅 {subscription.id} 向量化完成")
+
+        except Exception as e:
+            # 向量化失败不应阻塞订阅创建/更新
+            logger.error(f"向量化失败: {e}", exc_info=True)
+
+    def _semantic_search(
+        self,
+        query: str,
+        platform: Optional[str],
+        user_id: Optional[int],
+        is_active: Optional[bool],
+        top_k: int = 10,
+        min_similarity: float = 0.7
+    ) -> List[Subscription]:
+        """语义搜索（Phase 2）
+
+        使用向量相似度搜索订阅。
+
+        Args:
+            query: 搜索查询
+            platform: 平台过滤
+            user_id: 用户ID
+            is_active: 是否激活
+            top_k: 返回数量
+            min_similarity: 最小相似度阈值
+
+        Returns:
+            订阅列表
+        """
+        if not self.vector_store:
+            logger.warning("向量存储未启用，回退到模糊搜索")
+            return self._fuzzy_search(query, platform, user_id, is_active)
+
+        try:
+            # 向量检索
+            matches = self.vector_store.search(
+                query=query,
+                platform=platform,
+                top_k=top_k,
+                min_similarity=min_similarity
+            )
+
+            if not matches:
+                logger.info(f"语义搜索无结果: '{query}'")
+                return []
+
+            # 获取订阅详情（并应用额外过滤）
+            results = []
+            for subscription_id, similarity in matches:
+                subscription = self.get_subscription(subscription_id)
+
+                if not subscription:
+                    continue
+
+                # 用户过滤（游客模式：user_id=None 时不过滤）
+                if user_id is not None:
+                    if subscription.user_id != user_id:
+                        continue
+
+                # 激活状态过滤
+                if is_active is not None and subscription.is_active != is_active:
+                    continue
+
+                # 保存相似度分数（用于 SubscriptionResolver）
+                subscription._similarity = similarity
+                results.append(subscription)
+
+            logger.info(
+                f"语义搜索 '{query}' 返回 {len(results)} 个结果 "
+                f"(min_similarity={min_similarity})"
+            )
+
+            return results
+
+        except Exception as e:
+            logger.error(f"语义搜索失败: {e}", exc_info=True)
+            # 回退到模糊搜索
+            return self._fuzzy_search(query, platform, user_id, is_active)
