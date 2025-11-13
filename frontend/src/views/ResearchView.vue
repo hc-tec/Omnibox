@@ -145,9 +145,14 @@ const statusText = computed(() => {
 /**
  * 返回主界面
  */
-function handleBackToMain() {
+async function handleBackToMain() {
   disconnect();
-  router.push("/");
+  try {
+    await router.push({ name: "Main" });
+    store.reset();
+  } catch (err) {
+    console.error("[ResearchView] Failed to navigate back to main view", err);
+  }
 }
 
 /**

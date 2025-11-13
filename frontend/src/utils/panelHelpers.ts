@@ -13,10 +13,11 @@ export interface ResolvedBlock {
 
 export function resolveBlock(
   block: UIBlock,
-  dataBlocks: Record<string, DataBlock>
+  dataBlocks?: Record<string, DataBlock>
 ): ResolvedBlock {
+  const dataBlockMap = dataBlocks ?? {};
   const ability = resolveComponentAbility(block.component);
-  const dataBlock = block.data_ref ? dataBlocks[block.data_ref] ?? null : null;
+  const dataBlock = block.data_ref ? dataBlockMap[block.data_ref] ?? null : null;
   const dataPayload =
     block.data ??
     (dataBlock

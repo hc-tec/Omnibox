@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, withDefaults } from "vue";
 import type { UIBlock, DataBlock } from "../../../shared/types/panel";
 import { resolveBlock } from "../../../../utils/panelHelpers";
 import ListPanelBlock from "./ListPanelBlock.vue";
@@ -58,12 +58,17 @@ defineOptions({
   name: "DynamicBlockRenderer",
 });
 
-const props = defineProps<{
-  blockId?: string;
-  block?: UIBlock;
-  blockMap?: Map<string, UIBlock>;
-  dataBlocks: Record<string, DataBlock>;
-}>();
+const props = withDefaults(
+  defineProps<{
+    blockId?: string;
+    block?: UIBlock;
+    blockMap?: Map<string, UIBlock>;
+    dataBlocks?: Record<string, DataBlock>;
+  }>(),
+  {
+    dataBlocks: () => ({} as Record<string, DataBlock>),
+  }
+);
 
 const targetBlock = computed<UIBlock | null>(() => {
   if (props.block) {

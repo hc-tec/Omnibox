@@ -44,7 +44,7 @@
             >
               <DynamicBlockRenderer
                 :block="block"
-                :data-block="item.panel.panel_payload.components?.[block.id]"
+                :data-blocks="item.panel.data_blocks"
               />
             </div>
           </div>
