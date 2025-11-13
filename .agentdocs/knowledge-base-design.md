@@ -239,6 +239,316 @@ class NoteEmbedding(SQLModel, table=True):
 └─────────────┘
 ```
 
+#### 1.3 数据库集成
+
+知识库表与现有数据库架构的集成方案。
+
+**集成到统一模型文件**
+
+所有知识库表定义应集成到现有的 `services/database/models.py` 中,与运行时配置表保持一致:
+
+```python
+# services/database/models.py (统一模型文件)
+
+from sqlmodel import SQLModel, Field
+from datetime import datetime
+from typing import Optional
+
+# ==================== 运行时配置表 ====================
+class LLMProfile(SQLModel, table=True):
+    """LLM配置"""
+    __tablename__ = "llm_profiles"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True)
+    # ... 其他字段 ...
+
+class RSSHubProfile(SQLModel, table=True):
+    """RSSHub配置"""
+    __tablename__ = "rsshub_profiles"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True)
+    # ... 其他字段 ...
+
+# ==================== 知识库表 ====================
+class Note(SQLModel, table=True):
+    """笔记"""
+    __tablename__ = "notes"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = Field(index=True)
+    content: str
+    content_plain: str = Field(description="纯文本内容(自动生成)")
+    word_count: int = Field(default=0, description="字数(自动计算)")
+    read_time_minutes: int = Field(default=0, description="阅读时间(自动计算)")
+
+    # 层级组织
+    parent_id: Optional[int] = Field(default=None, foreign_key="notes.id")
+
+    # 状态标记
+    is_favorite: bool = Field(default=False)
+    is_archived: bool = Field(default=False)
+    is_pinned: bool = Field(default=False)
+
+    # 时间戳
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    # 多用户支持(可选,Stage 4之前为NULL)
+    user_id: Optional[int] = Field(
+        default=None,
+        foreign_key="users.id",
+        index=True,
+        description="NULL表示公共笔记(单用户阶段)"
+    )
+
+class Tag(SQLModel, table=True):
+    """标签"""
+    __tablename__ = "tags"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    color: str = Field(default="#6B7280")
+    icon: Optional[str] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class NoteTag(SQLModel, table=True):
+    """笔记-标签关联"""
+    __tablename__ = "note_tags"
+    note_id: int = Field(foreign_key="notes.id", primary_key=True)
+    tag_id: int = Field(foreign_key="tags.id", primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class Bookmark(SQLModel, table=True):
+    """收藏"""
+    __tablename__ = "bookmarks"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    type: str = Field(index=True, description="类型:panel_session/research_task/rss_item/web_link")
+    reference_id: Optional[int] = Field(default=None, index=True)
+    reference_data: str = Field(description="数据快照(JSON)")
+    title: str
+    description: Optional[str] = Field(default=None)
+    thumbnail_url: Optional[str] = Field(default=None)
+    source_url: Optional[str] = Field(default=None)
+    tags_snapshot: str = Field(default="[]")
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+
+class NoteLink(SQLModel, table=True):
+    """笔记链接(双向)"""
+    __tablename__ = "note_links"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_note_id: int = Field(foreign_key="notes.id", index=True)
+    target_note_id: int = Field(foreign_key="notes.id", index=True)
+    link_type: str = Field(default="mention")
+    context: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class NoteEmbedding(SQLModel, table=True):
+    """笔记向量化记录"""
+    __tablename__ = "note_embeddings"
+    note_id: int = Field(foreign_key="notes.id", primary_key=True)
+    embedding_version: str = Field(description="向量模型版本")
+    last_embedded_at: datetime
+    is_stale: bool = Field(default=False, description="是否需要重新向量化")
+```
+
+**Alembic 迁移集成**
+
+按照现有的 Alembic 工作流创建迁移:
+
+```bash
+# 1. 生成迁移脚本
+alembic revision --autogenerate -m "add knowledge base tables"
+
+# 2. 审查生成的迁移脚本
+# alembic/versions/xxxx_add_knowledge_base_tables.py
+
+# 3. 执行迁移
+alembic upgrade head
+```
+
+**用户ID处理策略**
+
+在 Stage 4 用户系统实现之前:
+
+1. **Phase 1-3**: `user_id` 字段允许为 `NULL`
+   - 所有数据的 `user_id` 保持 `NULL`
+   - 系统按"单用户模式"运行
+   - 不进行任何用户隔离
+
+2. **Stage 4 实现后**:
+   - 创建 `users` 表
+   - 为默认用户创建记录 (id=1)
+   - 执行数据迁移: `UPDATE notes SET user_id = 1 WHERE user_id IS NULL`
+   - 在 API 层添加用户认证和隔离逻辑
+
+3. **向后兼容**:
+   - Service 层的查询在 Stage 4 之前忽略 `user_id`
+   - Stage 4 之后自动从请求上下文获取 `user_id`
+
+```python
+# services/knowledge/note_service.py
+class NoteService:
+    def list_notes(self, user_id: Optional[int] = None, **filters):
+        """列出笔记
+
+        Args:
+            user_id: 用户ID (Stage 4之前为None,忽略用户隔离)
+        """
+        with self.db.get_session() as session:
+            statement = select(Note)
+
+            # Stage 4 之前: 忽略 user_id
+            # Stage 4 之后: 添加 user_id 过滤
+            if user_id is not None:
+                statement = statement.where(Note.user_id == user_id)
+
+            # 应用其他过滤器...
+            return session.exec(statement).all()
+```
+
+**依赖关系管理**
+
+知识库功能对其他模块的依赖:
+
+| 功能 | 依赖阶段 | 说明 |
+|------|---------|------|
+| 基础笔记/标签 | Phase 1 | 独立,无依赖 |
+| Panel 收藏 (数据引用) | Phase 1 | 只保存 reference_id 和基本信息 |
+| Panel 收藏 (完整快照) | Phase 2 | 依赖 `PanelSession` 表 (持久化计划 Phase 2) |
+| 研究任务收藏 | Phase 1 | 只需 research_task 表已存在 |
+| 向量搜索 | Phase 2 | 依赖 ChromaDB 和 bge-m3 (已存在) |
+
+**Phase 实施顺序**
+
+按照依赖关系,推荐实施顺序:
+
+1. **知识库 Phase 1** (基础笔记/标签/收藏) - 可立即开始
+2. **持久化计划 Phase 2** (PanelSession 表) - 并行开发
+3. **知识库 Phase 2** (向量搜索) - 依赖 Phase 1 完成
+4. **知识库 Phase 3** (双向链接/LangGraph 集成) - 依赖 Phase 2 完成
+5. **持久化计划 Stage 4** (用户系统) - 长期规划
+
+#### 1.4 派生字段自动计算
+
+`content_plain`、`word_count`、`read_time_minutes` 字段的计算逻辑。
+
+**计算工具函数**
+
+```python
+# services/knowledge/note_utils.py
+import re
+from typing import Dict
+from markdown import markdown
+from bs4 import BeautifulSoup
+
+def calculate_derived_fields(content: str) -> Dict[str, any]:
+    """从 Markdown 内容计算派生字段
+
+    Args:
+        content: Markdown 格式的笔记内容
+
+    Returns:
+        {
+            "content_plain": str,      # 纯文本内容
+            "word_count": int,         # 字数统计
+            "read_time_minutes": int   # 预计阅读时间(分钟)
+        }
+    """
+    # 1. 将 Markdown 转换为 HTML
+    html = markdown(content, extensions=['extra', 'codehilite'])
+
+    # 2. 提取纯文本
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # 移除代码块(不计入字数)
+    for code in soup.find_all(['code', 'pre']):
+        code.decompose()
+
+    content_plain = soup.get_text(separator=' ', strip=True)
+
+    # 3. 计算字数(中文字符 + 英文单词)
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', content_plain))
+    english_words = len(re.findall(r'\b[a-zA-Z]+\b', content_plain))
+    word_count = chinese_chars + english_words
+
+    # 4. 计算阅读时间
+    # 假设: 中文 300字/分钟, 英文 200词/分钟
+    reading_speed_cn = 300  # 字/分钟
+    reading_speed_en = 200  # 词/分钟
+
+    read_time = (chinese_chars / reading_speed_cn) + (english_words / reading_speed_en)
+    read_time_minutes = max(1, int(read_time))  # 至少1分钟
+
+    return {
+        "content_plain": content_plain,
+        "word_count": word_count,
+        "read_time_minutes": read_time_minutes
+    }
+
+
+def update_note_derived_fields(note: Note) -> None:
+    """更新笔记的派生字段(原地修改)
+
+    Args:
+        note: 笔记对象
+    """
+    derived = calculate_derived_fields(note.content)
+    note.content_plain = derived["content_plain"]
+    note.word_count = derived["word_count"]
+    note.read_time_minutes = derived["read_time_minutes"]
+```
+
+**在 Service 层集成**
+
+```python
+# services/knowledge/note_service.py
+from services.knowledge.note_utils import update_note_derived_fields
+
+class NoteService:
+    def create_note(self, title: str, content: str, **kwargs) -> Note:
+        """创建笔记(自动计算派生字段)"""
+        note = Note(title=title, content=content, **kwargs)
+
+        # 自动计算派生字段
+        update_note_derived_fields(note)
+
+        with self.db.get_session() as session:
+            session.add(note)
+            session.commit()
+            session.refresh(note)
+
+        return note
+
+    def update_note(self, note_id: int, **updates) -> Note:
+        """更新笔记(自动重新计算派生字段)"""
+        with self.db.get_session() as session:
+            note = session.get(Note, note_id)
+            if not note:
+                raise ValueError(f"笔记不存在: {note_id}")
+
+            # 应用更新
+            for key, value in updates.items():
+                setattr(note, key, value)
+
+            # 如果内容被修改,重新计算派生字段
+            if "content" in updates:
+                update_note_derived_fields(note)
+                note.updated_at = datetime.now()
+
+            session.add(note)
+            session.commit()
+            session.refresh(note)
+
+        return note
+```
+
+**依赖安装**
+
+```bash
+pip install markdown beautifulsoup4
+```
+
 ---
 
 ### 2. 向量检索策略
@@ -249,6 +559,7 @@ class NoteEmbedding(SQLModel, table=True):
 
 ```python
 # services/knowledge/vector_service.py
+import json
 from rag_system.vector_store import VectorStore
 from rag_system.embedding_model import EmbeddingModel
 from pathlib import Path
@@ -331,7 +642,7 @@ class KnowledgeVectorStore:
             score = 1 - distance  # 转换为相似度
 
             metadata = results["metadatas"][0][i]
-            note_def = eval(metadata["route_definition"])  # 临时方案
+            note_def = json.loads(metadata["route_definition"])
 
             # 标签过滤
             if filter_tags:
@@ -492,25 +803,79 @@ class KnowledgeSearchService:
 
 在 Panel 查询完成后，前端显示"收藏"按钮。
 
+**依赖说明**
+
+Panel 收藏功能分两个阶段实现:
+
+| 阶段 | 功能 | 依赖 | 说明 |
+|------|------|------|------|
+| Phase 1 | 数据引用收藏 | 仅需知识库表 | 保存 `reference_id` 和基本元信息 |
+| Phase 2+ | 完整快照收藏 | 需要 `PanelSession` 表 | 保存完整布局快照,支持一键恢复 |
+
+**Phase 1 实现 (基础收藏)**
+
+不依赖 `PanelSession` 表,仅保存数据引用:
+
 ```python
-# api/controllers/bookmark_controller.py
+# api/controllers/bookmark_controller.py (Phase 1)
 from fastapi import APIRouter, Depends
 from services.knowledge.bookmark_service import BookmarkService
 
 router = APIRouter(prefix="/api/v1/bookmarks", tags=["knowledge"])
 
+@router.post("/panel-result", status_code=201)
+def bookmark_panel_result(
+    query: str,
+    route_id: str,
+    title: str,
+    description: Optional[str] = None,
+    service: BookmarkService = Depends(get_bookmark_service)
+):
+    """收藏 Panel 查询结果 (Phase 1: 数据引用)
+
+    保存查询信息和路由ID,不依赖 PanelSession 持久化。
+    """
+    # 构建引用数据(轻量级)
+    reference_data = {
+        "query": query,
+        "route_id": route_id,
+        "timestamp": datetime.now().isoformat()
+    }
+
+    bookmark = service.create_bookmark(
+        type="panel_query",
+        reference_id=None,  # Phase 1 无 session_id
+        reference_data=json.dumps(reference_data),
+        title=title,
+        description=description or f"查询: {query}",
+        source_url=None
+    )
+
+    return bookmark
+```
+
+**Phase 2 实现 (完整快照)**
+
+依赖 `PanelSession` 表(持久化计划 Phase 2):
+
+```python
+# api/controllers/bookmark_controller.py (Phase 2+)
 @router.post("/panel-session", status_code=201)
 def bookmark_panel_session(
     session_id: int,
     title: str,
     service: BookmarkService = Depends(get_bookmark_service)
 ):
-    """收藏 Panel 会话
+    """收藏 Panel 会话 (Phase 2+: 完整快照)
 
-    保存完整的布局快照和数据，方便后续恢复。
+    依赖: PanelSession 表 (持久化计划 Phase 2)
+    保存完整的布局快照和数据，方便后续一键恢复。
     """
     # 1. 从 panel_sessions 表加载完整数据
     panel_session = service.get_panel_session(session_id)
+
+    if not panel_session:
+        raise HTTPException(status_code=404, detail="Panel 会话不存在")
 
     # 2. 创建收藏
     bookmark = service.create_bookmark(
@@ -621,9 +986,37 @@ def create_research_note(
 
 LangGraph Agents 新增工具 `search_knowledge_base`，可以在研究过程中检索用户知识库。
 
+**服务层依赖注入设计**
+
+为确保测试性和依赖管理,使用依赖注入模式:
+
+```python
+# services/knowledge/dependencies.py
+from functools import lru_cache
+from services.knowledge.search_service import KnowledgeSearchService
+from services.knowledge.vector_service import KnowledgeVectorStore
+from services.database.connection import get_database
+from pathlib import Path
+
+@lru_cache()
+def get_knowledge_vector_store() -> KnowledgeVectorStore:
+    """获取知识库向量存储单例"""
+    persist_dir = Path("data/chroma/user_knowledge")
+    return KnowledgeVectorStore(persist_directory=persist_dir)
+
+@lru_cache()
+def get_knowledge_search_service() -> KnowledgeSearchService:
+    """获取知识库搜索服务单例"""
+    db = get_database()
+    vector_store = get_knowledge_vector_store()
+    return KnowledgeSearchService(db=db, vector_store=vector_store)
+```
+
+**LangGraph 工具实现**
+
 ```python
 # services/langgraph_agents/tools/knowledge_tool.py
-from services.knowledge.search_service import KnowledgeSearchService
+from services.knowledge.dependencies import get_knowledge_search_service
 
 @register_tool("search_knowledge_base")
 def search_knowledge_base(query: str, max_results: int = 3) -> str:
@@ -638,7 +1031,8 @@ def search_knowledge_base(query: str, max_results: int = 3) -> str:
     Returns:
         搜索结果摘要（Markdown格式）
     """
-    search_service = KnowledgeSearchService()
+    # 通过依赖注入获取服务实例
+    search_service = get_knowledge_search_service()
 
     # 执行混合搜索
     results = search_service.search(
@@ -658,6 +1052,43 @@ def search_knowledge_base(query: str, max_results: int = 3) -> str:
         output += f"*创建于: {result['created_at']}*\n\n"
 
     return output
+```
+
+**API 控制器依赖注入**
+
+```python
+# api/controllers/knowledge_controller.py
+from fastapi import Depends
+from services.knowledge.dependencies import get_knowledge_search_service
+from services.knowledge.note_service import NoteService
+from services.database.connection import get_database
+
+def get_note_service(db = Depends(get_database)) -> NoteService:
+    """获取笔记服务实例"""
+    return NoteService(db=db)
+
+def get_bookmark_service(db = Depends(get_database)):
+    """获取收藏服务实例"""
+    from services.knowledge.bookmark_service import BookmarkService
+    return BookmarkService(db=db)
+
+@router.post("/search")
+def search_knowledge(
+    data: SearchRequest,
+    service: KnowledgeSearchService = Depends(get_knowledge_search_service)
+):
+    """搜索知识库(依赖注入)"""
+    results = service.search(
+        query=data.query,
+        search_type=data.search_type,
+        top_k=data.top_k,
+        filters=data.filters
+    )
+    return {
+        "query": data.query,
+        "total": len(results),
+        "results": results
+    }
 ```
 
 **在 LangGraph Planner 中的使用**：
@@ -1547,4 +1978,42 @@ function togglePhysics() {
 
 **方案制定时间**：2025-11-13
 **预计实施周期**：Phase 1-3 共 6-8 周，Phase 4-5 可选
-**文档版本**：v1.0
+
+---
+
+## 修订历史
+
+### v1.1 (2025-11-13)
+
+**修复问题**：
+
+1. **P0 - 安全修复**：
+   - 移除 `eval()` 调用,替换为 `json.loads()` (services/knowledge/vector_service.py:334)
+   - 添加 `import json` 导入语句
+
+2. **P0 - 数据库集成**：
+   - 新增 "1.3 数据库集成" 章节
+   - 说明如何集成到现有 `services/database/models.py`
+   - 定义 Alembic 迁移工作流
+   - 明确 `user_id` 在 Stage 4 之前的处理策略 (NULL = 单用户模式)
+   - 添加依赖关系管理表格和 Phase 实施顺序
+
+3. **P1 - 派生字段计算**：
+   - 新增 "1.4 派生字段自动计算" 章节
+   - 定义 `calculate_derived_fields()` 函数
+   - 说明在 Service 层自动调用的机制
+   - 添加依赖包 (markdown, beautifulsoup4)
+
+4. **P1 - Bookmark 依赖关系**：
+   - 在 "3.1 Panel 结果收藏" 添加依赖说明表格
+   - 区分 Phase 1 (数据引用) 和 Phase 2+ (完整快照) 实现
+   - Phase 1 不依赖 PanelSession,可立即开发
+   - Phase 2+ 依赖持久化计划 Phase 2
+
+5. **P1 - 服务层依赖注入**：
+   - 在 "3.3 在研究模式中引用知识库" 添加 DI 设计
+   - 新增 `services/knowledge/dependencies.py` 模块
+   - 使用 `@lru_cache()` 实现服务单例
+   - 为 API 控制器和 LangGraph 工具提供统一的 DI 模式
+
+**文档版本**：v1.1 (基于 Codex 审查反馈修正)
