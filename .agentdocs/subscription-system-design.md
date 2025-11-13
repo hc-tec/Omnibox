@@ -172,8 +172,13 @@ class Subscription(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now, index=True)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    # 多用户支持
-    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    # 多用户支持（Stage 4 之前为 NULL）
+    user_id: Optional[int] = Field(
+        default=None,
+        foreign_key="users.id",
+        index=True,
+        description="NULL = 公共订阅（单用户阶段）"
+    )
 
 
 class SubscriptionEmbedding(SQLModel, table=True):
@@ -188,6 +193,107 @@ class SubscriptionEmbedding(SQLModel, table=True):
     embedding_version: str = Field(description="向量模型版本")
     last_embedded_at: datetime = Field(description="最后向量化时间")
     is_stale: bool = Field(default=False, description="内容是否已过时")
+```
+
+#### 多用户隔离策略
+
+**阶段性实施方案**（参考知识库系统设计）
+
+在 Stage 4 用户系统实现之前：
+
+1. **Phase 1-3**: `user_id` 字段允许为 `NULL`
+   - 所有订阅数据的 `user_id` 保持 `NULL`
+   - 系统按"单用户模式"运行
+   - 不进行任何用户隔离
+   - `subscribe_count` 保持为 0（多用户后才有意义）
+
+2. **Stage 4 实现后**:
+   - 创建 `users` 表
+   - 为默认用户创建记录 (id=1)
+   - 执行数据迁移: `UPDATE subscriptions SET user_id = 1 WHERE user_id IS NULL`
+   - 在 API 层添加用户认证和隔离逻辑
+   - `subscribe_count` 可通过多用户订阅同一实体来计算
+
+3. **向后兼容**:
+   - Service 层的查询在 Stage 4 之前忽略 `user_id`
+   - Stage 4 之后自动从请求上下文获取 `user_id`
+
+```python
+# Service 层向后兼容示例
+class SubscriptionService:
+    def list_subscriptions(
+        self,
+        user_id: Optional[int] = None,  # Stage 4 之前为 None
+        **filters
+    ) -> List[Subscription]:
+        """列出订阅
+
+        Args:
+            user_id: 用户ID（Stage 4 之前为 None，忽略用户隔离）
+        """
+        with self.db.get_session() as session:
+            statement = select(Subscription)
+
+            # Stage 4 之前: 忽略 user_id
+            # Stage 4 之后: 添加 user_id 过滤
+            if user_id is not None:
+                statement = statement.where(Subscription.user_id == user_id)
+
+            # 应用其他过滤器...
+            if filters.get("platform"):
+                statement = statement.where(
+                    Subscription.platform == filters["platform"]
+                )
+
+            if filters.get("is_active") is not None:
+                statement = statement.where(
+                    Subscription.is_active == filters["is_active"]
+                )
+
+            return list(session.exec(statement).all())
+```
+
+**唯一约束**
+
+为避免重复订阅，添加唯一约束：
+
+```python
+# 在 Subscription 模型中添加
+from sqlmodel import UniqueConstraint
+
+class Subscription(SQLModel, table=True):
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "platform",
+            "entity_type",
+            "identifiers",
+            "user_id",
+            name="uq_subscription_entity_user"
+        ),
+    )
+    # ... 其他字段
+```
+
+**subscribe_count 计算策略**
+
+Stage 4 之后，`subscribe_count` 的维护方式：
+
+```python
+# 方案A: 实时计算（推荐）
+def get_subscribe_count(subscription_id: int) -> int:
+    """实时统计订阅人数"""
+    with db.get_session() as session:
+        count = session.exec(
+            select(func.count(Subscription.id))
+            .where(Subscription.id == subscription_id)
+        ).one()
+        return count
+
+# 方案B: 触发器维护（性能更好，但需要数据库触发器）
+# 在创建/删除订阅时自动更新 subscribe_count
+```
+
 ```
 
 ### 2. 数据示例
@@ -480,12 +586,74 @@ class SubscriptionService:
     def __init__(self, db: DatabaseConnection):
         self.db = db
 
+    def list_subscriptions(
+        self,
+        user_id: Optional[int] = None,
+        platform: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0
+    ) -> List[Subscription]:
+        """列出订阅（支持多种过滤）
+
+        Args:
+            user_id: 用户ID（Stage 4 之前为 None，忽略用户隔离）
+            platform: 平台过滤
+            entity_type: 实体类型过滤
+            is_active: 是否激活
+            limit: 返回数量
+            offset: 偏移量
+
+        Returns:
+            订阅列表
+        """
+        with self.db.get_session() as session:
+            statement = select(Subscription)
+
+            # 用户过滤（Stage 4 之前忽略）
+            if user_id is not None:
+                statement = statement.where(Subscription.user_id == user_id)
+
+            # 平台过滤
+            if platform:
+                statement = statement.where(Subscription.platform == platform)
+
+            # 实体类型过滤
+            if entity_type:
+                statement = statement.where(Subscription.entity_type == entity_type)
+
+            # 激活状态过滤
+            if is_active is not None:
+                statement = statement.where(Subscription.is_active == is_active)
+
+            # 分页
+            statement = statement.limit(limit).offset(offset)
+
+            # 按创建时间倒序
+            statement = statement.order_by(Subscription.created_at.desc())
+
+            return list(session.exec(statement).all())
+
+    def get_subscription(self, subscription_id: int) -> Optional[Subscription]:
+        """获取订阅详情
+
+        Args:
+            subscription_id: 订阅ID
+
+        Returns:
+            订阅对象，如果不存在则返回 None
+        """
+        with self.db.get_session() as session:
+            return session.get(Subscription, subscription_id)
+
     def create_subscription(
         self,
         display_name: str,
         platform: str,
         entity_type: str,  # ← 修订：不是 resource_type
         identifiers: Dict[str, Any],
+        user_id: Optional[int] = None,  # ← 新增：用户ID
         **kwargs
     ) -> Subscription:
         """创建订阅
@@ -495,6 +663,7 @@ class SubscriptionService:
             platform: 平台（bilibili/zhihu/...）
             entity_type: 实体类型（user/column/repo，不是 user_video!）
             identifiers: API标识字典（如 {"uid": "12345"}）
+            user_id: 用户ID（Stage 4 之前为 None）
             **kwargs: 其他可选参数（avatar_url, description, aliases, tags）
 
         Returns:
@@ -511,16 +680,17 @@ class SubscriptionService:
             subscription = Subscription(
                 display_name=display_name,
                 platform=platform,
-                entity_type=entity_type,  # ← 修订
+                entity_type=entity_type,
                 identifiers=json.dumps(identifiers, ensure_ascii=False),
-                supported_actions=json.dumps(supported_actions, ensure_ascii=False),  # ← 新增
+                supported_actions=json.dumps(supported_actions, ensure_ascii=False),
                 aliases=json.dumps(
                     kwargs.get("aliases", [display_name]),
                     ensure_ascii=False
                 ),
                 tags=json.dumps(kwargs.get("tags", []), ensure_ascii=False),
                 avatar_url=kwargs.get("avatar_url"),
-                description=kwargs.get("description")
+                description=kwargs.get("description"),
+                user_id=user_id  # ← 新增
             )
 
             session.add(subscription)
@@ -531,6 +701,67 @@ class SubscriptionService:
             self._trigger_embedding(subscription)
 
             return subscription
+
+    def update_subscription(
+        self,
+        subscription_id: int,
+        **updates
+    ) -> Optional[Subscription]:
+        """更新订阅
+
+        Args:
+            subscription_id: 订阅ID
+            **updates: 要更新的字段
+
+        Returns:
+            更新后的订阅对象，如果不存在则返回 None
+        """
+        with self.db.get_session() as session:
+            subscription = session.get(Subscription, subscription_id)
+            if not subscription:
+                return None
+
+            # 应用更新
+            for key, value in updates.items():
+                if key in ["aliases", "tags", "supported_actions"]:
+                    # JSON 字段需要序列化
+                    setattr(subscription, key, json.dumps(value, ensure_ascii=False))
+                else:
+                    setattr(subscription, key, value)
+
+            subscription.updated_at = datetime.now()
+
+            session.add(subscription)
+            session.commit()
+            session.refresh(subscription)
+
+            # 如果关键信息变更，重新向量化
+            if any(k in updates for k in ["display_name", "description", "aliases", "tags"]):
+                self._trigger_embedding(subscription)
+
+            return subscription
+
+    def delete_subscription(self, subscription_id: int) -> bool:
+        """删除订阅
+
+        Args:
+            subscription_id: 订阅ID
+
+        Returns:
+            是否删除成功
+        """
+        with self.db.get_session() as session:
+            subscription = session.get(Subscription, subscription_id)
+            if not subscription:
+                return False
+
+            session.delete(subscription)
+            session.commit()
+
+            # TODO: 同时删除向量数据（ChromaDB）
+            # vector_store.delete_subscription(subscription_id)
+
+            return True
 
     def search_subscriptions(
         self,
@@ -713,15 +944,16 @@ class ParsedQuery(BaseModel):
 
 
 class QueryParser:
-    """查询解析器（修订版 v2.1 - 移除规则引擎）
+    """查询解析器（修订版 v2.2 - LLM驱动 + 工程可靠性）
 
-    修订：绝对不使用规则引擎，始终使用 LLM 解析。
+    修订：始终使用 LLM 解析（不使用规则引擎），但增加工程可靠性措施。
 
     修订重点：
     1. 提取实体名称（"科技美学"）
     2. 提取动作意图（"投稿"→"videos"，"关注"→"following"）
     3. 分离这两个概念，不再混淆
-    4. **移除规则引擎fallback**
+    4. **不使用规则引擎**
+    5. **新增工程可靠性**：缓存、重试、输出校验、降级策略
 
     示例：
         输入："科技美学的关注列表"
@@ -744,17 +976,84 @@ class QueryParser:
     def __init__(self):
         from query_processor.llm_client import create_llm_client_auto
         self.llm = create_llm_client_auto()
+        self._cache: Dict[str, ParsedQuery] = {}  # 解析结果缓存
 
     def parse(self, query: str) -> Optional[ParsedQuery]:
-        """解析自然语言查询
+        """解析自然语言查询（带缓存和可靠性保障）
 
         Args:
             query: 自然语言查询
 
         Returns:
             解析后的结构化对象，如果无法解析则返回 None
+
+        可靠性措施：
+        1. 缓存：相同查询直接返回缓存结果（避免重复LLM调用）
+        2. 重试：LLM失败时自动重试（最多3次）
+        3. 校验：验证LLM输出的合法性（枚举检查）
+        4. 降级：多次失败后返回部分结果，提示用户手动选择
         """
-        return self._parse_with_llm(query)
+        # 1. 缓存检查
+        if query in self._cache:
+            logger.debug(f"命中缓存: {query}")
+            return self._cache[query]
+
+        # 2. LLM解析（带重试）
+        for attempt in range(3):
+            try:
+                parsed = self._parse_with_llm(query)
+
+                # 3. 输出校验
+                if parsed and self._validate_output(parsed):
+                    self._cache[query] = parsed
+                    logger.info(f"解析成功: {query} -> {parsed}")
+                    return parsed
+                else:
+                    logger.warning(f"LLM输出校验失败 (尝试 {attempt + 1}/3)")
+
+            except Exception as e:
+                logger.error(f"LLM解析异常 (尝试 {attempt + 1}/3): {e}")
+
+        # 4. 降级：多次失败后返回 None（由上层处理）
+        logger.error(f"解析失败（已重试3次）: {query}")
+        return None
+
+    def _validate_output(self, parsed: ParsedQuery) -> bool:
+        """校验LLM输出（枚举检查，不是规则引擎）
+
+        只检查输出的合法性：
+        - platform 是否在支持列表中
+        - entity_type 是否有效
+        - action 是否在 ActionRegistry 中存在
+
+        注意：这不是规则引擎，只是枚举校验，LLM仍然负责语义理解。
+        """
+        # 检查平台枚举
+        VALID_PLATFORMS = {"bilibili", "zhihu", "weibo", "github", "gitee"}
+        if parsed.platform not in VALID_PLATFORMS:
+            logger.warning(f"无效平台: {parsed.platform}")
+            return False
+
+        # 检查实体类型枚举
+        VALID_ENTITY_TYPES = {"user", "column", "repo", "topic", "channel"}
+        if parsed.entity_type not in VALID_ENTITY_TYPES:
+            logger.warning(f"无效实体类型: {parsed.entity_type}")
+            return False
+
+        # 检查动作是否在 ActionRegistry 中注册
+        from services.subscription.action_registry import ActionRegistry
+        if not ActionRegistry.get_action(
+            parsed.platform,
+            parsed.entity_type,
+            parsed.action
+        ):
+            logger.warning(
+                f"ActionRegistry 中不存在此动作: "
+                f"({parsed.platform}, {parsed.entity_type}, {parsed.action})"
+            )
+            return False
+
+        return True
 
     def _parse_with_llm(self, query: str) -> Optional[ParsedQuery]:
         """使用 LLM 解析（唯一方法）
@@ -822,6 +1121,11 @@ GitHub (github):
 
         response = self.llm.generate(prompt)
 
+        # 检查空响应
+        if not response or not response.strip():
+            logger.error("LLM返回空响应")
+            return None
+
         try:
             import json
             parsed_json = json.loads(response)
@@ -835,6 +1139,12 @@ GitHub (github):
                 platform=parsed_json["platform"],
                 filters=parsed_json.get("filters", {})
             )
+        except json.JSONDecodeError as e:
+            logger.error(f"LLM输出不是合法JSON: {e}, response={response[:200]}")
+            return None
+        except KeyError as e:
+            logger.error(f"LLM输出缺少必需字段: {e}, response={response[:200]}")
+            return None
         except Exception as e:
             logger.error(f"LLM解析失败: {e}")
             return None
@@ -1028,6 +1338,512 @@ def _fallback_search(parsed: ParsedQuery) -> Optional[Dict]:
 
 ---
 
+## 复杂研究场景处理
+
+### 场景C：多实体对比研究
+
+**用户输入**："分析科技美学和何同学最近一个月的视频主题差异"
+
+这是典型的研究模式（Research Mode）场景，涉及：
+- 多个实体（科技美学、何同学）
+- 时间过滤（最近一个月）
+- 数据聚合 + 对比分析
+
+```
+1. 用户输入（前端 Research View）
+   "分析科技美学和何同学最近一个月的视频主题差异"
+   ↓
+
+2. ChatService 判断为 research_task
+   mode = "research"
+   ↓
+
+3. LangGraph PlannerAgent 分解任务
+   → 生成研究计划：
+   {
+     "research_goal": "对比分析两位UP主的视频主题差异",
+     "steps": [
+       {
+         "step_id": 1,
+         "action": "fetch_data",
+         "description": "获取科技美学最近一个月的视频",
+         "tool": "fetch_public_data",
+         "params": {
+           "query": "科技美学的最近一个月投稿视频",
+           "filters": {"date_range": "last_month"}
+         }
+       },
+       {
+         "step_id": 2,
+         "action": "fetch_data",
+         "description": "获取何同学最近一个月的视频",
+         "tool": "fetch_public_data",
+         "params": {
+           "query": "何同学的最近一个月投稿视频",
+           "filters": {"date_range": "last_month"}
+         }
+       },
+       {
+         "step_id": 3,
+         "action": "analysis",
+         "description": "对比分析两位UP主的视频主题",
+         "tool": "analyze_data",
+         "params": {
+           "datasets": ["step_1_result", "step_2_result"],
+           "analysis_type": "theme_comparison"
+         }
+       }
+     ]
+   }
+   ↓
+
+4. ExecutorAgent 执行 Step 1
+   4.1 调用 fetch_public_data("科技美学的最近一个月投稿视频")
+
+   4.2 QueryParser 解析
+       → ParsedQuery(
+           entity_name="科技美学",
+           entity_type="user",
+           action="videos",
+           platform="bilibili",
+           filters={"date_range": "last_month"}  ← 时间过滤
+         )
+
+   4.3 SubscriptionService.resolve_entity()
+       → {"uid": "12345"}
+
+   4.4 ActionRegistry.build_path()
+       → path = "/bilibili/user/video/12345"
+
+   4.5 DataExecutor.fetch_rss(path)
+       返回最近一个月的视频列表 (30条)
+
+   4.6 存储到 DataStash
+       step_1_result = [
+         {"title": "iPhone 15 Pro深度评测", "date": "2025-10-15", ...},
+         {"title": "小米14 Ultra上手体验", "date": "2025-10-20", ...},
+         ...
+       ]
+   ↓
+
+5. ExecutorAgent 执行 Step 2（并行）
+   5.1 调用 fetch_public_data("何同学的最近一个月投稿视频")
+
+   5.2 QueryParser 解析
+       → ParsedQuery(
+           entity_name="何同学",
+           entity_type="user",
+           action="videos",
+           platform="bilibili",
+           filters={"date_range": "last_month"}
+         )
+
+   5.3 SubscriptionService.resolve_entity()
+       → {"uid": "67890"}  ← 不同的 uid
+
+   5.4 ActionRegistry.build_path()
+       → path = "/bilibili/user/video/67890"
+
+   5.5 DataExecutor.fetch_rss(path)
+       返回何同学的视频列表 (15条)
+
+   5.6 存储到 DataStash
+       step_2_result = [
+         {"title": "我做了一个AI机器人", "date": "2025-10-18", ...},
+         {"title": "用代码控制真实世界", "date": "2025-10-25", ...},
+         ...
+       ]
+   ↓
+
+6. ExecutorAgent 执行 Step 3（分析）
+   6.1 调用 analyze_data({
+         datasets: ["step_1_result", "step_2_result"],
+         analysis_type: "theme_comparison"
+       })
+
+   6.2 LLM 分析两个数据集
+       → 提取视频主题关键词
+       → 对比分析差异
+       → 生成报告
+
+   6.3 生成分析报告
+       {
+         "summary": "科技美学侧重消费电子评测，何同学侧重创意技术项目",
+         "keji_meihue_themes": ["手机评测", "数码产品", "消费电子"],
+         "hetongxue_themes": ["创意项目", "技术实验", "代码教学"],
+         "differences": [
+           "内容形式：科技美学以产品评测为主，何同学以项目展示为主",
+           "更新频率：科技美学更频繁（30条 vs 15条）",
+           "技术深度：何同学更深入底层技术原理"
+         ]
+       }
+   ↓
+
+7. 前端展示（Research View）
+   左侧：研究计划 + 步骤进度
+   右侧：
+     - Panel 1: 科技美学视频列表（ListPanel）
+     - Panel 2: 何同学视频列表（ListPanel）
+     - Panel 3: 对比分析报告（RichText）
+     - Panel 4: 主题分布对比图（BarChart）
+```
+
+### 场景D：跨平台多源研究
+
+**用户输入**："追踪 LangChain 和 LlamaIndex 两个项目的最新进展"
+
+涉及：
+- 跨平台（GitHub）
+- 多个仓库实体
+- 多种数据源（commits/issues/releases）
+
+```
+1. PlannerAgent 分解任务
+   {
+     "steps": [
+       {
+         "step_id": 1,
+         "parallel_group": 1,  ← 并行组
+         "queries": [
+           "LangChain 的最新 commits",
+           "LangChain 的最新 issues",
+           "LangChain 的最新 releases"
+         ]
+       },
+       {
+         "step_id": 2,
+         "parallel_group": 1,  ← 同一并行组
+         "queries": [
+           "LlamaIndex 的最新 commits",
+           "LlamaIndex 的最新 issues",
+           "LlamaIndex 的最新 releases"
+         ]
+       },
+       {
+         "step_id": 3,
+         "action": "synthesis",
+         "description": "综合分析两个项目的进展情况"
+       }
+     ]
+   }
+   ↓
+
+2. ExecutorAgent 并行执行（6个查询同时进行）
+
+   2.1 LangChain commits:
+       QueryParser → (github, repo, commits, {owner: "langchain-ai", repo: "langchain"})
+       → /github/commits/langchain-ai/langchain
+
+   2.2 LangChain issues:
+       QueryParser → (github, repo, issues, {owner: "langchain-ai", repo: "langchain"})
+       → /github/issue/langchain-ai/langchain
+
+   2.3 LangChain releases:
+       QueryParser → (github, repo, releases, {owner: "langchain-ai", repo: "langchain"})
+       → /github/release/langchain-ai/langchain
+
+   2.4-2.6 同样处理 LlamaIndex 的三个数据源
+   ↓
+
+3. DataStash 聚合
+   {
+     "langchain": {
+       "commits": [...],    // 50条
+       "issues": [...],     // 30条
+       "releases": [...]    // 5条
+     },
+     "llamaindex": {
+       "commits": [...],    // 40条
+       "issues": [...],     // 25条
+       "releases": [...]    // 3条
+     }
+   }
+   ↓
+
+4. SynthesisAgent 综合分析
+   → 对比提交频率
+   → 对比 issue 解决速度
+   → 对比版本发布节奏
+   → 识别技术趋势差异
+   ↓
+
+5. 前端展示
+   - Timeline: 两个项目的提交/发布时间线对比
+   - Statistics: 活跃度指标对比（BarChart）
+   - Issues: 热点问题列表（Table）
+   - Analysis: 综合分析报告（RichText）
+```
+
+### 关键技术要点
+
+#### 1. 多实体解析策略
+
+QueryParser 需要支持解析包含多个实体的复杂查询：
+
+```python
+class QueryParser:
+    def parse_complex_query(self, query: str) -> List[ParsedQuery]:
+        """解析包含多个实体的复杂查询
+
+        输入："对比科技美学和何同学的视频"
+        输出：[
+            ParsedQuery(entity_name="科技美学", ...),
+            ParsedQuery(entity_name="何同学", ...)
+        ]
+        """
+        prompt = f"""
+解析以下查询，提取所有涉及的实体和操作：
+
+查询: "{query}"
+
+如果查询涉及多个实体（如对比、追踪多个来源），请分别提取每个实体。
+
+输出格式（JSON数组）：
+[
+  {{
+    "entity_name": "...",
+    "entity_type": "...",
+    "action": "...",
+    "platform": "..."
+  }},
+  ...
+]
+"""
+        response = self.llm.generate(prompt)
+
+        try:
+            parsed_list = json.loads(response)
+            return [
+                ParsedQuery(**item)
+                for item in parsed_list
+            ]
+        except Exception as e:
+            logger.error(f"多实体解析失败: {e}")
+            return []
+```
+
+#### 2. LangGraph 集成增强
+
+```python
+# services/langgraph_agents/tools/public_data_tool.py（研究模式增强）
+
+@register_tool("fetch_public_data_batch")
+def fetch_public_data_batch(queries: List[str]) -> Dict[str, List[Dict]]:
+    """批量获取公共数据（研究模式专用）
+
+    支持：
+    - 并行查询多个实体
+    - 自动去重和缓存
+    - 失败重试和部分成功
+
+    Args:
+        queries: 查询列表，如 ["科技美学的视频", "何同学的视频"]
+
+    Returns:
+        {
+            "query_1": [{...}, {...}],
+            "query_2": [{...}, {...}],
+            "errors": ["query_3: 解析失败"]
+        }
+    """
+    parser = QueryParser()
+    results = {}
+    errors = []
+
+    # 1. 批量解析（并行）
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        parse_futures = {
+            executor.submit(parser.parse, q): q
+            for q in queries
+        }
+
+        parsed_queries = {}
+        for future in as_completed(parse_futures):
+            query = parse_futures[future]
+            try:
+                parsed = future.result()
+                if parsed:
+                    parsed_queries[query] = parsed
+                else:
+                    errors.append(f"{query}: 解析失败")
+            except Exception as e:
+                errors.append(f"{query}: {e}")
+
+    # 2. 批量获取数据（并行）
+    subscription_service = SubscriptionService(DatabaseConnection())
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        fetch_futures = {}
+
+        for query, parsed in parsed_queries.items():
+            # 解析实体ID
+            identifiers = subscription_service.resolve_entity(
+                parsed.entity_name,
+                parsed.platform,
+                parsed.entity_type
+            )
+
+            if not identifiers:
+                errors.append(f"{query}: 未找到订阅")
+                continue
+
+            # 构建路径
+            path = ActionRegistry.build_path(
+                parsed.platform,
+                parsed.entity_type,
+                parsed.action,
+                identifiers
+            )
+
+            if not path:
+                errors.append(f"{query}: 无法构建路径")
+                continue
+
+            # 提交获取任务
+            future = executor.submit(
+                DataExecutor().fetch_rss,
+                path
+            )
+            fetch_futures[future] = query
+
+        # 3. 收集结果
+        for future in as_completed(fetch_futures):
+            query = fetch_futures[future]
+            try:
+                data = future.result()
+                results[query] = data
+            except Exception as e:
+                errors.append(f"{query}: 获取失败 - {e}")
+
+    # 4. 返回结果
+    return {
+        **results,
+        "errors": errors if errors else []
+    }
+```
+
+#### 3. 数据聚合策略
+
+研究模式下，DataStash 需要支持多源数据聚合：
+
+```python
+# services/langgraph_agents/data_stash.py（增强）
+
+class DataStash:
+    def aggregate_datasets(
+        self,
+        dataset_ids: List[str],
+        merge_strategy: str = "union"
+    ) -> List[Dict]:
+        """聚合多个数据集
+
+        Args:
+            dataset_ids: 数据集ID列表（如 ["step_1_result", "step_2_result"]）
+            merge_strategy: 合并策略
+                - union: 合并去重（默认）
+                - intersect: 交集
+                - concat: 直接拼接
+
+        Returns:
+            聚合后的数据列表
+        """
+        datasets = [self.get(ds_id) for ds_id in dataset_ids]
+
+        if merge_strategy == "union":
+            # 合并去重（按 link 字段）
+            seen_links = set()
+            result = []
+            for dataset in datasets:
+                for item in dataset:
+                    link = item.get("link")
+                    if link and link not in seen_links:
+                        seen_links.add(link)
+                        result.append(item)
+            return result
+
+        elif merge_strategy == "concat":
+            # 直接拼接（保留来源标记）
+            result = []
+            for i, dataset in enumerate(datasets):
+                for item in dataset:
+                    item["_source_dataset"] = dataset_ids[i]
+                    result.append(item)
+            return result
+
+        else:
+            raise ValueError(f"不支持的合并策略: {merge_strategy}")
+```
+
+#### 4. 时间过滤处理
+
+订阅系统需要支持时间范围过滤：
+
+```python
+# services/subscription/query_parser.py（增强 filters 解析）
+
+class ParsedQuery(BaseModel):
+    entity_name: str
+    entity_type: str
+    action: str
+    platform: str
+    filters: Dict[str, Any] = {}  # 支持更多过滤器
+
+# fetch_public_data 工具增强时间过滤
+def fetch_public_data(query: str) -> List[Dict]:
+    # ... 现有逻辑 ...
+
+    # 应用时间过滤
+    if parsed.filters.get("date_range"):
+        raw_data = _apply_time_filter(
+            raw_data,
+            parsed.filters["date_range"]
+        )
+
+    return raw_data
+
+def _apply_time_filter(data: List[Dict], date_range: str) -> List[Dict]:
+    """应用时间范围过滤
+
+    支持：
+    - "last_week": 最近一周
+    - "last_month": 最近一个月
+    - "last_3_months": 最近三个月
+    - "2025-10-01:2025-10-31": 自定义日期范围
+    """
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+
+    if date_range == "last_week":
+        cutoff = now - timedelta(days=7)
+    elif date_range == "last_month":
+        cutoff = now - timedelta(days=30)
+    elif date_range == "last_3_months":
+        cutoff = now - timedelta(days=90)
+    else:
+        # 自定义范围解析
+        # TODO: 实现自定义日期范围
+        return data
+
+    # 过滤数据
+    filtered = []
+    for item in data:
+        pub_date_str = item.get("pub_date")
+        if not pub_date_str:
+            continue
+
+        try:
+            pub_date = datetime.fromisoformat(pub_date_str)
+            if pub_date >= cutoff:
+                filtered.append(item)
+        except:
+            continue
+
+    return filtered
+```
+
+---
+
 ## 前端订阅管理界面（修订）
 
 ```vue
@@ -1138,29 +1954,62 @@ function getActionDisplayName(
 
 ---
 
-## API 接口设计（修订）
+## API 接口设计（完整版）
 
 ```python
-# api/controllers/subscription_controller.py（修订）
+# api/controllers/subscription_controller.py（完整版）
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional
 from services.subscription.subscription_service import SubscriptionService
 from services.subscription.action_registry import ActionRegistry
+from api.schemas.subscription import (
+    SubscriptionCreate,
+    SubscriptionUpdate,
+    SubscriptionResponse,
+    ActionInfo,
+    ResolveResponse
+)
 
 router = APIRouter(prefix="/api/v1/subscriptions", tags=["subscription"])
+
+# ==================== CRUD 接口 ====================
+
+@router.get("/", response_model=List[SubscriptionResponse])
+def list_subscriptions(
+    user_id: Optional[int] = Query(None, description="用户ID（Stage 4 之前忽略）"),
+    platform: Optional[str] = Query(None, description="平台过滤"),
+    entity_type: Optional[str] = Query(None, description="实体类型过滤"),
+    is_active: Optional[bool] = Query(None, description="是否激活"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    service: SubscriptionService = Depends(get_subscription_service)
+):
+    """列出订阅
+
+    支持按用户、平台、实体类型、激活状态筛选。
+    """
+    return service.list_subscriptions(
+        user_id=user_id,
+        platform=platform,
+        entity_type=entity_type,
+        is_active=is_active,
+        limit=limit,
+        offset=offset
+    )
+
 
 @router.post("/", response_model=SubscriptionResponse, status_code=201)
 def create_subscription(
     data: SubscriptionCreate,
     service: SubscriptionService = Depends(get_subscription_service)
 ):
-    """创建订阅（修订版）
+    """创建订阅
 
     请求示例：
     {
       "display_name": "科技美学",
       "platform": "bilibili",
-      "entity_type": "user",  // ← 修订：不是 "user_video"
+      "entity_type": "user",
       "identifiers": {"uid": "12345"},
       "avatar_url": "...",
       "description": "数码测评UP主",
@@ -1169,6 +2018,58 @@ def create_subscription(
     }
     """
     return service.create_subscription(**data.dict())
+
+
+@router.get("/{subscription_id}", response_model=SubscriptionResponse)
+def get_subscription(
+    subscription_id: int,
+    service: SubscriptionService = Depends(get_subscription_service)
+):
+    """获取订阅详情"""
+    subscription = service.get_subscription(subscription_id)
+    if not subscription:
+        raise HTTPException(status_code=404, detail="订阅不存在")
+    return subscription
+
+
+@router.patch("/{subscription_id}", response_model=SubscriptionResponse)
+def update_subscription(
+    subscription_id: int,
+    data: SubscriptionUpdate,
+    service: SubscriptionService = Depends(get_subscription_service)
+):
+    """更新订阅
+
+    可更新字段：
+    - display_name: 显示名称
+    - description: 描述
+    - avatar_url: 头像
+    - aliases: 别名列表
+    - tags: 标签列表
+    - is_active: 是否激活
+    """
+    subscription = service.update_subscription(
+        subscription_id,
+        **data.dict(exclude_unset=True)
+    )
+    if not subscription:
+        raise HTTPException(status_code=404, detail="订阅不存在")
+    return subscription
+
+
+@router.delete("/{subscription_id}")
+def delete_subscription(
+    subscription_id: int,
+    service: SubscriptionService = Depends(get_subscription_service)
+):
+    """删除订阅"""
+    success = service.delete_subscription(subscription_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="订阅不存在")
+    return {"success": True, "message": "订阅已删除"}
+
+
+# ==================== 功能接口 ====================
 
 
 @router.get("/{subscription_id}/actions", response_model=List[ActionInfo])
@@ -1496,9 +2397,68 @@ actions = ["videos", "following", "favorites"]  # 动态选择
 ---
 
 **方案制定时间**：2025-11-13
-**最后修订**：2025-11-13（移除规则引擎，添加自动化方案引用）
-**修订原因**：
-1. v2.0：原设计混淆实体和动作，导致同一实体需要多个订阅记录
-2. v2.1：不可能手动维护 ACTION_TEMPLATES，绝对不能使用规则引擎
 **预计实施周期**：Phase 1-4 共 4-5 周
-**文档版本**：v2.1（移除规则引擎 + 自动化方案）
+
+---
+
+## 修订历史
+
+### v2.2 (2025-11-13) - Codex 审查修正 + 复杂研究场景
+
+**修复问题**：
+
+1. **P0 - QueryParser 可靠性**：
+   - 保持 LLM 驱动（不使用规则引擎）
+   - 新增工程可靠性措施：
+     - 缓存：相同查询直接返回缓存（避免重复 LLM 调用）
+     - 重试：LLM 失败时自动重试（最多 3 次）
+     - 校验：验证 LLM 输出合法性（枚举检查，非规则引擎）
+     - 降级：多次失败后返回 None，由上层处理
+   - 添加空响应检查和详细异常日志
+   - 新增 `_validate_output()` 方法校验 platform/entity_type/action 枚举
+
+2. **P1 - API 完整性**：
+   - 补充完整的 CRUD 接口：
+     - `GET /subscriptions` - 列出订阅（支持多种过滤）
+     - `GET /subscriptions/{id}` - 获取订阅详情
+     - `PATCH /subscriptions/{id}` - 更新订阅
+     - `DELETE /subscriptions/{id}` - 删除订阅
+   - Service 层新增方法：
+     - `list_subscriptions()` - 支持 user_id/platform/entity_type/is_active 过滤
+     - `get_subscription()` - 根据 ID 获取订阅
+     - `update_subscription()` - 更新订阅，自动触发重新向量化
+     - `delete_subscription()` - 删除订阅
+
+3. **P2 - 多用户隔离与计数策略**：
+   - 新增 "多用户隔离策略" 章节（1.3）
+   - 明确 Stage 4 之前 `user_id` 为 NULL（单用户模式）
+   - Stage 4 之后自动迁移数据：`UPDATE subscriptions SET user_id = 1 WHERE user_id IS NULL`
+   - Service 层向后兼容：`user_id=None` 时忽略用户过滤
+   - 添加唯一约束：`(platform, entity_type, identifiers, user_id)`
+   - `subscribe_count` 计算策略：实时计算 vs 触发器维护
+
+**新增内容**：
+
+4. **复杂研究场景处理**：
+   - 新增 "场景C：多实体对比研究" - 演示如何处理涉及多个实体、时间过滤、数据聚合的复杂研究任务
+   - 新增 "场景D：跨平台多源研究" - 演示如何并行查询多个数据源（commits/issues/releases）并综合分析
+   - 关键技术要点：
+     - 多实体解析策略：`parse_complex_query()` 支持解析包含多个实体的查询
+     - LangGraph 集成增强：`fetch_public_data_batch()` 批量并行获取数据
+     - 数据聚合策略：`DataStash.aggregate_datasets()` 支持 union/concat 等合并策略
+     - 时间过滤处理：`_apply_time_filter()` 支持 last_week/last_month 等时间范围
+   - 与 LangGraph Agents 完整集成流程：PlannerAgent 分解任务 → ExecutorAgent 并行执行 → DataStash 聚合 → SynthesisAgent 分析
+
+**文档版本**：v2.2 (基于 Codex 审查反馈修正 + 复杂研究场景补充)
+
+### v2.1 (2025-11-13) - 移除规则引擎
+
+**修订原因**：
+- 不可能手动维护 ACTION_TEMPLATES，绝对不能使用规则引擎
+- 添加自动化方案引用：`.agentdocs/subscription-action-registry-automation.md`
+
+### v2.0 (2025-11-13) - 实体/动作分离架构
+
+**修订原因**：
+- 原设计混淆实体和动作，导致同一实体需要多个订阅记录
+- 修正：`resource_type="user_video"` → `entity_type="user"` + `ActionRegistry`
