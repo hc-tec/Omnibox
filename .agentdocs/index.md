@@ -14,6 +14,7 @@
 - `panel-nested-components-design.md` - **面板组件嵌套架构设计**（支持 Card、Tabs 等容器组件嵌套子组件）
 - `../docs/langgraph-agents-design.md` - LangGraph 多代理研究工作流（V2 动态自适应方案）
 - `../docs/langgraph-agents-frontend-design.md` - LangGraph 动态研究在 Desktop Intelligence Studio 中的前端实时呈现方案
+- `runtime-persistence-plan.md` - Runtime CRUD 与持久化总体方案（账户/会话/研究/运行时配置/模型/RSSHub 等）
 
 ### 前端架构（必读）
 - rontend-design-guidelines.md - 前端界面/组件设计规范（布局、shadcn 使用、MediaCardGrid 等，2025-11 已补充 `layout_size` 语义＆ Electron 调试/打包说明）
@@ -38,6 +39,38 @@
   - 测试策略（单元测试与真实服务隔离）
   - 同步/异步策略
   - FeedItem通用数据模型（"万物皆可RSS"）
+- `runtime-persistence-plan.md` - **Runtime 持久化渐进式实施方案**（数据库/配置管理/会话历史/研究任务持久化）
+  - 技术选型：SQLite + SQLModel + Alembic + Fernet
+  - 5 个阶段：基础持久化 MVP → 会话 → 研究 → 用户 → 付费
+  - 渐进式演进路径，避免过度设计
+- `knowledge-base-design.md` - **知识库系统设计方案**（笔记管理/收藏管理/知识检索/智能关联）
+  - 核心功能：Markdown笔记、双向链接、标签系统、混合检索（全文+语义）、知识图谱
+  - 技术选型：SQLite（结构化数据）+ ChromaDB（独立Collection `user_knowledge`）+ bge-m3（向量化）
+  - 与现有功能集成：Panel收藏、研究任务关联、LangGraph工具、智能推荐
+  - 5个阶段实施路线图：基础MVP → 知识检索 → 智能关联 → 知识图谱 → 高级功能
+- `subscription-system-design.md` - **订阅管理系统设计方案 v2.0（重大修订）**（解决"用户记得名字，API需要ID"的矛盾）
+  - **⭐ v2.0修订（2025-11-13）**：修复严重架构缺陷 - **分离实体识别与动作确定**
+    - 错误设计：`resource_type="user_video"` 混淆了实体和动作，同一UP主需要多个订阅记录
+    - 正确设计：`entity_type="user"` + `ActionRegistry`，一个实体支持多个动作（投稿/关注/收藏/动态）
+  - 核心问题：自然语言标识（"科技美学"）→ 机器标识（uid=12345）的通用映射机制
+  - 架构设计：**实体 (Entity)** vs **动作 (Action)** 分离
+    - Subscription表：存储实体信息（entity_type="user"，不再是resource_type）
+    - ActionRegistry：配置驱动的动作管理（platform, entity_type, action） → 路径模板
+    - QueryParser：同时提取实体名和动作意图（"科技美学的关注列表" → entity="科技美学" + action="following"）
+  - 技术方案：订阅管理 + 语义搜索（ChromaDB `subscriptions` Collection）+ LLM智能解析
+  - Fallback机制：订阅系统（模糊搜索）→ 语义搜索 → 实时搜索API → 提示用户订阅
+  - 通用支持：B站/知乎/微博/GitHub等多平台，动作可扩展
+  - 与知识库协作：笔记引用订阅、订阅内容记笔记、LangGraph同时检索两者
+- `subscription-action-registry-automation.md` - **ActionRegistry 自动化生成方案**（从 RSSHub 路由定义自动推断）
+  - **核心问题**：不可能手动维护 ACTION_TEMPLATES，需要从 `datasource_definitions.json` 自动生成
+  - **解决方案**：RouteAnalyzer 自动分析路由定义，推断 entity_type 和 action
+  - **推断规则**：
+    - 参数名 → entity_type（`:uid` → `user`，`:column_id` → `column`）
+    - 路径模式 → action（`/followings/video` → `following`，`/user/video` → `videos`）
+    - name关键词 → action（"投稿" → `videos`，"关注" → `following`）
+  - **置信度评分**：自动计算推断置信度，高置信度自动使用，低置信度人工审核
+  - **QueryParser修订**：绝对不使用规则引擎，始终使用LLM解析
+  - **使用流程**：运行 `python -m scripts.generate_action_registry` → 生成配置文件 → 重启应用
 
 ### RAG系统
 - `../rag_system/` - 向量检索模块，包含embedding模型、向量存储、检索管道
@@ -50,6 +83,10 @@
 
 ## 当前任务文档
 - `workflow/251113-research-stream-bugfix.md` - 研究视图与流式接口缺陷修复记录（进行中）
+- `workflow/251113-runtime-persistence-implementation.md` - **Runtime 持久化实施任务**（规划完成，待开始）
+  - 5 个阶段详细 TODO 清单
+  - 技术决策记录与风险应对
+  - 进度跟踪与完成记录
 
 ## 最近完成任务文档
 - `workflow/251113-research-view-implementation.md` - **专属研究视图实施完成**（WebSocket流式推送、双栏布局、实时进度可视化）[✅ 完成 2025-11-13]
@@ -78,6 +115,22 @@
 - 项目采用单体应用分层架构，不使用微服务
 - 分层结构：Controller → Service → Integration（Data/Cache）
 - Integration层和Service层保持同步实现，Controller层通过线程池调度
+
+### 持久化与配置管理（2025-11 新增）
+- **渐进式演进原则** - 先实现核心功能（AI模型/RSSHub配置），再扩展会话/研究任务，最后按需实施用户/付费系统
+- **技术选型务实** - SQLite（统一开发/生产）+ SQLModel（类型安全 + Pydantic风格）+ Alembic（迁移）+ Fernet（加密）
+- **最小化复杂度** - 能用1张表不用4张表，能用JSON字段不新增关系表，能复用现有组件不造轮子
+- **保持向后兼容** - 配置优先级：数据库 → 环境变量 → 代码默认值，数据库不可用时自动fallback
+- **避免过度设计** - 不使用 PostgreSQL + Redis（早期不需要），不使用 Magic Link + MFA（早期不需要），不使用 audit_logs（早期不需要）
+
+### 知识库系统（2025-11 设计）
+- **Markdown为中心** - 纯文本格式，易于版本控制，不被平台绑定，支持代码块/公式/图表
+- **双向链接** - `[[笔记名称]]`语法，自动建立关联，显示反向链接，形成知识网络
+- **标签优于文件夹** - 一篇笔记多个标签，动态组织，灵活调整；保留层级支持但不强制
+- **混合检索** - 全文搜索（SQLite FTS5）+ 语义搜索（RAG），互补优势，覆盖不同场景
+- **独立向量空间** - 为知识库创建独立ChromaDB Collection（`user_knowledge`），与RSSHub路由分离，避免干扰
+- **智能集成** - Panel收藏、研究任务关联笔记、LangGraph检索知识库、智能推荐相关笔记
+- **知识图谱** - 可视化笔记间关联关系，支持交互探索（Cytoscape.js/D3.js）
 
 ### 代码规范
 - 所有代码注释和文档使用中文（UTF-8编码）

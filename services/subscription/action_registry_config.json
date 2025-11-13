@@ -1,0 +1,640 @@
+[
+  {
+    "platform": "163",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/music/user/playlist/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户歌单",
+    "description": "",
+    "route_id": "163_music_userplaylist",
+    "confidence": 0.9
+  },
+  {
+    "platform": "acfun",
+    "entity_type": "user",
+    "action": "videos",
+    "path_template": "/user/video/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户投稿",
+    "description": "",
+    "route_id": "acfun_video",
+    "confidence": 1.0
+  },
+  {
+    "platform": "afdian",
+    "entity_type": "user",
+    "action": "dynamics",
+    "path_template": "/dynamic/:uid?",
+    "required_identifiers": [],
+    "display_name": "用户动态",
+    "description": "",
+    "route_id": "afdian_dynamic",
+    "confidence": 0.8
+  },
+  {
+    "platform": "baidu",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/tieba/user/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户帖子",
+    "description": "用户 ID 可以通过打开用户的主页后查看地址栏的 `un` 字段来获取。",
+    "route_id": "baidu_tieba_user",
+    "confidence": 0.9
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "bangumi",
+    "path_template": "/user/bangumi/:uid/:type?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户追番列表",
+    "description": "",
+    "route_id": "bilibili_user-bangumi",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "channel_videos",
+    "path_template": "/user/channel/:uid/:sid/:embed?",
+    "required_identifiers": [
+      "uid",
+      "sid"
+    ],
+    "display_name": "UP 主频道的视频列表",
+    "description": "",
+    "route_id": "bilibili_user-channel",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "coin",
+    "path_template": "/user/coin/:uid/:embed?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "UP 主投币视频",
+    "description": "",
+    "route_id": "bilibili_coin",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "collection",
+    "path_template": "/user/collection/:uid/:sid/:embed?/:sortReverse?/:page?",
+    "required_identifiers": [
+      "uid",
+      "sid"
+    ],
+    "display_name": "UP 主频道的合集",
+    "description": "",
+    "route_id": "bilibili_user-collection",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "dynamics",
+    "path_template": "/user/dynamic/:uid/:routeParams?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "UP 主动态",
+    "description": "",
+    "route_id": "bilibili_dynamic",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "favorites",
+    "path_template": "/user/fav/:uid/:embed?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "UP 主默认收藏夹",
+    "description": "",
+    "route_id": "bilibili_user-fav",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "following_articles",
+    "path_template": "/followings/article/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户关注专栏",
+    "description": "::: warning   用户动态需要 b 站登录后的 Cookie 值，所以只能自建，详情见部署页面的配置模块。 :::",
+    "route_id": "bilibili_followings-article",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "following_dynamics",
+    "path_template": "/followings/dynamic/:uid/:routeParams?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户关注动态",
+    "description": "::: warning   用户动态需要 b 站登录后的 Cookie 值，所以只能自建，详情见部署页面的配置模块。 :::",
+    "route_id": "bilibili_followings-dynamic",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "following_videos",
+    "path_template": "/followings/video/:uid/:embed?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户关注视频动态",
+    "description": "::: warning   用户动态需要 b 站登录后的 Cookie 值，所以只能自建，详情见部署页面的配置模块。 :::",
+    "route_id": "bilibili_followings-video",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "followings_list",
+    "path_template": "/user/followings/:uid/:loginUid",
+    "required_identifiers": [
+      "uid",
+      "loginUid"
+    ],
+    "display_name": "UP 主关注用户",
+    "description": "::: warning   UP 主关注用户现在需要 b 站登录后的 Cookie 值，所以只能自建，详情见部署页面的配置模块。 :::",
+    "route_id": "bilibili_followings",
+    "confidence": 0.9
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "like",
+    "path_template": "/user/like/:uid/:embed?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "UP 主点赞视频",
+    "description": "",
+    "route_id": "bilibili_like",
+    "confidence": 1.0
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/article/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "UP 主图文",
+    "description": "",
+    "route_id": "bilibili_article",
+    "confidence": 0.9
+  },
+  {
+    "platform": "bilibili",
+    "entity_type": "user",
+    "action": "videos",
+    "path_template": "/user/video-all/:uid/:embed?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户所有视频",
+    "description": "",
+    "route_id": "bilibili_video-all",
+    "confidence": 1.0
+  },
+  {
+    "platform": "coolapk",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/:uid/dynamic",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户",
+    "description": "",
+    "route_id": "coolapk_user-dynamic",
+    "confidence": 0.9
+  },
+  {
+    "platform": "douyin",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/:uid/:routeParams?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "博主",
+    "description": "",
+    "route_id": "douyin_user",
+    "confidence": 0.9
+  },
+  {
+    "platform": "eastmoney",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/ttjj/user/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "天天基金用户动态",
+    "description": "",
+    "route_id": "eastmoney_ttjj_user",
+    "confidence": 1.0
+  },
+  {
+    "platform": "gitcode",
+    "entity_type": "repo",
+    "action": "commits",
+    "path_template": "/commits/:owner/:repo/:branch?",
+    "required_identifiers": [
+      "owner",
+      "repo"
+    ],
+    "display_name": "仓库提交",
+    "description": "",
+    "route_id": "gitcode_repos_commits",
+    "confidence": 1.0
+  },
+  {
+    "platform": "gitee",
+    "entity_type": "repo",
+    "action": "commits",
+    "path_template": "/commits/:owner/:repo",
+    "required_identifiers": [
+      "owner",
+      "repo"
+    ],
+    "display_name": "仓库提交",
+    "description": "",
+    "route_id": "gitee_repos_commits",
+    "confidence": 1.0
+  },
+  {
+    "platform": "gitee",
+    "entity_type": "repo",
+    "action": "dynamics",
+    "path_template": "/events/:owner/:repo",
+    "required_identifiers": [
+      "owner",
+      "repo"
+    ],
+    "display_name": "仓库动态",
+    "description": "",
+    "route_id": "gitee_repos_events",
+    "confidence": 0.8
+  },
+  {
+    "platform": "gitee",
+    "entity_type": "repo",
+    "action": "releases",
+    "path_template": "/releases/:owner/:repo",
+    "required_identifiers": [
+      "owner",
+      "repo"
+    ],
+    "display_name": "仓库 Releases",
+    "description": "",
+    "route_id": "gitee_repos_releases",
+    "confidence": 0.9
+  },
+  {
+    "platform": "github",
+    "entity_type": "repo",
+    "action": "file",
+    "path_template": "/file/:user/:repo/:branch/:filepath{.+}",
+    "required_identifiers": [
+      "user",
+      "repo",
+      "branch",
+      "filepath"
+    ],
+    "display_name": "File Commits",
+    "description": "",
+    "route_id": "github_file",
+    "confidence": 0.9
+  },
+  {
+    "platform": "github",
+    "entity_type": "repo",
+    "action": "issues",
+    "path_template": "/issue/:user/:repo/:state?/:labels?",
+    "required_identifiers": [
+      "user",
+      "repo"
+    ],
+    "display_name": "Repo Issues",
+    "description": "",
+    "route_id": "github_issue",
+    "confidence": 1.0
+  },
+  {
+    "platform": "github",
+    "entity_type": "repo",
+    "action": "pull_requests",
+    "path_template": "/pull/:user/:repo/:state?/:labels?",
+    "required_identifiers": [
+      "user",
+      "repo"
+    ],
+    "display_name": "Repo Pull Requests",
+    "description": "",
+    "route_id": "github_pulls",
+    "confidence": 1.0
+  },
+  {
+    "platform": "github",
+    "entity_type": "repo",
+    "action": "stars",
+    "path_template": "/stars/:user/:repo",
+    "required_identifiers": [
+      "user",
+      "repo"
+    ],
+    "display_name": "Repo Stars",
+    "description": "",
+    "route_id": "github_star",
+    "confidence": 0.9
+  },
+  {
+    "platform": "guancha",
+    "entity_type": "user",
+    "action": "articles",
+    "path_template": "/personalpage/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "个人主页文章",
+    "description": "",
+    "route_id": "guancha_personalpage",
+    "confidence": 0.8
+  },
+  {
+    "platform": "hpoi",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/:user_id/:caty",
+    "required_identifiers": [
+      "user_id",
+      "caty"
+    ],
+    "display_name": "用户动态",
+    "description": "",
+    "route_id": "hpoi_user",
+    "confidence": 1.0
+  },
+  {
+    "platform": "iqiyi",
+    "entity_type": "user",
+    "action": "videos",
+    "path_template": "/user/video/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户视频",
+    "description": "",
+    "route_id": "iqiyi_video",
+    "confidence": 1.0
+  },
+  {
+    "platform": "ixigua",
+    "entity_type": "user",
+    "action": "videos",
+    "path_template": "/user/video/:uid/:disableEmbed?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户视频投稿",
+    "description": "",
+    "route_id": "ixigua_user-video",
+    "confidence": 1.0
+  },
+  {
+    "platform": "luogu",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/feed/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户动态",
+    "description": "",
+    "route_id": "luogu_user-feed",
+    "confidence": 1.0
+  },
+  {
+    "platform": "mihoyo",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/bbs/user-post/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "米游社 - 用户帖子",
+    "description": "",
+    "route_id": "mihoyo_bbs_user-post",
+    "confidence": 0.9
+  },
+  {
+    "platform": "miui",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/community/user/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "小米社区用户发帖",
+    "description": "",
+    "route_id": "miui_community_user",
+    "confidence": 0.9
+  },
+  {
+    "platform": "pingwest",
+    "entity_type": "tag",
+    "action": "dynamics",
+    "path_template": "/tag/:tag/:type/:option?",
+    "required_identifiers": [
+      "tag",
+      "type"
+    ],
+    "display_name": "话题动态",
+    "description": "内容类型  | 最新 | 热门 | | ---- | ---- | | 1    | 2    |    参数    -   `fulltext`，全文输出，例如：`/pingwest/tag/ChinaJoy/1/fulltext`",
+    "route_id": "pingwest_tag",
+    "confidence": 0.8
+  },
+  {
+    "platform": "pingwest",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/:uid/:type?/:option?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户",
+    "description": "内容类型  | 文章    | 动态  | | ------- | ----- | | article | state |    参数    -   `fulltext`，全文输出，例如：`/pingwest/user/7781550877/article/fulltext`",
+    "route_id": "pingwest_user",
+    "confidence": 0.9
+  },
+  {
+    "platform": "qoo-app",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/notes/:lang?/user/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "User Notes",
+    "description": "",
+    "route_id": "qoo-app_notes_user",
+    "confidence": 0.9
+  },
+  {
+    "platform": "sehuatang",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "作者文章",
+    "description": "",
+    "route_id": "sehuatang_user",
+    "confidence": 1.0
+  },
+  {
+    "platform": "smzdm",
+    "entity_type": "user",
+    "action": "articles",
+    "path_template": "/article/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户文章",
+    "description": "",
+    "route_id": "smzdm_article",
+    "confidence": 0.8
+  },
+  {
+    "platform": "weibo",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user_bookmarks/:uid/:routeParams?",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户收藏动态",
+    "description": "::: warning   此方案必须使用用户`Cookie`进行抓取，只可以获取本人的收藏动态    因微博 cookies 的过期与更新方案未经验证，部署一次 Cookie 的有效时长未知    微博用户 Cookie 的配置可参照部署文档 :::",
+    "route_id": "weibo_user-bookmarks",
+    "confidence": 1.0
+  },
+  {
+    "platform": "xiaohongshu",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/:user_id/:category/:routeParams?",
+    "required_identifiers": [
+      "user_id",
+      "category"
+    ],
+    "display_name": "用户笔记/收藏",
+    "description": "",
+    "route_id": "xiaohongshu_user",
+    "confidence": 1.0
+  },
+  {
+    "platform": "xmanhua",
+    "entity_type": "user",
+    "action": "dynamics",
+    "path_template": "/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "最新动态",
+    "description": "",
+    "route_id": "xmanhua_index",
+    "confidence": 0.8
+  },
+  {
+    "platform": "zcool",
+    "entity_type": "user",
+    "action": "posts",
+    "path_template": "/user/:uid",
+    "required_identifiers": [
+      "uid"
+    ],
+    "display_name": "用户作品",
+    "description": "例如:      站酷的个人主页 `https://baiyong.zcool.com.cn` 对应 rss 路径 `/zcool/user/baiyong`      站酷的个人主页 `https://www.zcool.com.cn/u/568339` 对应 rss 路径 `/zcool/user/568339`",
+    "route_id": "zcool_user",
+    "confidence": 0.9
+  },
+  {
+    "platform": "zhihu",
+    "entity_type": "user",
+    "action": "activities",
+    "path_template": "/people/activities/:id",
+    "required_identifiers": [
+      "id"
+    ],
+    "display_name": "用户动态",
+    "description": "",
+    "route_id": "zhihu_activities",
+    "confidence": 1.0
+  },
+  {
+    "platform": "zhihu",
+    "entity_type": "user",
+    "action": "answers",
+    "path_template": "/people/answers/:id",
+    "required_identifiers": [
+      "id"
+    ],
+    "display_name": "用户回答",
+    "description": "",
+    "route_id": "zhihu_answers",
+    "confidence": 0.9
+  },
+  {
+    "platform": "zhihu",
+    "entity_type": "user",
+    "action": "favorites",
+    "path_template": "/people/allCollections/:id",
+    "required_identifiers": [
+      "id"
+    ],
+    "display_name": "用户全部收藏内容",
+    "description": "",
+    "route_id": "zhihu_all-collections",
+    "confidence": 0.8
+  },
+  {
+    "platform": "zhihu",
+    "entity_type": "user",
+    "action": "pins",
+    "path_template": "/people/pins/:id",
+    "required_identifiers": [
+      "id"
+    ],
+    "display_name": "用户想法",
+    "description": "",
+    "route_id": "zhihu_pin_people",
+    "confidence": 0.9
+  }
+]
