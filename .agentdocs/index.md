@@ -43,12 +43,22 @@
   - 技术选型：SQLite + SQLModel + Alembic + Fernet
   - 5 个阶段：基础持久化 MVP → 会话 → 研究 → 用户 → 付费
   - 渐进式演进路径，避免过度设计
-- `knowledge-base-design.md` - **知识库系统设计方案**（笔记管理/收藏管理/知识检索/智能关联）
+- `knowledge-base-design.md` - **知识库系统设计方案 v1.1（2025-11-13 Codex审查修订）**
+  - **⭐ v1.1修订**：修复 Codex 审查发现的 5 个关键问题
+    - P0 - 安全：移除 `eval()` 调用,替换为 `json.loads()`
+    - P0 - 数据库集成：新增 1.3 章节,说明如何集成到 `services/database/models.py`,定义 Alembic 迁移工作流,明确 `user_id` 处理策略
+    - P1 - 派生字段：新增 1.4 章节,定义 `calculate_derived_fields()` 自动计算 `content_plain`/`word_count`/`read_time_minutes`
+    - P1 - 依赖关系：明确 Bookmark 对 PanelSession 的依赖,区分 Phase 1（数据引用）和 Phase 2+（完整快照）实现
+    - P1 - 依赖注入：完善服务层 DI 设计,新增 `services/knowledge/dependencies.py`,使用 `@lru_cache()` 实现单例
   - 核心功能：Markdown笔记、双向链接、标签系统、混合检索（全文+语义）、知识图谱
   - 技术选型：SQLite（结构化数据）+ ChromaDB（独立Collection `user_knowledge`）+ bge-m3（向量化）
   - 与现有功能集成：Panel收藏、研究任务关联、LangGraph工具、智能推荐
   - 5个阶段实施路线图：基础MVP → 知识检索 → 智能关联 → 知识图谱 → 高级功能
-- `subscription-system-design.md` - **订阅管理系统设计方案 v2.0（重大修订）**（解决"用户记得名字，API需要ID"的矛盾）
+- `subscription-system-design.md` - **订阅管理系统设计方案 v2.2（2025-11-13 Codex审查修正）**
+  - **⭐ v2.2修订**：修复 Codex 审查发现的 3 个关键问题
+    - P0 - QueryParser 可靠性：保持 LLM 驱动，新增缓存、重试、枚举校验、降级策略
+    - P1 - API 完整性：补充完整 CRUD 接口（list/get/update/delete），Service 层新增对应方法
+    - P2 - 多用户隔离：明确 Stage 4 之前 `user_id=NULL`（单用户模式），添加唯一约束和向后兼容设计
   - **⭐ v2.0修订（2025-11-13）**：修复严重架构缺陷 - **分离实体识别与动作确定**
     - 错误设计：`resource_type="user_video"` 混淆了实体和动作，同一UP主需要多个订阅记录
     - 正确设计：`entity_type="user"` + `ActionRegistry`，一个实体支持多个动作（投稿/关注/收藏/动态）
@@ -56,7 +66,7 @@
   - 架构设计：**实体 (Entity)** vs **动作 (Action)** 分离
     - Subscription表：存储实体信息（entity_type="user"，不再是resource_type）
     - ActionRegistry：配置驱动的动作管理（platform, entity_type, action） → 路径模板
-    - QueryParser：同时提取实体名和动作意图（"科技美学的关注列表" → entity="科技美学" + action="following"）
+    - QueryParser：LLM驱动 + 工程可靠性（缓存/重试/校验/降级）
   - 技术方案：订阅管理 + 语义搜索（ChromaDB `subscriptions` Collection）+ LLM智能解析
   - Fallback机制：订阅系统（模糊搜索）→ 语义搜索 → 实时搜索API → 提示用户订阅
   - 通用支持：B站/知乎/微博/GitHub等多平台，动作可扩展
