@@ -14,6 +14,11 @@
 - `panel-nested-components-design.md` - **面板组件嵌套架构设计**（支持 Card、Tabs 等容器组件嵌套子组件）
 - `../docs/langgraph-agents-design.md` - LangGraph 多代理研究工作流（V2 动态自适应方案）
 - `../docs/langgraph-agents-frontend-design.md` - LangGraph 动态研究在 Desktop Intelligence Studio 中的前端实时呈现方案
+- `langgraph-v4.4-architecture-design.md` - **LangGraph V4.4 架构设计方案 v1.0（2025-01-13 待评审）** ✨NEW
+  - **状态**: 设计方案（待评审会议确认是否实施）
+  - **核心改进**: V4.0（显式依赖解析）+ V4.1（扇出防爆）+ V4.2（工具发现，可选）+ V4.4（前置语义 + GraphRenderer）
+  - **集成方案**: 与现有 V2 架构的渐进式集成路径（5个阶段，5.5-7.5天）
+  - **关键决策**: 是否实施 V4.2 工具发现（建议：暂缓）
 - `runtime-persistence-plan.md` - Runtime CRUD 与持久化总体方案（账户/会话/研究/运行时配置/模型/RSSHub 等）
 
 ### 前端架构（必读）
@@ -92,6 +97,14 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251113-langgraph-v4.4-implementation.md` - **LangGraph V4.4 架构实施任务**（已批准，待开始）✨NEW
+  - 5 个阶段详细 TODO 清单（共 34 个子任务）
+  - V4.0: 显式依赖解析（1天）
+  - V4.1: 扇出并行执行（2天）
+  - V4.2: RSSHub 路由发现（2天）
+  - V4.4: 前置语义 + GraphRenderer（1天）
+  - 前端可视化 + 测试优化（1天）
+  - 预计工作量：7.5 天，预计完成：2025-01-20
 - `workflow/251113-research-stream-bugfix.md` - 研究视图与流式接口缺陷修复记录（进行中）
 - `workflow/251113-runtime-persistence-implementation.md` - **Runtime 持久化实施任务**（规划完成，待开始）
   - 5 个阶段详细 TODO 清单
