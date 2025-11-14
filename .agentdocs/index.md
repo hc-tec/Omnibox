@@ -97,15 +97,29 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251114-subscription-architecture-refactor-v2.md` - **订阅系统架构重构方案 v2.0**（Codex 审核修订版，待审核 ⏳）✨NEW
+  - **v2.0 核心改进**：
+    - ✅ **Phase 0: 扩展工具定义元数据**（新增阶段，2天）
+      - 在 datasource_definitions.json 添加 platform、entity_type、parameter_type 字段
+      - 重建 RAG 向量库，确保 schema 完整
+    - ✅ **移除启发式判断**：基于 schema.parameter_type 标记（entity_ref/literal/enum）
+    - ✅ **详细迁移计划**：明确每个 Phase 的改造点和依赖关系
+  - **解决的 Codex 问题**：
+    - 问题1：元数据来源缺失 → Phase 0 扩展 schema
+    - 问题2：启发式触发条件 → 改用 schema 标记
+    - 问题3：缺少迁移计划 → 详细的任务清单和依赖关系
+  - 6 个 Phase（新增 Phase 0），预计 6.5 天
+- `workflow/251114-subscription-architecture-refactor.md` - **订阅系统架构重构方案 v1.0**（已被 v2.0 取代 ⚠️）
+  - ⚠️  Codex 审核发现问题：元数据来源缺失、启发式判断易误判、缺少迁移计划
 - `workflow/251113-subscription-system-implementation.md` - **订阅管理系统 Phase 1 实施任务**（已完成 ✅）
   - 基础订阅管理（数据库 + Service + API + 前端）
   - Stage 1-4 全部完成，20 个测试用例全部通过
-- `workflow/251114-subscription-phase2-intelligent-parsing.md` - **订阅系统 Phase 2: 智能解析**（核心功能已完成 ✅）
-  - QueryParser（LLM 驱动查询解析）✅
-  - SubscriptionVectorStore（语义搜索）✅
-  - SubscriptionResolver（端到端解析）✅
-  - LangGraph 集成（fetch_subscription_data 工具）✅
-  - Stage 1-4 已完成，Stage 5（前端优化）可选
+- `workflow/251114-subscription-phase2-intelligent-parsing.md` - **订阅系统 Phase 2: 智能解析**（架构错误，待重构 ⚠️）
+  - QueryParser（LLM 驱动查询解析）❌ 职责越界
+  - SubscriptionVectorStore（语义搜索）✅ 保留
+  - SubscriptionResolver（端到端解析）❌ 职责越界
+  - LangGraph 集成（fetch_subscription_data 工具）❌ 设计错误
+  - ⚠️  需按照重构方案全面改造
 - `workflow/251113-langgraph-v4.4-implementation.md` - **LangGraph V4.4 架构实施任务**（已批准，待开始）
   - 5 个阶段详细 TODO 清单（共 34 个子任务）
   - V4.0: 显式依赖解析（1天）
@@ -146,12 +160,45 @@
 
 ## 全局重要记忆
 
-### 订阅系统集成（Phase 2 - 2025-11-14）
-- **订阅优先策略**：DataQueryService 会自动进行订阅预检，相似度 >= 0.75 直接使用订阅数据（跳过 RAG），0.6-0.75 作为 RAG 失败后的兜底
+### ⚠️⚠️⚠️ 启发式判断与规则引擎警告 ⚠️⚠️⚠️
+
+**极度危险区域 - 可维护性杀手**
+
+本项目历史上曾多次因启发式判断和规则引擎导致严重问题，必须高度警惕：
+
+1. **绝对禁止规则引擎**
+   - ❌ 禁止关键词匹配（如"科技美学" → bilibili_user-video）
+   - ❌ 禁止正则表达式判断（如 `/.*用户.*/` → entity_type=user）
+   - ❌ 禁止基于字符集的启发式（如"包含中文" → 需要订阅解析）
+   - ✅ 所有实体识别必须通过 LLM 或基于 schema 的明确标记
+
+2. **启发式判断的严格限制**
+   - ⚠️ 只允许在数据准备阶段使用（如 `enrich_tool_definitions.py`）
+   - ⚠️ 必须有明确的置信度评分（低置信度必须人工审核）
+   - ⚠️ 必须有兜底机制（schema 缺失时才使用）
+   - ⚠️ 日志必须使用醒目前缀：`[HEURISTIC_FALLBACK]`、`[LOW_CONFIDENCE]`
+
+3. **正确的实现方式**
+   - ✅ 使用 schema 明确标记（`parameter_type: "entity_ref"`）
+   - ✅ 使用 LLM 进行语义理解（不依赖规则）
+   - ✅ 基于数据驱动（从 datasource_definitions 获取元数据）
+   - ✅ 保持代码简单可预测（避免复杂条件判断）
+
+**违反上述原则的代码必须立即重构！**
+
+---
+
+### 订阅系统集成（Phase 2 - 2025-11-14，⚠️ 待重构）
+
+⚠️ **当前实现包含职责越界问题，Phase 3 重构方案已制定**
+
+- **订阅优先策略**（⚠️ 待移除）：DataQueryService 会自动进行订阅预检，相似度 >= 0.75 直接使用订阅数据（跳过 RAG），0.6-0.75 作为 RAG 失败后的兜底
 - **user_id 传递链路**：API → ChatService → DataQueryService → SubscriptionResolver，支持游客模式（user_id=None）
-- **禁止规则引擎**：所有查询解析必须通过 LLM（SubscriptionResolver），不允许关键词匹配或模式识别
-- **LangGraph 工具优先级**：Planner 会优先尝试 fetch_subscription_data，失败后才使用 fetch_public_data
-- **订阅解析器注入**：ChatService 会在初始化时自动创建 SubscriptionResolver 并注入到 DataQueryService
+- **禁止规则引擎** ✅ **正确原则**：所有查询解析必须通过 LLM（SubscriptionResolver），不允许关键词匹配或模式识别
+- **LangGraph 工具优先级**（⚠️ 待调整）：Planner 会优先尝试 fetch_subscription_data，失败后才使用 fetch_public_data
+- **订阅解析器注入**（⚠️ 待移除）：ChatService 会在初始化时自动创建 SubscriptionResolver 并注入到 DataQueryService
+
+**重构目标**：订阅系统只做"人类友好名称 → API标识符"的映射，不承担查询理解和路径生成职责
 
 ### 项目架构
 - 项目采用单体应用分层架构，不使用微服务
@@ -179,6 +226,7 @@
 - 严格遵循CLAUDE.md中的代码质量要求
 - 单个代码文件不超过1000行
 - 优先复用现有代码，避免重复造轮子
+- ⚠️ **绝对禁止启发式判断和规则引擎**（见上方警告区域）
 
 ### Integration层核心组件（必须复用）
 - **DataExecutor** - 所有RSSHub数据获取统一走DataExecutor，不允许直接拼接URL

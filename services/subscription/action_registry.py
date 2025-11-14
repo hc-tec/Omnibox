@@ -237,6 +237,10 @@ class ActionRegistry:
         # 移除可选参数（:param?）
         path = re.sub(r"/:[a-zA-Z_]+\?", "", path)
 
+        # 添加平台前缀（RSSHub 路径格式：/{platform}/...）
+        if not path.startswith(f"/{platform}/"):
+            path = f"/{platform}{path}"
+
         return path
 
     @classmethod
