@@ -178,7 +178,8 @@ function handleBlur() {
   emit("focus-change", false);
 }
 
-onMounted(() => {
-  focusInput();
-});
+// 移除自动聚焦，用户需要手动点击或按快捷键打开
+// onMounted(() => {
+//   focusInput();
+// });
 </script>

@@ -2,7 +2,7 @@
  * 研究模式 WebSocket 管理
  */
 
-import { ref, onUnmounted } from "vue";
+import { ref } from "vue";
 import { useResearchViewStore } from "@/store/researchViewStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
 import { resolveHttpBase, resolveWsBase } from "@/shared/networkBase";
@@ -316,9 +316,11 @@ const wsBaseUrl = ref(
     return entries.slice(0, 3);
   }
 
-  onUnmounted(() => {
-    disconnect();
-  });
+  // 注意：不在这里调用 onUnmounted，因为此 composable 可能在非组件上下文中被调用
+  // 连接的清理由以下方式处理：
+  // 1. 组件主动调用 disconnect()
+  // 2. 全局管理器的 disconnectAndCleanup()
+  // 3. 浏览器关闭/刷新时自动清理
 
   return {
     isConnecting,

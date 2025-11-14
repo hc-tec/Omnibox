@@ -118,7 +118,7 @@ import { usePanelActions } from "@/features/panel/usePanelActions";
 import { usePanelStore } from "@/store/panelStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
 import { persistResearchTaskQuery } from "@/features/research/utils/taskStorage";
-import { useResearchWebSocket } from "@/composables/useResearchWebSocket";
+import { useResearchWebSocketManager } from "@/composables/useResearchWebSocketManager";
 import type { PanelSizePreset } from "@/shared/panelSizePresets";
 import type { QueryMode } from "@/features/research/types/researchTypes";
 
@@ -126,7 +126,7 @@ const router = useRouter();
 
 const version = ref<string | null>(null);
 const inspectorOpen = ref(false);
-const appearance = ref<"dark" | "light">("dark");
+const appearance = ref<"dark" | "light">("light"); // 默认浅色主题
 const isLight = computed(() => appearance.value === "light");
 const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null);
 
@@ -169,34 +169,27 @@ const handleReset = () => {
   reset();
 };
 
-// 管理多个研究任务的 WebSocket 连接
-const activeWebSocketConnections = ref<Map<string, ReturnType<typeof useResearchWebSocket>>>(new Map());
-
 function connectResearchWebSocket(taskId: string, query: string) {
-  // 如果已经存在连接，先断开
-  if (activeWebSocketConnections.value.has(taskId)) {
-    const existingConn = activeWebSocketConnections.value.get(taskId);
-    existingConn?.disconnect();
-    activeWebSocketConnections.value.delete(taskId);
-  }
+  console.log('[MainView] connectResearchWebSocket:', { taskId, query });
 
-  // 创建新的 WebSocket 连接
-  const wsConnection = useResearchWebSocket({
+  // 使用全局 WebSocket 管理器（自动处理连接复用）
+  const wsManager = useResearchWebSocketManager({
     taskId,
     autoReconnect: true,
   });
 
-  activeWebSocketConnections.value.set(taskId, wsConnection);
-
-  // 连接并发送查询
-  wsConnection.connect();
+  console.log('[MainView] 调用 wsManager.connect()');
+  wsManager.connect();
 
   // 等待连接建立后发送查询（使用 watch 监听连接状态）
   const unwatch = watch(
-    () => wsConnection.isConnected.value,
+    () => wsManager.isConnected.value,
     (connected) => {
+      console.log('[MainView] WebSocket 连接状态变化:', connected);
       if (connected) {
-        wsConnection.sendResearchRequest({
+        console.log('[MainView] 发送研究请求（带去重保护）');
+        // 使用 sendResearchRequestOnce 确保不会重复发送
+        wsManager.sendResearchRequestOnce({
           query,
           use_cache: true,
         });
@@ -208,31 +201,39 @@ function connectResearchWebSocket(taskId: string, query: string) {
 }
 
 const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) => {
+  console.log('[MainView] handleCommandSubmit:', payload);
+
+  // 用户主动选择"研究"模式：创建任务卡片，不自动跳转
   if (payload.mode === "research") {
     const taskId = researchStore.createTask(payload.query, payload.mode);
     persistResearchTaskQuery(taskId, payload.query);
-    await router.push({
-      path: `/research/${taskId}`,
-      query: { query: payload.query },
-    });
+    console.log('[MainView] 用户选择研究模式，创建任务卡片, taskId:', taskId);
+    connectResearchWebSocket(taskId, payload.query);
     return;
   }
 
+  // 普通查询：提交到后端，可能被自动识别为研究模式
   const result = await submit(payload);
+  console.log('[MainView] submit result:', result);
+  console.log('[MainView] requiresStreaming:', result.requiresStreaming);
+  console.log('[MainView] taskId:', result.taskId);
 
-  // 如果后端要求流式研究，在主页面启动 WebSocket 连接
+  // 后端自动检测为研究模式：在主页面启动 WebSocket 连接
   if (result.requiresStreaming && result.taskId) {
+    console.log('[MainView] 后端识别为研究模式，启动 WebSocket 连接, taskId:', result.taskId);
     connectResearchWebSocket(result.taskId, payload.query);
+  } else {
+    console.warn('[MainView] 未启动 WebSocket 连接');
+    console.warn('  requiresStreaming:', result.requiresStreaming);
+    console.warn('  taskId:', result.taskId);
   }
 };
 
 const handleDeleteTask = (taskId: string) => {
-  // 断开 WebSocket 连接
-  const wsConnection = activeWebSocketConnections.value.get(taskId);
-  if (wsConnection) {
-    wsConnection.disconnect();
-    activeWebSocketConnections.value.delete(taskId);
-  }
+  // 使用全局管理器断开并清理连接
+  const wsManager = useResearchWebSocketManager({ taskId });
+  wsManager.disconnectAndCleanup();
+
   // 删除任务
   researchStore.deleteTask(taskId);
 };
@@ -245,7 +246,12 @@ const handleOpenTask = async (taskId: string) => {
   const originalStatus = task.status;
 
   try {
-    researchStore.markTaskProcessing(taskId);
+    // 只有 idle 状态的任务才需要改为 processing
+    // completed 和 processing 状态的任务直接打开查看
+    if (task.status === 'idle') {
+      researchStore.markTaskProcessing(taskId);
+    }
+
     persistResearchTaskQuery(taskId, task.query);
     await router.push({
       path: `/research/${taskId}`,
@@ -287,9 +293,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleShortcut);
-  // 断开所有 WebSocket 连接
-  activeWebSocketConnections.value.forEach((conn) => conn.disconnect());
-  activeWebSocketConnections.value.clear();
+  // 注意：不在这里清理 WebSocket 连接！
+  // 因为导航到 ResearchView 时 MainView 会被卸载，但我们需要保留连接和请求状态
+  // 连接会在以下情况清理：
+  // 1. 用户主动删除任务时调用 disconnectAndCleanup()
+  // 2. 页面刷新/关闭时浏览器自动清理
 });
 </script>
 

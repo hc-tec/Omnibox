@@ -94,7 +94,7 @@ import { useRouter } from "vue-router";
 import { ArrowLeft, AlertCircle, X } from "lucide-vue-next";
 import { useResearchViewStore } from "@/store/researchViewStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
-import { useResearchWebSocket } from "@/composables/useResearchWebSocket";
+import { useResearchWebSocketManager } from "@/composables/useResearchWebSocketManager";
 import { loadResearchTaskQuery, persistResearchTaskQuery } from "@/features/research/utils/taskStorage";
 import ResearchContextPanel from "@/features/research/components/ResearchContextPanel.vue";
 import ResearchDataPanel from "@/features/research/components/ResearchDataPanel.vue";
@@ -108,19 +108,23 @@ const props = defineProps<{
 const router = useRouter();
 const store = useResearchViewStore();
 const researchTaskStore = useResearchStore();
-const {
-  isConnecting: wsConnecting,
-  isConnected: wsConnected,
-  error: wsError,
-  connect,
-  disconnect,
-  sendResearchRequest,
-} = useResearchWebSocket({
+
+// 使用全局 WebSocket 管理器（自动复用主页面的连接）
+const wsManager = useResearchWebSocketManager({
   taskId: props.taskId,
   autoReconnect: true,
   reconnectDelay: 3000,
   maxReconnectAttempts: 5,
 });
+
+const {
+  isConnecting: wsConnecting,
+  isConnected: wsConnected,
+  error: wsError,
+  connect,
+  sendResearchRequestOnce,
+  hasRequestSent,
+} = wsManager;
 
 // ========== 计算属性 ==========
 const statusText = computed(() => {
@@ -144,12 +148,12 @@ const statusText = computed(() => {
 
 /**
  * 返回主界面
+ * 注意：不断开 WebSocket 连接，因为主页面可能还在使用
  */
 async function handleBackToMain() {
-  disconnect();
   try {
     await router.push({ name: "Main" });
-    store.reset();
+    // 不调用 store.reset()，保留研究数据供后续查看
   } catch (err) {
     console.error("[ResearchView] Failed to navigate back to main view", err);
   }
@@ -177,9 +181,29 @@ async function initializeResearch() {
     return;
   }
 
-  store.initializeTask(props.taskId, resolvedQuery);
+  // 检查 researchViewStore 是否已有当前任务的数据
+  // 注意：WebSocket 消息会同时更新 researchViewStore 和 researchStore
+  // researchViewStore 包含完整数据（steps、panels、analyses）
+  // researchStore 只包含预览数据（execution_steps、previews）
+  // 所以应该直接使用 researchViewStore 中的数据，不要从 researchStore 同步！
+  const hasDataInViewStore = store.state.task_id === props.taskId && store.state.steps.length > 0;
+
+  if (hasDataInViewStore) {
+    console.log("[ResearchView] researchViewStore 已有数据，复用现有数据");
+    console.log(`[ResearchView] - ${store.state.steps.length} 个步骤`);
+    console.log(`[ResearchView] - ${store.state.panels.length} 个面板`);
+    console.log(`[ResearchView] - ${store.state.analyses.length} 个分析`);
+    // WebSocket 消息会持续更新 researchViewStore，无需手动同步
+  } else {
+    console.log("[ResearchView] 初始化新任务或任务 ID 不匹配，重新初始化");
+    // 初始化新任务
+    // WebSocket 连接会自动接收消息并更新 researchViewStore
+    store.initializeTask(props.taskId, resolvedQuery);
+  }
+
   researchTaskStore.ensureTask(props.taskId, resolvedQuery);
 
+  // 连接 WebSocket（如果已连接会复用，如果未连接会创建）
   connect();
 }
 
@@ -191,11 +215,18 @@ onMounted(() => {
   initializeResearch();
 });
 
-// 监听 WebSocket 连接状态，连接成功后发送研究请求
+// 监听 WebSocket 连接状态，连接成功后发送研究请求（带去重保护）
 watch(wsConnected, (connected) => {
   if (connected && store.state.query) {
-    console.log("[ResearchView] WebSocket connected, sending research request");
-    sendResearchRequest({
+    // 检查是否已经发送过研究请求
+    if (hasRequestSent()) {
+      console.log("[ResearchView] 研究请求已发送（可能在主页面），复用现有连接");
+      return;
+    }
+
+    // 首次连接且未发送请求，发送研究请求
+    console.log("[ResearchView] WebSocket 已连接，发送研究请求");
+    sendResearchRequestOnce({
       query: store.state.query,
       use_cache: true,
     });

@@ -27,15 +27,29 @@ export const useResearchStore = defineStore('research', () => {
   // 计算属性
   /**
    * 需要在主界面显示的任务
-   * 包括：idle（待启动的建议任务）、processing（处理中）、human_in_loop（等待人工输入）
+   * 包括：idle（待启动的建议任务）、processing（处理中）、human_in_loop（等待人工输入）、completed（已完成）
    */
   const activeTasks = computed(() =>
     Array.from(tasks.value.values()).filter(
       t =>
         t.status === 'processing' ||
         t.status === 'human_in_loop' ||
-        t.status === 'idle'
-    )
+        t.status === 'idle' ||
+        t.status === 'completed'
+    ).sort((a, b) => {
+      // 按状态优先级排序：processing > human_in_loop > idle > completed
+      const statusPriority: Record<string, number> = {
+        'processing': 1,
+        'human_in_loop': 2,
+        'idle': 3,
+        'completed': 4,
+      };
+      const priorityDiff = (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99);
+      if (priorityDiff !== 0) return priorityDiff;
+
+      // 相同状态按更新时间倒序（最新的在前）
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    })
   );
 
   /**

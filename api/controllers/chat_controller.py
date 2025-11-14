@@ -356,6 +356,9 @@ async def chat(
                 data_stash_count=response.metadata.get("data_stash_count"),
                 warnings=response.metadata.get("warnings"),
                 retrieved_tools=response.metadata.get("retrieved_tools"),
+                requires_streaming=response.metadata.get("requires_streaming"),
+                websocket_endpoint=response.metadata.get("websocket_endpoint"),
+                suggested_action=response.metadata.get("suggested_action"),
             )
 
         return ChatResponse(

@@ -29,6 +29,7 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
   const isBusy = computed(() => state.value.loading || state.value.streamLoading);
 
   const submit = async (payload: SubmitPayload): Promise<SubmitResult> => {
+    console.log('[usePanelActions] submit payload:', payload);
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
     const response = await panelStore.fetchPanel(
@@ -39,19 +40,28 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
       payload.client_task_id ?? null
     );
 
+    console.log('[usePanelActions] response:', response);
+    console.log('[usePanelActions] response.metadata:', response.metadata);
+
     // 检查是否需要启动流式研究
     const requiresStreaming = response.metadata?.requires_streaming === true;
+    console.log('[usePanelActions] requires_streaming:', response.metadata?.requires_streaming);
+    console.log('[usePanelActions] requiresStreaming (boolean):', requiresStreaming);
     let taskId: string | undefined;
 
     if (requiresStreaming) {
+      console.log('[usePanelActions] 创建研究任务 (processing 状态)');
       // 创建研究任务（processing 状态），不跳转
       taskId = researchStore.createTask(query.value, "research", undefined, {
         status: "processing",
         metadata: response.metadata,
         autoDetected: true,
       });
+      console.log('[usePanelActions] 任务已创建, taskId:', taskId);
+      console.log('[usePanelActions] researchStore.activeTasks:', researchStore.activeTasks);
       persistResearchTaskQuery(taskId, query.value);
     } else {
+      console.log('[usePanelActions] 不需要流式研究，使用建议逻辑');
       // 使用原有的建议逻辑（创建 idle 任务卡片）
       maybeSuggestResearchTask(response, payload);
     }

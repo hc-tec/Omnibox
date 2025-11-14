@@ -186,136 +186,163 @@ function handleClose() {
 
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent class="max-w-2xl max-h-[90vh] overflow-y-auto rounded-[24px] border-border/40 bg-card/95 backdrop-blur">
-      <DialogHeader>
-        <DialogTitle class="text-xl">{{ dialogTitle }}</DialogTitle>
-        <DialogDescription class="text-sm text-muted-foreground">
+    <DialogContent class="subscription-form max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border-2 border-border/30 bg-gradient-to-b from-card/98 to-card/95 shadow-2xl shadow-black/10 backdrop-blur-xl">
+      <!-- 顶部装饰渐变 -->
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-blue-500 to-indigo-500 rounded-t-[28px]" />
+
+      <DialogHeader class="relative">
+        <DialogTitle class="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
+          {{ dialogTitle }}
+        </DialogTitle>
+        <DialogDescription class="text-sm text-muted-foreground/80 mt-1">
           填写订阅信息。标识符请使用JSON格式（如：{"uid": "12345"}）
         </DialogDescription>
       </DialogHeader>
 
-      <div class="space-y-4 py-4">
-        <!-- 显示名称 -->
-        <div class="space-y-2">
-          <Label for="display_name" class="text-sm font-medium">显示名称 *</Label>
-          <Input
-            id="display_name"
-            v-model="formData.display_name"
-            placeholder="如：科技美学"
-            class="rounded-xl border-border/40 bg-background/50"
-          />
+      <div class="space-y-5 py-6">
+        <!-- 基本信息分组 -->
+        <div class="space-y-4 rounded-2xl border border-border/20 bg-background/30 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">基本信息</p>
+
+          <!-- 显示名称 -->
+          <div class="space-y-2">
+            <Label for="display_name" class="text-sm font-medium">显示名称 *</Label>
+            <Input
+              id="display_name"
+              v-model="formData.display_name"
+              placeholder="如：科技美学"
+              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+            />
+          </div>
+
+          <!-- 平台和实体类型 - 两列布局 -->
+          <div class="grid grid-cols-2 gap-3">
+            <!-- 平台 -->
+            <div class="space-y-2">
+              <Label for="platform" class="text-sm font-medium">平台 *</Label>
+              <Select v-model="formData.platform">
+                <SelectTrigger id="platform" class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:shadow-sm focus:shadow-indigo-500/10">
+                  <SelectValue placeholder="选择平台" />
+                </SelectTrigger>
+                <SelectContent class="rounded-xl">
+                  <SelectItem value="bilibili">B站</SelectItem>
+                  <SelectItem value="zhihu">知乎</SelectItem>
+                  <SelectItem value="weibo">微博</SelectItem>
+                  <SelectItem value="github">GitHub</SelectItem>
+                  <SelectItem value="gitee">Gitee</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <!-- 实体类型 -->
+            <div class="space-y-2">
+              <Label for="entity_type" class="text-sm font-medium">实体类型 *</Label>
+              <Select v-model="formData.entity_type">
+                <SelectTrigger id="entity_type" class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:shadow-sm focus:shadow-indigo-500/10">
+                  <SelectValue placeholder="选择实体类型" />
+                </SelectTrigger>
+                <SelectContent class="rounded-xl">
+                  <SelectItem value="user">用户</SelectItem>
+                  <SelectItem value="column">专栏</SelectItem>
+                  <SelectItem value="repo">仓库</SelectItem>
+                  <SelectItem value="topic">话题</SelectItem>
+                  <SelectItem value="channel">频道</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
 
-        <!-- 平台 -->
-        <div class="space-y-2">
-          <Label for="platform" class="text-sm font-medium">平台 *</Label>
-          <Select v-model="formData.platform">
-            <SelectTrigger id="platform" class="rounded-xl border-border/40 bg-background/50">
-              <SelectValue placeholder="选择平台" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="bilibili">B站</SelectItem>
-              <SelectItem value="zhihu">知乎</SelectItem>
-              <SelectItem value="weibo">微博</SelectItem>
-              <SelectItem value="github">GitHub</SelectItem>
-              <SelectItem value="gitee">Gitee</SelectItem>
-            </SelectContent>
-          </Select>
+        <!-- 标识符分组 -->
+        <div class="space-y-4 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">标识符配置</p>
+
+          <div class="space-y-2">
+            <Label for="identifiers" class="text-sm font-medium">标识符（JSON格式）*</Label>
+            <Textarea
+              id="identifiers"
+              v-model="identifiersText"
+              placeholder='{"uid": "12345"}'
+              rows="3"
+              class="font-mono text-sm rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+            />
+            <p class="text-xs text-muted-foreground">
+              示例：B站UP主 {"uid": "12345"}，GitHub {"owner": "xxx", "repo": "yyy"}
+            </p>
+          </div>
         </div>
 
-        <!-- 实体类型 -->
-        <div class="space-y-2">
-          <Label for="entity_type" class="text-sm font-medium">实体类型 *</Label>
-          <Select v-model="formData.entity_type">
-            <SelectTrigger id="entity_type" class="rounded-xl border-border/40 bg-background/50">
-              <SelectValue placeholder="选择实体类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="user">用户</SelectItem>
-              <SelectItem value="column">专栏</SelectItem>
-              <SelectItem value="repo">仓库</SelectItem>
-              <SelectItem value="topic">话题</SelectItem>
-              <SelectItem value="channel">频道</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <!-- 补充信息分组 -->
+        <div class="space-y-4 rounded-2xl border border-border/20 bg-background/30 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">补充信息</p>
 
-        <!-- 标识符 -->
-        <div class="space-y-2">
-          <Label for="identifiers" class="text-sm font-medium">标识符（JSON格式）*</Label>
-          <Textarea
-            id="identifiers"
-            v-model="identifiersText"
-            placeholder='{"uid": "12345"}'
-            rows="3"
-            class="font-mono text-sm rounded-xl border-border/40 bg-background/50"
-          />
-          <p class="text-xs text-muted-foreground">
-            示例：B站UP主 {"uid": "12345"}，GitHub {"owner": "xxx", "repo": "yyy"}
-          </p>
-        </div>
+          <!-- 描述 -->
+          <div class="space-y-2">
+            <Label for="description" class="text-sm font-medium">描述</Label>
+            <Textarea
+              id="description"
+              v-model="formData.description"
+              placeholder="简要描述"
+              rows="2"
+              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+            />
+          </div>
 
-        <!-- 描述 -->
-        <div class="space-y-2">
-          <Label for="description" class="text-sm font-medium">描述</Label>
-          <Textarea
-            id="description"
-            v-model="formData.description"
-            placeholder="简要描述"
-            rows="2"
-            class="rounded-xl border-border/40 bg-background/50"
-          />
-        </div>
+          <!-- 头像URL -->
+          <div class="space-y-2">
+            <Label for="avatar_url" class="text-sm font-medium">头像URL</Label>
+            <Input
+              id="avatar_url"
+              v-model="formData.avatar_url"
+              placeholder="https://..."
+              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+            />
+          </div>
 
-        <!-- 头像URL -->
-        <div class="space-y-2">
-          <Label for="avatar_url" class="text-sm font-medium">头像URL</Label>
-          <Input
-            id="avatar_url"
-            v-model="formData.avatar_url"
-            placeholder="https://..."
-            class="rounded-xl border-border/40 bg-background/50"
-          />
-        </div>
+          <!-- 别名 -->
+          <div class="space-y-2">
+            <Label for="aliases" class="text-sm font-medium">别名（逗号分隔）</Label>
+            <Input
+              id="aliases"
+              v-model="aliasesText"
+              placeholder="科技美学, 科技美学Official, 那岩"
+              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+            />
+          </div>
 
-        <!-- 别名 -->
-        <div class="space-y-2">
-          <Label for="aliases" class="text-sm font-medium">别名（逗号分隔）</Label>
-          <Input
-            id="aliases"
-            v-model="aliasesText"
-            placeholder="科技美学, 科技美学Official, 那岩"
-            class="rounded-xl border-border/40 bg-background/50"
-          />
-        </div>
-
-        <!-- 标签 -->
-        <div class="space-y-2">
-          <Label for="tags" class="text-sm font-medium">标签（逗号分隔）</Label>
-          <Input
-            id="tags"
-            v-model="tagsText"
-            placeholder="数码, 科技, 测评"
-            class="rounded-xl border-border/40 bg-background/50"
-          />
+          <!-- 标签 -->
+          <div class="space-y-2">
+            <Label for="tags" class="text-sm font-medium">标签（逗号分隔）</Label>
+            <Input
+              id="tags"
+              v-model="tagsText"
+              placeholder="数码, 科技, 测评"
+              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+            />
+          </div>
         </div>
       </div>
 
-      <DialogFooter class="gap-2">
+      <DialogFooter class="gap-3 pt-2">
         <Button
           variant="outline"
           @click="handleClose"
           :disabled="loading"
-          class="rounded-xl"
+          class="rounded-xl border-border/40 transition-all duration-200 hover:scale-105 hover:shadow-sm"
         >
           取消
         </Button>
         <Button
           @click="handleSubmit"
           :disabled="loading"
-          class="rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600"
+          class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-500 via-blue-500 to-indigo-600 shadow-lg shadow-indigo-500/25 transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-indigo-500/40 disabled:opacity-50 disabled:hover:scale-100"
         >
-          {{ loading ? '提交中...' : '提交' }}
+          <!-- 提交按钮发光效果 -->
+          <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+          <span class="relative flex items-center gap-2">
+            <span v-if="loading" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            {{ loading ? '提交中...' : '提交' }}
+          </span>
         </Button>
       </DialogFooter>
     </DialogContent>

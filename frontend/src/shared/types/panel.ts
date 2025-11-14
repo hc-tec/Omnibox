@@ -108,6 +108,10 @@ export interface PanelResponse {
       sub_query_count?: number;
       estimated_steps?: number;
     } | null;
+    // 流式研究相关字段（后端架构重构 v2.0 新增）
+    requires_streaming?: boolean | null;
+    websocket_endpoint?: string | null;
+    suggested_action?: string | null;
   };
 }
 

@@ -73,6 +73,15 @@ class ResponseMetadata(BaseModel):
     sub_queries: Optional[List[Dict[str, Any]]] = Field(
         None, description="子查询列表及其执行结果（仅 complex_research 模式）"
     )
+    requires_streaming: Optional[bool] = Field(
+        None, description="是否需要WebSocket流式接口（复杂研究任务标记）"
+    )
+    websocket_endpoint: Optional[str] = Field(
+        None, description="WebSocket端点地址（当requires_streaming=True时提供）"
+    )
+    suggested_action: Optional[str] = Field(
+        None, description="建议的前端操作（当requires_streaming=True时提供）"
+    )
 
 
 class LayoutSnapshotItem(BaseModel):

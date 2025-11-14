@@ -108,13 +108,24 @@
   - V4.4: 前置语义 + GraphRenderer（1天）
   - 前端可视化 + 测试优化（1天）
   - 预计工作量：7.5 天，预计完成：2025-01-20
-- `workflow/251113-research-stream-bugfix.md` - 研究视图与流式接口缺陷修复记录（进行中）
 - `workflow/251113-runtime-persistence-implementation.md` - **Runtime 持久化实施任务**（规划完成，待开始）
   - 5 个阶段详细 TODO 清单
   - 技术决策记录与风险应对
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/251115-debugging-research-flow.md` - **研究模式前端流程调试与重复请求修复** [✅ 完成 2025-11-15]
+  - **修复4项关键问题**：
+    1. 后端 `ResponseMetadata` 缺失 `requires_streaming` 等字段（API schema + controller 修复）
+    2. 前端 TypeScript 类型定义缺失对应字段（`panel.ts` 修复）
+    3. 已完成研究卡片立即消失（`researchStore.ts` 修复，增加 completed 状态显示）
+    4. **重复请求架构问题**（全局 WebSocket 管理器方案）
+  - **核心成果 - 全局 WebSocket 连接管理器**（`useResearchWebSocketManager.ts`）：
+    - 连接池管理：`Map<taskId, Connection>` - 主页面和详情页共享连接
+    - 请求去重：`Map<taskId, boolean>` - 确保研究请求只发送一次
+    - 智能初始化：详情页检测已有数据，避免清空进度
+    - 导航保护：返回主页面时不断开连接，保留数据供后续查看
+  - **验证指南**：`workflow/251115-duplicate-request-fix-verification.md`（9个验证步骤，控制台日志对比）
 - `workflow/done/251115-websocket-unification-and-p0p1-fixes.md` - **WebSocket 统一 + P0/P1 问题修复** [✅ 完成 2025-11-15]
   - WebSocket 架构优化：统一 `/api/v1/chat/stream` 和 `/api/v1/chat/research-stream` 为单一端点，净减少 163 行代码
   - P0 修复 - LangGraph 模式缺少兜底逻辑：`research_service` 未初始化时正确回退到简单查询
@@ -285,3 +296,20 @@
 - **文件清单**：
   - 后端：`api/schemas/stream_messages.py`（消息类型）、`services/chat_service.py:790-1171`（流式生成器）、`api/controllers/research_stream.py`（WebSocket 端点）
   - 前端：`frontend/src/views/ResearchView.vue`（主容器）、`frontend/src/composables/useResearchWebSocket.ts`（WebSocket 管理）、`frontend/src/store/researchViewStore.ts`（状态管理）、`frontend/src/features/research/components/ResearchContextPanel.vue`（左侧面板）、`frontend/src/features/research/components/ResearchDataPanel.vue`（右侧面板）
+
+### 全局 WebSocket 连接管理器（2025-11-15 新增）
+- **核心问题** - 主页面和详情页各自创建连接、各自发送请求，导致研究重复执行、进度数据丢失
+- **解决方案** - 全局连接池 + 请求去重（`useResearchWebSocketManager.ts`）
+- **连接池管理** - `Map<taskId, Connection>` 确保同一任务只有一个 WebSocket 连接，跨页面共享
+- **请求去重** - `Map<taskId, boolean>` 追踪请求状态，`sendResearchRequestOnce()` 确保研究请求只发送一次
+- **智能初始化** - `ResearchView.vue` 在挂载时检查是否已有数据（`store.state.task_id === props.taskId && store.state.steps.length > 0`），有则复用，无则初始化
+- **导航保护** - 返回主页面时不调用 `disconnect()`，不调用 `store.reset()`，保留数据供后续查看
+- **资源清理** - 删除任务时调用 `disconnectAndCleanup()`，应用卸载时调用 `cleanupAllConnections()`
+- **数据库集成准备** - 当后端接入数据库持久化时，管理器架构无需改动，只需在智能初始化时从 API 加载数据
+- **关键方法**：
+  - `useResearchWebSocketManager(options)` - 获取或创建连接（自动复用已有连接）
+  - `sendResearchRequestOnce(payload)` - 带去重保护的请求发送（幂等操作）
+  - `hasRequestSent()` - 检查是否已发送研究请求
+  - `disconnectAndCleanup()` - 断开连接并清理资源
+  - `cleanupAllConnections()` - 清理所有连接（应用级）
+- **验证方式** - 查看控制台日志：首次连接显示"创建新连接"+"首次发送研究请求"，后续打开显示"复用现有连接"+"研究请求已发送，跳过"
