@@ -97,7 +97,7 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251114-subscription-architecture-refactor-v2.md` - **订阅系统架构重构方案 v2.0**（Codex 审核修订版，待审核 ⏳）✨NEW
+- `workflow/251114-subscription-architecture-refactor-v2.md` - **订阅系统架构重构方案 v2.0**（Codex 审核修订版，阶段推进中 ⏳）✨NEW
   - **v2.0 核心改进**：
     - ✅ **Phase 0: 扩展工具定义元数据**（新增阶段，2天）
       - 在 datasource_definitions.json 添加 platform、entity_type、parameter_type 字段
@@ -108,18 +108,13 @@
     - 问题1：元数据来源缺失 → Phase 0 扩展 schema
     - 问题2：启发式触发条件 → 改用 schema 标记
     - 问题3：缺少迁移计划 → 详细的任务清单和依赖关系
+  - **当前进度（2025-11-15）**：Phase 0-4 均已完成（Schema 元数据 / entity_resolver_helper / RAG 集成 / Service 清理 / LangGraph 提示统一），Phase 5 文档归档进行中。
   - 6 个 Phase（新增 Phase 0），预计 6.5 天
 - `workflow/251114-subscription-architecture-refactor.md` - **订阅系统架构重构方案 v1.0**（已被 v2.0 取代 ⚠️）
   - ⚠️  Codex 审核发现问题：元数据来源缺失、启发式判断易误判、缺少迁移计划
 - `workflow/251113-subscription-system-implementation.md` - **订阅管理系统 Phase 1 实施任务**（已完成 ✅）
   - 基础订阅管理（数据库 + Service + API + 前端）
   - Stage 1-4 全部完成，20 个测试用例全部通过
-- `workflow/251114-subscription-phase2-intelligent-parsing.md` - **订阅系统 Phase 2: 智能解析**（架构错误，待重构 ⚠️）
-  - QueryParser（LLM 驱动查询解析）❌ 职责越界
-  - SubscriptionVectorStore（语义搜索）✅ 保留
-  - SubscriptionResolver（端到端解析）❌ 职责越界
-  - LangGraph 集成（fetch_subscription_data 工具）❌ 设计错误
-  - ⚠️  需按照重构方案全面改造
 - `workflow/251113-langgraph-v4.4-implementation.md` - **LangGraph V4.4 架构实施任务**（已批准，待开始）
   - 5 个阶段详细 TODO 清单（共 34 个子任务）
   - V4.0: 显式依赖解析（1天）
@@ -138,6 +133,8 @@
 - `workflow/done/251114-subscription-integration.md` - **订阅系统集成到主查询流程**（DataQueryService订阅预检、ChatService集成、Codex审查修复）[✅ 完成 2025-11-14]
   - Stage 1-4: LangGraph Prompt优化、DataQueryService核心改造、ChatService集成、测试覆盖（27个测试全部通过）
   - Codex修复：缓存API、DataExecutor API、集成测试
+- `workflow/done/251114-subscription-phase2-intelligent-parsing.md` - **订阅系统 Phase 2（历史实现记录）** [📚 归档]
+  - 保留 Stage 1-4 的旧架构分析与调试记录，新架构以 `workflow/251114-subscription-architecture-refactor-v2.md` 为准。
 - `workflow/251113-research-view-implementation.md` - **专属研究视图实施完成**（WebSocket流式推送、双栏布局、实时进度可视化）[✅ 完成 2025-11-13]
 - `workflow/251113-research-streaming-and-nesting.md` - **研究模式实时推送与数据归属可视化方案**（WebSocket流式推送、嵌套容器设计）[✅ 规划完成]
 - `code-review-20251113.md` - **Codex 生成代码审查报告**（P0 bug修复、P1架构改进、测试补充）[✅ 完成]
@@ -188,17 +185,12 @@
 
 ---
 
-### 订阅系统集成（Phase 2 - 2025-11-14，⚠️ 待重构）
+### 订阅系统集成（2025-11-15 更新）
 
-⚠️ **当前实现包含职责越界问题，Phase 3 重构方案已制定**
-
-- **订阅优先策略**（⚠️ 待移除）：DataQueryService 会自动进行订阅预检，相似度 >= 0.75 直接使用订阅数据（跳过 RAG），0.6-0.75 作为 RAG 失败后的兜底
-- **user_id 传递链路**：API → ChatService → DataQueryService → SubscriptionResolver，支持游客模式（user_id=None）
-- **禁止规则引擎** ✅ **正确原则**：所有查询解析必须通过 LLM（SubscriptionResolver），不允许关键词匹配或模式识别
-- **LangGraph 工具优先级**（⚠️ 待调整）：Planner 会优先尝试 fetch_subscription_data，失败后才使用 fetch_public_data
-- **订阅解析器注入**（⚠️ 待移除）：ChatService 会在初始化时自动创建 SubscriptionResolver 并注入到 DataQueryService
-
-**重构目标**：订阅系统只做"人类友好名称 → API标识符"的映射，不承担查询理解和路径生成职责
+- ✅ **RAG 内建实体解析**：`orchestrator/rag_in_action.py` 使用 `entity_resolver_helper` 根据 schema 自动判断 `entity_ref` 参数，无需额外解析器。
+- ✅ **Service 层简化**：DataQueryService/ChatService 已移除订阅预检与 `SubscriptionResolver` 注入逻辑，所有查询统一走 RAG 流程。
+- ✅ **LangGraph 工具统一**：已删除 `fetch_subscription_data`，Planner 只需调用 `fetch_public_data`，RAG 会决定是否命中订阅实体。
+- ⚠️ **多用户支持**：当前仍默认 `user_id=None`（单用户模式），如需用户隔离另行规划。
 
 ### 项目架构
 - 项目采用单体应用分层架构，不使用微服务

@@ -591,7 +591,7 @@ class SubscriptionService:
                 if is_active is not None and subscription.is_active != is_active:
                     continue
 
-                # 保存相似度分数（用于 SubscriptionResolver）
+                # 保存相似度分数（供 schema 解析辅助函数使用）
                 subscription._similarity = similarity
                 results.append(subscription)
 

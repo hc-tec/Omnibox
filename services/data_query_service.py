@@ -79,19 +79,14 @@ class DataQueryService:
         data_executor: Optional[DataExecutor] = None,
         cache_service: Optional[CacheService] = None,
         single_route_default: bool = False,
-        subscription_resolver: Optional["SubscriptionResolver"] = None,  # Phase 2: 订阅集成
     ):
         self.rag_in_action = rag_in_action
         self.data_executor = data_executor or DataExecutor()
         self.cache = cache_service or get_cache_service()
         self._own_executor = data_executor is None
         self.single_route_default = single_route_default
-        self.subscription_resolver = subscription_resolver  # Phase 2: 订阅解析器
 
-        logger.info(
-            "DataQueryService 初始化完成 (subscription_resolver=%s)",
-            "enabled" if subscription_resolver else "disabled"
-        )
+        logger.info("DataQueryService 初始化完成")
 
     def query(
         self,
@@ -105,19 +100,9 @@ class DataQueryService:
 
         retrieved_tools: List[Dict[str, Any]] = []
         rag_trace: Dict[str, Any] = {}
-        subscription_attempt: Optional[Dict[str, Any]] = None  # 订阅预检结果
 
         try:
-            # Phase 2: 订阅预检（filter_datasource 存在时跳过）
-            if self.subscription_resolver and not filter_datasource:
-                subscription_attempt = self._try_subscription_query(user_query, user_id, use_cache)
-
-                # 高置信度：直接返回订阅数据
-                if subscription_attempt and subscription_attempt["confidence"] >= 0.75:
-                    logger.info("订阅命中（置信度 %.2f），跳过 RAG", subscription_attempt["confidence"])
-                    return self._build_subscription_result(subscription_attempt, use_cache)
-
-            # 原有 RAG 流程
+            # RAG 流程（订阅解析已集成到 RAGInAction 内部）
             rag_cache_key = user_query if not filter_datasource else f"{user_query}||{filter_datasource}"
             rag_result, rag_cache_hit = self._resolve_rag_result(
                 user_query=user_query,
@@ -129,16 +114,6 @@ class DataQueryService:
             rag_trace = self._build_rag_trace(rag_result)
 
             status = rag_result.get("status")
-
-            # Phase 2: RAG 失败时的订阅兜底
-            if status in ("needs_clarification", "not_found") and subscription_attempt:
-                if subscription_attempt["confidence"] >= 0.6:
-                    logger.info("RAG %s，使用订阅兜底（置信度 %.2f）", status, subscription_attempt["confidence"])
-                    return self._build_subscription_result(
-                        subscription_attempt,
-                        use_cache,
-                        fallback_reason=f"RAG {status}"
-                    )
 
             if status == "needs_clarification":
                 return DataQueryResult(
@@ -161,11 +136,6 @@ class DataQueryService:
                     rag_trace=rag_trace,
                 )
             if status != "success":
-                # 订阅兜底
-                if subscription_attempt:
-                    logger.warning("RAG 失败，使用订阅兜底")
-                    return self._build_subscription_result(subscription_attempt, use_cache, fallback_reason="RAG error")
-
                 return DataQueryResult(
                     status="error",
                     items=[],
@@ -236,153 +206,6 @@ class DataQueryService:
         self.close()
 
     # ===== 内部方法 =====
-
-    def _try_subscription_query(
-        self,
-        user_query: str,
-        user_id: Optional[int],
-        use_cache: bool,
-    ) -> Optional[Dict[str, Any]]:
-        """
-        尝试订阅查询（纯 LLM 驱动，无规则引擎）
-
-        Returns:
-            {
-                "subscription_id": int,
-                "path": str,
-                "display_name": str,
-                "action_display_name": str,
-                "confidence": float,
-            }
-            或 None（未找到订阅）
-        """
-        try:
-            # 缓存检查（使用 LLM 缓存，因为订阅解析也是 LLM 调用）
-            if use_cache:
-                cached = self.cache.get_llm_cache(
-                    prompt=user_query,
-                    cache_type="subscription_resolve",
-                    user_id=user_id,
-                )
-                if cached:
-                    logger.debug("订阅解析缓存命中: %s", user_query[:50])
-                    return cached
-
-            # 直接调用 SubscriptionResolver（内部使用 LLM）
-            # 不做任何规则判断，让 LLM 决定
-            result = self.subscription_resolver.resolve(
-                query=user_query,
-                user_id=user_id,
-                min_similarity=0.6,
-            )
-
-            if result:
-                data = {
-                    "subscription_id": result["subscription_id"],
-                    "path": result["path"],
-                    "display_name": result["display_name"],
-                    "action_display_name": result.get("action_display_name", ""),
-                    "confidence": result.get("similarity", 1.0),
-                }
-
-                # 缓存订阅解析结果
-                if use_cache:
-                    self.cache.set_llm_cache(
-                        prompt=user_query,
-                        value=data,
-                        cache_type="subscription_resolve",
-                        user_id=user_id,
-                    )
-
-                return data
-
-            return None
-
-        except Exception as exc:
-            logger.warning("订阅查询失败: %s", exc)
-            return None
-
-    def _build_subscription_result(
-        self,
-        subscription_data: Dict[str, Any],
-        use_cache: bool,
-        fallback_reason: Optional[str] = None,
-    ) -> DataQueryResult:
-        """
-        将订阅数据转换为 DataQueryResult
-
-        Args:
-            subscription_data: _try_subscription_query 的返回值
-            use_cache: 是否使用缓存
-            fallback_reason: 如果是兜底使用，记录原因
-        """
-        path = subscription_data["path"]
-        display_name = subscription_data["display_name"]
-        confidence = subscription_data["confidence"]
-
-        logger.info("使用订阅数据: %s (path=%s, confidence=%.2f)", display_name, path, confidence)
-
-        try:
-            # 复用 _fetch_rss_payload 方法（正确使用 DataExecutor 和 CacheService API）
-            fetch_result, cache_state = self._fetch_rss_payload(
-                generated_path=path,
-                cache_hint="none",
-                use_cache=use_cache,
-            )
-
-            # 处理获取失败的情况
-            if fetch_result.status != "success":
-                logger.error("订阅数据获取失败: %s - %s", path, fetch_result.error_message)
-                return DataQueryResult(
-                    status="error",
-                    items=[],
-                    reasoning=f"订阅数据获取失败: {fetch_result.error_message}",
-                    feed_title=display_name,
-                    generated_path=path,
-                )
-
-            items = fetch_result.items
-
-            # 构建 reasoning
-            reasoning_parts = [f"订阅命中: {display_name} (相似度 {confidence:.2f})"]
-            if fallback_reason:
-                reasoning_parts.append(f"原因: {fallback_reason}")
-
-            return DataQueryResult(
-                status="success",
-                items=items,
-                feed_title=fetch_result.feed_title or display_name,
-                generated_path=path,
-                source="subscription",  # 标记数据来源
-                cache_hit=cache_state,  # 使用 _fetch_rss_payload 返回的缓存状态
-                reasoning="；".join(reasoning_parts),
-                datasets=[
-                    QueryDataset(
-                        route_id=None,
-                        provider="subscription",
-                        name=display_name,
-                        generated_path=path,
-                        items=items,
-                        feed_title=fetch_result.feed_title or display_name,
-                        source="subscription",
-                        cache_hit=cache_state,
-                        reasoning=f"订阅ID: {subscription_data['subscription_id']}",
-                        payload=fetch_result.payload,
-                    )
-                ],
-                retrieved_tools=[],
-                rag_trace={"skipped": True, "reason": "subscription_hit"},
-            )
-
-        except Exception as exc:
-            logger.error("订阅数据获取失败: %s", exc)
-            return DataQueryResult(
-                status="error",
-                items=[],
-                reasoning=f"订阅数据获取失败: {exc}",
-                generated_path=path,
-                source="subscription",
-            )
 
     def _resolve_rag_result(
         self,

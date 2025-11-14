@@ -29,7 +29,6 @@ from services.panel.component_planner import (
 from services.panel.llm_component_planner import LLMComponentPlanner
 from services.panel.adapters import get_route_manifest
 from query_processor.llm_client import create_llm_client
-from services.subscription.subscription_resolver import SubscriptionResolver
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +87,6 @@ class ChatService:
         max_parallel_queries: int = 3,  # 并行查询最大数量
         query_timeout: int = 30,  # 单个查询超时时间（秒）
         force_single_route: Optional[bool] = None,
-        enable_subscription: bool = True,  # Phase 2: 是否启用订阅集成
     ):
         """
         初始化对话服务。
@@ -101,7 +99,6 @@ class ChatService:
             component_planner_config: 组件规划器配置（可选）
             max_parallel_queries: 并行查询的最大工作线程数（默认 3）
             query_timeout: 每个查询的超时时间，秒（默认 30）
-            enable_subscription: 是否启用订阅集成（Phase 2，默认 True）
         """
         self.data_query_service = data_query_service
         self.research_service = research_service
@@ -163,19 +160,6 @@ class ChatService:
         except Exception as exc:
             logger.warning(f"LLM 组件规划器初始化失败，将仅使用规则引擎: {exc}")
             self.llm_component_planner = None
-
-        # Phase 2: 初始化订阅解析器（如果启用且 LLM 客户端可用）
-        self.subscription_resolver = None
-        if enable_subscription and llm_client:
-            try:
-                self.subscription_resolver = SubscriptionResolver(llm_client)
-                # 将订阅解析器注入到 DataQueryService（如果尚未注入）
-                if not data_query_service.subscription_resolver:
-                    data_query_service.subscription_resolver = self.subscription_resolver
-                logger.info("订阅解析器初始化完成并注入到 DataQueryService")
-            except Exception as exc:
-                logger.warning(f"订阅解析器初始化失败: {exc}")
-                self.subscription_resolver = None
 
         logger.info("ChatService 初始化完成")
 

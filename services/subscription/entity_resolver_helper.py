@@ -71,7 +71,7 @@ def should_resolve_param(
     # ✅ 优先：基于 schema 的明确判断（推荐方式）
     # =========================================================================
 
-    # ⚠️ P0 修复：标准化 parameters 结构（兼容列表和字典）
+    # 标准化 parameters 结构（兼容列表和字典）
     params_def = tool_schema.get("parameters", [])
 
     # 如果是列表，转换为字典（keyed by name）
@@ -145,7 +145,7 @@ def resolve_entity_from_schema(
     从工具 schema 解析订阅实体（基于 schema 的正确方式）
 
     ✅ 核心改进：从 schema 直接获取 platform 和 entity_type，不需要猜测
-    ⚠️ P1 修复：为缺少元数据的情况提供安全回退
+    ⚠️ 当 schema 信息缺失时提供回退逻辑
 
     Args:
         entity_name: 实体名称（如"行业101"）
@@ -185,7 +185,8 @@ def resolve_entity_from_schema(
     entity_type = tool_schema.get("entity_type")
 
     # =========================================================================
-    # ⚠️ P1 修复：为缺少元数据的情况提供安全回退
+    # =========================================================================
+    # 为缺少元数据的情况提供安全回退
     # =========================================================================
     if not platform or not entity_type:
         logger.warning(

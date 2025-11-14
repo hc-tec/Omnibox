@@ -924,331 +924,68 @@ class SubscriptionService:
         return doc
 ```
 
-### 2. 修订后的 QueryParser
+### 2. Schema 驱动的实体解析（Phase 2-3 落地）
+
+订阅系统不再维护独立的 QueryParser/SubscriptionResolver，而是通过统一的 `entity_resolver_helper` 模块完成“实体名 → 机器标识”的映射，核心逻辑包含三部分：
+
+1. **参数识别 `should_resolve_param()`** — 根据工具 schema 的 `parameters[].parameter_type` 判断某个参数是否属于实体引用；schema 缺失时会记录 `[HEURISTIC_FALLBACK]` 日志并采用可追溯兜底。
+2. **实体解析 `resolve_entity_from_schema()`** — 直接从 schema 读取 `platform/entity_type`，调用 `SubscriptionService.resolve_entity()` 获取 identifiers；若 schema 不完整，再尝试从路径/参数名推断，并提示补齐元数据。
+3. **参数校验 `validate_and_resolve_params()`** — 遍历 LLM/Planner 填充的参数，自动拆分“需解析”与“直接使用”的字段，解析成功后合并 identifiers，失败则降级为原值，确保流程不中断。
 
 ```python
-# services/subscription/query_parser.py
-from typing import Optional, Dict, Any
-from pydantic import BaseModel
+from services.subscription.entity_resolver_helper import (
+    should_resolve_param,
+    resolve_entity_from_schema,
+    validate_and_resolve_params,
+)
 
-class ParsedQuery(BaseModel):
-    """解析后的查询结构（修订版）
-
-    修订：分离实体和动作，不再混淆。
-    """
-    entity_name: str  # ← 修订：实体名称（如"科技美学"）
-    entity_type: str  # ← 修订：实体类型（如"user"，不是"user_video"）
-    action: str  # ← 新增：动作（如"videos"/"following"/"favorites"）
-    platform: str  # 平台（bilibili/zhihu/...）
-    filters: Dict[str, Any] = {}  # 可选过滤条件（如"最近一周"）
-
-
-class QueryParser:
-    """查询解析器（修订版 v2.2 - LLM驱动 + 工程可靠性）
-
-    修订：始终使用 LLM 解析（不使用规则引擎），但增加工程可靠性措施。
-
-    修订重点：
-    1. 提取实体名称（"科技美学"）
-    2. 提取动作意图（"投稿"→"videos"，"关注"→"following"）
-    3. 分离这两个概念，不再混淆
-    4. **不使用规则引擎**
-    5. **新增工程可靠性**：缓存、重试、输出校验、降级策略
-
-    示例：
-        输入："科技美学的关注列表"
-        输出：ParsedQuery(
-            entity_name="科技美学",
-            entity_type="user",
-            action="following",  ← 关键：识别动作
-            platform="bilibili"
-        )
-
-        输入："科技美学的最新投稿"
-        输出：ParsedQuery(
-            entity_name="科技美学",
-            entity_type="user",
-            action="videos",  ← 不同的动作
-            platform="bilibili"
-        )
-    """
-
-    def __init__(self):
-        from query_processor.llm_client import create_llm_client_auto
-        self.llm = create_llm_client_auto()
-        self._cache: Dict[str, ParsedQuery] = {}  # 解析结果缓存
-
-    def parse(self, query: str) -> Optional[ParsedQuery]:
-        """解析自然语言查询（带缓存和可靠性保障）
-
-        Args:
-            query: 自然语言查询
-
-        Returns:
-            解析后的结构化对象，如果无法解析则返回 None
-
-        可靠性措施：
-        1. 缓存：相同查询直接返回缓存结果（避免重复LLM调用）
-        2. 重试：LLM失败时自动重试（最多3次）
-        3. 校验：验证LLM输出的合法性（枚举检查）
-        4. 降级：多次失败后返回部分结果，提示用户手动选择
-        """
-        # 1. 缓存检查
-        if query in self._cache:
-            logger.debug(f"命中缓存: {query}")
-            return self._cache[query]
-
-        # 2. LLM解析（带重试）
-        for attempt in range(3):
-            try:
-                parsed = self._parse_with_llm(query)
-
-                # 3. 输出校验
-                if parsed and self._validate_output(parsed):
-                    self._cache[query] = parsed
-                    logger.info(f"解析成功: {query} -> {parsed}")
-                    return parsed
-                else:
-                    logger.warning(f"LLM输出校验失败 (尝试 {attempt + 1}/3)")
-
-            except Exception as e:
-                logger.error(f"LLM解析异常 (尝试 {attempt + 1}/3): {e}")
-
-        # 4. 降级：多次失败后返回 None（由上层处理）
-        logger.error(f"解析失败（已重试3次）: {query}")
-        return None
-
-    def _validate_output(self, parsed: ParsedQuery) -> bool:
-        """校验LLM输出（枚举检查，不是规则引擎）
-
-        只检查输出的合法性：
-        - platform 是否在支持列表中
-        - entity_type 是否有效
-        - action 是否在 ActionRegistry 中存在
-
-        注意：这不是规则引擎，只是枚举校验，LLM仍然负责语义理解。
-        """
-        # 检查平台枚举
-        VALID_PLATFORMS = {"bilibili", "zhihu", "weibo", "github", "gitee"}
-        if parsed.platform not in VALID_PLATFORMS:
-            logger.warning(f"无效平台: {parsed.platform}")
-            return False
-
-        # 检查实体类型枚举
-        VALID_ENTITY_TYPES = {"user", "column", "repo", "topic", "channel"}
-        if parsed.entity_type not in VALID_ENTITY_TYPES:
-            logger.warning(f"无效实体类型: {parsed.entity_type}")
-            return False
-
-        # 检查动作是否在 ActionRegistry 中注册
-        from services.subscription.action_registry import ActionRegistry
-        if not ActionRegistry.get_action(
-            parsed.platform,
-            parsed.entity_type,
-            parsed.action
-        ):
-            logger.warning(
-                f"ActionRegistry 中不存在此动作: "
-                f"({parsed.platform}, {parsed.entity_type}, {parsed.action})"
-            )
-            return False
-
-        return True
-
-    def _parse_with_llm(self, query: str) -> Optional[ParsedQuery]:
-        """使用 LLM 解析（唯一方法）
-
-        优点：灵活、准确、容错性强
-        """
-        prompt = f"""
-你是一个智能查询解析器。请将用户的自然语言查询解析为结构化JSON。
-
-用户查询: "{query}"
-
-请提取以下信息：
-1. entity_name: 实体名称（UP主/专栏/博主的名字，如"科技美学"）
-2. entity_type: 实体类型（user/column/repo）
-3. action: 动作名称（videos/following/favorites/dynamics等）
-4. platform: 平台（bilibili/zhihu/weibo/github）
-5. filters: 可选过滤条件（如时间范围、数量限制）
-
-**重要**：entity_type 和 action 是两个不同的概念！
-- entity_type 描述实体本身（是用户、专栏还是仓库）
-- action 描述对实体的具体操作（看投稿、看关注、看收藏）
-
-支持的平台、实体类型和动作：
-
-B站 (bilibili):
-- entity_type: user
-  - action: videos (投稿视频)
-  - action: following (关注列表)
-  - action: favorites (收藏)
-  - action: dynamics (动态)
-
-知乎 (zhihu):
-- entity_type: column
-  - action: articles (专栏文章)
-- entity_type: user
-  - action: activities (个人动态)
-
-微博 (weibo):
-- entity_type: user
-  - action: posts (微博)
-
-GitHub (github):
-- entity_type: repo
-  - action: commits (提交记录)
-  - action: issues (Issues)
-  - action: pull_requests (Pull Requests)
-  - action: releases (版本发布)
-
-输出格式（JSON）：
-{{
-  "entity_name": "...",
-  "entity_type": "...",
-  "action": "...",
-  "platform": "...",
-  "filters": {{}}
-}}
-
-示例：
-- "科技美学的最新投稿" → {{"entity_name": "科技美学", "entity_type": "user", "action": "videos", "platform": "bilibili"}}
-- "科技美学的关注列表" → {{"entity_name": "科技美学", "entity_type": "user", "action": "following", "platform": "bilibili"}}
-- "langchain的最新commits" → {{"entity_name": "langchain", "entity_type": "repo", "action": "commits", "platform": "github"}}
-
-如果无法解析，返回 null。
-"""
-
-        response = self.llm.generate(prompt)
-
-        # 检查空响应
-        if not response or not response.strip():
-            logger.error("LLM返回空响应")
-            return None
-
-        try:
-            import json
-            parsed_json = json.loads(response)
-            if not parsed_json:
-                return None
-
-            return ParsedQuery(
-                entity_name=parsed_json["entity_name"],
-                entity_type=parsed_json["entity_type"],
-                action=parsed_json["action"],
-                platform=parsed_json["platform"],
-                filters=parsed_json.get("filters", {})
-            )
-        except json.JSONDecodeError as e:
-            logger.error(f"LLM输出不是合法JSON: {e}, response={response[:200]}")
-            return None
-        except KeyError as e:
-            logger.error(f"LLM输出缺少必需字段: {e}, response={response[:200]}")
-            return None
-        except Exception as e:
-            logger.error(f"LLM解析失败: {e}")
-            return None
+"""RAGInAction 中的参数校验入口"""
+def handle_params(params, tool_schema, user_query):
+    return validate_and_resolve_params(
+        params=params,
+        tool_schema=tool_schema,
+        user_query=user_query,
+        user_id=None,  # 游客模式
+    )
 ```
 
----
+> **关键结论**：订阅系统只负责「名字 → ID」映射，查询意图解析完全交给 RAG/LLM。无论是简单查询还是多实体研究任务，`validate_and_resolve_params()` 都由 RAGInAction 复用，避免重复实现 QueryParser/SubscriptionResolver。
+
 
 ## 集成到现有架构
 
-### 增强 `fetch_public_data` 工具（修订版）
+### 与 RAGInAction 的集成（生产实现）
+
+Phase 2-4 的改造让订阅解析完全融入 RAG 主流程：
+
+1. **向量检索** — `rag_pipeline.search()` 返回包含 `platform/entity_type/parameters` 的完整 schema。
+2. **LLM 参数填充** — Planner/QueryParser 只负责确定路由及参数草稿，不再感知订阅系统。
+3. **参数校验** — `validate_and_resolve_params()` 自动识别 `entity_ref` 参数并调用 `SubscriptionService.resolve_entity()` 获取 identifiers。
+4. **路径构建** — 经过校验的参数交给 PathBuilder/ActionRegistry 生成最终 RSSHub 路径。
+5. **数据获取** — `DataExecutor.fetch_rss()` 拉取数据并交由 DataQueryService 统一缓存/适配。
+
+> `fetch_public_data` 工具无需再感知订阅逻辑，只需调用 `DataQueryService.query()`，LangGraph 也不再注册额外的订阅工具。
 
 ```python
-# services/langgraph_agents/tools/public_data_tool.py（修订）
-from services.subscription.subscription_service import SubscriptionService
-from services.subscription.query_parser import QueryParser
-from services.subscription.action_registry import ActionRegistry
+# orchestrator/rag_in_action.py（节选）
+from services.subscription.entity_resolver_helper import validate_and_resolve_params
 
-@register_tool("fetch_public_data")
-def fetch_public_data(query: str) -> List[Dict]:
-    """从公共互联网获取实时信息（修订版）
-
-    现在支持自然语言标识 + 动作分离，如：
-    - "科技美学的最新视频"
-    - "科技美学的关注列表"  ← 同一个实体，不同动作
-    - "科技美学的收藏"      ← 同一个实体，不同动作
-    - "少数派专栏的最新文章"
-    - "langchain的最新commits"
-    - "langchain的issues"   ← 同一个实体，不同动作
-
-    Args:
-        query: 自然语言查询
-
-    Returns:
-        数据列表
-    """
-    # 1. 解析查询（修订：提取实体 + 动作）
-    parser = QueryParser()
-    parsed = parser.parse(query)
-
-    if not parsed:
-        return [{"error": f"无法解析查询: {query}"}]
-
-    # 2. 从订阅系统解析实体 ID（修订：使用 entity_type）
-    subscription_service = SubscriptionService(DatabaseConnection())
-    identifiers = subscription_service.resolve_entity(
-        entity_name=parsed.entity_name,
-        platform=parsed.platform,
-        entity_type=parsed.entity_type  # ← 修订：不是 resource_type
+if parse_result['status'] == 'success':
+    selected_route_def = _find_schema(parse_result)
+    parse_result['parameters_filled'] = validate_and_resolve_params(
+        params=parse_result['parameters_filled'],
+        tool_schema=selected_route_def,
+        user_query=user_query,
+        user_id=context.user_id,
     )
-
-    if not identifiers:
-        # Fallback: 尝试实时搜索（如果平台支持）
-        identifiers = _fallback_search(parsed)
-
-        if not identifiers:
-            return [{
-                "error": f"未找到 '{parsed.entity_name}' 的订阅信息",
-                "suggestion": "你可以先订阅此数据源"
-            }]
-
-    # 3. 构建 RSSHub 路径（修订：使用 ActionRegistry）
-    path = ActionRegistry.build_path(
-        platform=parsed.platform,
-        entity_type=parsed.entity_type,
-        action=parsed.action,  # ← 关键：动态确定动作
-        identifiers=identifiers
-    )
-
-    if not path:
-        return [{
-            "error": f"不支持的动作: {parsed.action}",
-            "entity": parsed.entity_name,
-            "supported_actions": ActionRegistry.get_supported_actions(
-                parsed.platform,
-                parsed.entity_type
-            )
-        }]
-
-    # 4. 调用 RSSHub
-    executor = DataExecutor()
-    raw_data = executor.fetch_rss(path)
-
-    # 5. 数据适配
-    clean_data = _data_adapter(raw_data, parsed.platform)
-
-    return clean_data
-
-
-def _fallback_search(parsed: ParsedQuery) -> Optional[Dict]:
-    """Fallback: 实时搜索（如果订阅系统找不到）
-
-    调用平台搜索 API，查找用户/专栏 ID。
-
-    警告：
-    - 增加延迟
-    - 不是所有平台都提供搜索 API
-    - 搜索结果可能不准确
-
-    推荐：提示用户"是否订阅此数据源"，避免频繁实时搜索。
-    """
-    # TODO: 实现平台搜索 API 调用
-    # 示例：调用 B站搜索 API 查找 "科技美学" 的 uid
-    return None
+    generated_path = self.path_builder.build(...)
 ```
+
+这一改造确保：
+- **LangGraph/ChatService** 使用同一套订阅解析逻辑；
+- **订阅系统** 只关心实体信息，无需再判断动作或生成路径；
+- **测试** 可在 services/orchestrator 两层验证 schema 兜底、多实体、未订阅等场景。
+
 
 ---
 
