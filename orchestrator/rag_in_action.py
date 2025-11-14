@@ -11,6 +11,7 @@ from query_processor.llm_client import LLMClient, create_llm_client
 from query_processor.prompt_builder import PromptBuilder
 from query_processor.parser import QueryParser
 from query_processor.path_builder import PathBuilder
+from services.subscription.entity_resolver_helper import validate_and_resolve_params
 
 logger = logging.getLogger(__name__)
 
@@ -149,12 +150,8 @@ class RAGInAction:
                 if parse_result.get('reasoning'):
                     logger.debug(f"推理: {parse_result['reasoning']}")
 
-            # ========== 阶段4: 路径构建（如果成功） ==========
+            # ========== 阶段4: 参数验证与订阅解析（如果成功） ==========
             if parse_result["status"] == "success":
-                if verbose:
-                    logger.debug("[阶段4] 构建API路径")
-                    logger.debug("-" * 80)
-
                 # 从retrieved_tools中找到对应的完整路由定义
                 selected_route_id = parse_result["selected_tool"]["route_id"]
                 selected_route_def = None
@@ -165,6 +162,37 @@ class RAGInAction:
                         break
 
                 if selected_route_def:
+                    if verbose:
+                        logger.debug("[阶段4] 参数验证与订阅解析")
+                        logger.debug("-" * 80)
+
+                    # ⭐ 新增：参数验证与订阅解析（基于 schema）
+                    try:
+                        validated_params = validate_and_resolve_params(
+                            params=parse_result["parameters_filled"],
+                            tool_schema=selected_route_def,  # 完整的 schema
+                            user_query=user_query,
+                            user_id=None  # TODO: 从上下文获取 user_id
+                        )
+
+                        # 更新参数
+                        parse_result["parameters_filled"] = validated_params
+
+                        if verbose:
+                            logger.debug(f"参数验证完成: {validated_params}")
+
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ 参数验证失败，使用原始参数: {e}",
+                            exc_info=True
+                        )
+                        # 降级：继续使用 LLM 提取的原始参数
+
+                    # ========== 阶段5: 路径构建 ==========
+                    if verbose:
+                        logger.debug("[阶段5] 构建API路径")
+                        logger.debug("-" * 80)
+
                     # 使用PathBuilder重新构建路径（验证）
                     verified_path = self.path_builder.build(
                         route_def=selected_route_def,
