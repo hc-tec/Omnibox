@@ -98,7 +98,14 @@ class SubscriptionVectorStore:
         text = self._build_text_representation(subscription_data)
 
         # 生成向量
+        # 注意：encode() 返回 (1, embedding_dim) 的二维数组，需要取第一个元素
         embedding = self.embedding_model.encode(text)
+
+        # 确保是一维向量
+        if len(embedding.shape) == 2 and embedding.shape[0] == 1:
+            embedding_vector = embedding[0].tolist()
+        else:
+            embedding_vector = embedding.tolist()
 
         # 准备元数据
         metadata = {
@@ -110,7 +117,7 @@ class SubscriptionVectorStore:
         # 存储到 ChromaDB
         self.collection.upsert(
             ids=[str(subscription_id)],
-            embeddings=[embedding.tolist()],
+            embeddings=[embedding_vector],  # 现在是正确的一维向量
             metadatas=[metadata],
             documents=[text]
         )

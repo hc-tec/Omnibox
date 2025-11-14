@@ -30,10 +30,15 @@ STANDARD_PROMPT_TEMPLATE = """你是一个智能API调用助手，负责将用�
 **步骤2: 参数提取**
 - 从用户的请求中提取所有可以填充到API参数的值
 - 仔细检查每个参数的描述和可选值
+- **重要**：对于 `parameter_type: "entity_ref"` 的参数（如 uid、user_id、repo 等）：
+  - **可以提取人类友好名称**（如 UP 主名字"行业101"、专栏名"科技美学"）
+  - 系统会自动将名称转换为对应的 ID
+  - 不要因为值看起来不像 ID 就跳过提取
 
 **步骤3: 逻辑推理**
 - 如果用户提到了一个值（如"最新发布"），在 `parameters.options` 中找到对应的 `value`（如 '1'）
-- 如果用户提到了一个实体（如"步行街"），尝试匹配到对应参数（如 `id`）
+- 如果用户提到了一个实体（如"步行街"、"行业101"），尝试匹配到对应参数（如 `id`、`uid`）
+  - **即使是人类友好名称也要提取**，系统会自动解析
 - 如果无法确定参数值，使用 `default_value`
 - 如果缺少必需参数或意图不明确，设置 `status` 为 `needs_clarification`
 
@@ -91,7 +96,28 @@ JSON结构如下：
   "clarification_question": null
 }}
 
-**示例2：需要澄清**
+**示例2：提取人类友好名称（订阅实体）**
+用户输入："我想看看bilibili中，up主行业101的视频投稿"
+
+输出：
+{{
+  "status": "success",
+  "reasoning": "用户请求查看B站UP主的投稿视频。'行业101'是UP主名称，提取到uid参数（系统会自动将名称转换为uid）。",
+  "selected_tool": {{
+    "route_id": "bilibili_video",
+    "provider": "bilibili",
+    "name": "UP 主投稿"
+  }},
+  "path_template": "/user/video/:uid/:embed?",
+  "generated_path": "/bilibili/user/video/行业101",
+  "parameters_filled": {{
+    "uid": "行业101",
+    "embed": "开启内嵌视频"
+  }},
+  "clarification_question": null
+}}
+
+**示例3：需要澄清**
 用户输入："给我看看帖子"
 
 输出：

@@ -100,38 +100,21 @@ def should_resolve_param(
         return False
 
     # =========================================================================
-    # ⚠️ 兜底：启发式判断（只在 schema 缺失时使用，不推荐）
+    # ⚠️ 兜底：Schema 缺失时直接跳过（禁用启发式判断）
     # =========================================================================
-    logger.warning(
-        f"⚠️ [HEURISTIC_FALLBACK] [SCHEMA_INCOMPLETE] "
-        f"参数 '{param_name}' 在 schema 中缺少 parameter_type 标记，"
-        f"使用启发式判断（不可靠，建议完善 schema）"
+    logger.error(
+        f"❌ [SCHEMA_INCOMPLETE] 参数 '{param_name}' 在 schema 中缺少 parameter_type 标记。"
+    )
+    logger.error(
+        f"   提示：请运行 'python -m scripts.rebuild_rag_vector_store --force' 重建向量库"
     )
 
-    # 启发式规则1：全数字 → 很可能是有效ID
-    if param_value.isdigit():
-        logger.info(
-            f"⚠️ [HEURISTIC_FALLBACK] "
-            f"参数值 '{param_value}' 全数字，假设为有效ID，无需解析"
-        )
-        return False
-
-    # 启发式规则2：包含中文 → 很可能是名字
-    if any('\u4e00' <= char <= '\u9fff' for char in param_value):
-        logger.warning(
-            f"⚠️ [HEURISTIC_FALLBACK] [LOW_CONFIDENCE] "
-            f"参数值 '{param_value}' 包含中文，假设为名字，需要订阅解析 "
-            f"（置信度低，可能误判）"
-        )
-        return True
-
-    # 默认：保守策略，尝试解析
+    # 严格模式：Schema 缺失时假设不需要解析，避免误判
+    # 这样可以让查询继续执行（使用原始参数值），而不是因为误判导致查询失败
     logger.warning(
-        f"⚠️ [HEURISTIC_FALLBACK] [LOW_CONFIDENCE] "
-        f"参数 '{param_name}'='{param_value}' 无明显特征，默认尝试订阅解析 "
-        f"（保守策略，可能不必要）"
+        f"⚠️ [FALLBACK_SKIP] Schema 不完整，跳过订阅解析，使用原始参数值"
     )
-    return True
+    return False
 
 
 def resolve_entity_from_schema(
@@ -195,52 +178,17 @@ def resolve_entity_from_schema(
             f"platform={platform}, entity_type={entity_type}。"
         )
 
-        # 回退策略1：尝试从路径模板推断 platform
-        if not platform:
-            path_template = tool_schema.get("path_template", [""])[0] if isinstance(
-                tool_schema.get("path_template"), list
-            ) else tool_schema.get("path_template", "")
-
-            # 从路径提取 platform（如 "/bilibili/user/video/..." → "bilibili"）
-            parts = path_template.strip("/").split("/")
-            if parts:
-                platform = parts[0]
-                logger.warning(
-                    f"⚠️ [HEURISTIC_FALLBACK] 从路径推断 platform: '{platform}' "
-                    f"（不可靠，建议完善 schema）"
-                )
-
-        # 回退策略2：尝试从参数名推断 entity_type
-        if not entity_type and target_params:
-            primary_param = target_params[0]
-            # 简单启发式：uid/user_id → user, repo/repository → repo
-            if primary_param in ("uid", "user_id", "author_id", "creator_id"):
-                entity_type = "user"
-                logger.warning(
-                    f"⚠️ [HEURISTIC_FALLBACK] [LOW_CONFIDENCE] "
-                    f"从参数名推断 entity_type: '{entity_type}' "
-                    f"（置信度低，可能误判）"
-                )
-            elif primary_param in ("repo", "repository", "owner"):
-                entity_type = "repo"
-                logger.warning(
-                    f"⚠️ [HEURISTIC_FALLBACK] [LOW_CONFIDENCE] "
-                    f"从参数名推断 entity_type: '{entity_type}' "
-                    f"（置信度低，可能误判）"
-                )
-
-        # 如果回退失败，放弃解析
-        if not platform or not entity_type:
-            logger.error(
-                f"❌ [SCHEMA_INCOMPLETE] 回退失败，无法推断 "
-                f"platform={platform}, entity_type={entity_type}。"
-                f"跳过订阅解析。"
-            )
-            logger.info(
-                f"   提示：请运行 'python -m scripts.enrich_tool_definitions' "
-                f"重新生成工具元数据"
-            )
-            return None
+        # ⚠️ 禁用启发式推断：Schema 缺失时直接返回 None
+        # 启发式推断从相对路径推断 platform 注定会失败（如 "/user/video/:uid" → "user" 而不是 "bilibili"）
+        # 必须依赖 schema 中的明确标记
+        logger.error(
+            f"❌ [SCHEMA_INCOMPLETE] Schema 缺少必要字段，无法进行订阅解析："
+        )
+        logger.error(f"   platform={platform}, entity_type={entity_type}")
+        logger.error(
+            f"   提示：请运行 'python -m scripts.rebuild_rag_vector_store --force' 重建向量库"
+        )
+        return None
 
     logger.info(
         f"✅ [SCHEMA_BASED] 订阅解析: entity_name='{entity_name}', "

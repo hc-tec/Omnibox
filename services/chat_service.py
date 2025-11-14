@@ -221,27 +221,22 @@ class ChatService:
                 )
 
             if mode == "research":
-                if not self.query_planner or not self.parallel_executor:
-                    logger.warning("研究模式被请求但三层架构未初始化，回退到简单查询")
-                    return self._handle_simple_query(
-                        user_query=user_query,
-                        filter_datasource=filter_datasource,
-                        use_cache=use_cache,
-                        intent_confidence=1.0,
-                        layout_snapshot=layout_snapshot,
-                        llm_logs=llm_logs,
-                        user_id=user_id,
-                    )
-                else:
-                    return self._handle_complex_research(
-                        user_query=user_query,
-                        filter_datasource=filter_datasource,
-                        use_cache=use_cache,
-                        intent_confidence=1.0,
-                        layout_snapshot=layout_snapshot,
-                        llm_logs=llm_logs,
-                        user_id=user_id,
-                    )
+                # ⚠️ 重要：用户显式选择研究模式，但同步接口不适合流式展示
+                # 返回特殊响应引导前端使用 WebSocket 流式接口
+                logger.info("用户显式选择研究模式，建议前端使用流式研究接口")
+
+                return ChatResponse(
+                    success=True,
+                    intent_type="complex_research",
+                    message="已切换到研究模式，正在准备研究流程...",
+                    metadata={
+                        "intent_confidence": 1.0,
+                        "reasoning": "用户显式选择研究模式",
+                        "requires_streaming": True,  # ← 关键：告诉前端需要流式接口
+                        "websocket_endpoint": "/api/v1/chat/research-stream",  # 流式接口地址
+                        "mode": "research",
+                    }
+                )
 
             # 阶段1：LLM 意图分类（三层架构第一层）
             if not self.intent_classifier:
@@ -287,28 +282,22 @@ class ChatService:
                 )
 
             elif intent_result.intent == "complex_research":
-                # 检查三层架构组件是否可用
-                if not self.query_planner or not self.parallel_executor:
-                    logger.warning("复杂研究意图但三层架构未初始化，回退到简单查询")
-                    return self._handle_simple_query(
-                        user_query=user_query,
-                        filter_datasource=filter_datasource,
-                        use_cache=use_cache,
-                        intent_confidence=intent_result.confidence,
-                        layout_snapshot=layout_snapshot,
-                        llm_logs=llm_logs,
-                        user_id=user_id,
-                    )
-                else:
-                    return self._handle_complex_research(
-                        user_query=user_query,
-                        filter_datasource=filter_datasource,
-                        use_cache=use_cache,
-                        intent_confidence=intent_result.confidence,
-                        layout_snapshot=layout_snapshot,
-                        llm_logs=llm_logs,
-                        user_id=user_id,
-                    )
+                # ⚠️ 重要：复杂研究需要使用流式接口
+                # 同步接口不适合展示研究进度，返回特殊响应引导前端切换
+                logger.info("检测到复杂研究意图，建议前端使用流式研究接口")
+
+                return ChatResponse(
+                    success=True,
+                    intent_type="complex_research",
+                    message="这是一个复杂研究任务，建议使用研究模式获得更好的体验。",
+                    metadata={
+                        "intent_confidence": intent_result.confidence,
+                        "reasoning": intent_result.reasoning,
+                        "requires_streaming": True,  # ← 关键：告诉前端需要流式接口
+                        "websocket_endpoint": "/api/v1/chat/research-stream",  # 流式接口地址
+                        "debug": self._compose_debug_payload(None, llm_logs, None),
+                    }
+                )
 
             else:
                 # 未知意图，降级为简单查询

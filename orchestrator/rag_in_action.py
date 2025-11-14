@@ -150,59 +150,96 @@ class RAGInAction:
                 if parse_result.get('reasoning'):
                     logger.debug(f"推理: {parse_result['reasoning']}")
 
-            # ========== 阶段4: 参数验证与订阅解析（如果成功） ==========
+            # ========== 阶段4: 参数验证与订阅解析（扩展支持） ==========
+            # ⭐ 修复：订阅解析应该在 needs_clarification 时也能介入
+            if parse_result["status"] in ("success", "needs_clarification"):
+                # 防御性检查：确保 selected_tool 存在
+                if not parse_result.get("selected_tool"):
+                    logger.warning("⚠️ LLM 返回的 selected_tool 为空，跳过订阅解析")
+                else:
+                    # 从retrieved_tools中找到对应的完整路由定义
+                    selected_route_id = parse_result["selected_tool"]["route_id"]
+                    selected_route_def = None
+
+                    for route_def in retrieved_tools:
+                        if route_def.get("route_id") == selected_route_id:
+                            selected_route_def = route_def
+                            break
+
+                    if selected_route_def:
+                        if verbose:
+                            logger.debug("[阶段4] 参数验证与订阅解析")
+                            logger.debug("-" * 80)
+
+                        # ⭐ 新增：参数验证与订阅解析（基于 schema）
+                        try:
+                            original_params = parse_result.get("parameters_filled", {})
+
+                            # 即使 LLM 说需要澄清，也尝试订阅解析
+                            # 因为 LLM 可能提取到了人类友好名称（如"行业101"），只是不确定是否是有效ID
+                            if original_params:
+                                validated_params = validate_and_resolve_params(
+                                    params=original_params,
+                                    tool_schema=selected_route_def,  # 完整的 schema
+                                    user_query=user_query,
+                                    user_id=None  # TODO: 从上下文获取 user_id
+                                )
+
+                                # 更新参数
+                                parse_result["parameters_filled"] = validated_params
+
+                                if verbose:
+                                    logger.debug(f"参数验证完成: {validated_params}")
+
+                                # ⭐ 关键修复：如果订阅解析成功，将状态改为 success
+                                if parse_result["status"] == "needs_clarification":
+                                    # 检查是否所有必需参数都已解析
+                                    required_params = selected_route_def.get("required_identifiers", [])
+                                    if all(param in validated_params for param in required_params):
+                                        logger.info(
+                                            f"✅ 订阅解析成功，将状态从 needs_clarification 改为 success"
+                                        )
+                                        parse_result["status"] = "success"
+                                        parse_result["clarification_question"] = None
+                                        parse_result["reasoning"] = "通过订阅系统成功解析实体标识符"
+
+                        except Exception as e:
+                            logger.warning(
+                                f"⚠️ 参数验证失败，使用原始参数: {e}",
+                                exc_info=True
+                            )
+                            # 降级：继续使用 LLM 提取的原始参数
+
+            # ========== 阶段5: 路径构建（仅在成功时） ==========
             if parse_result["status"] == "success":
-                # 从retrieved_tools中找到对应的完整路由定义
-                selected_route_id = parse_result["selected_tool"]["route_id"]
-                selected_route_def = None
+                # 防御性检查：确保 selected_tool 存在
+                if not parse_result.get("selected_tool"):
+                    logger.error("❌ 处理状态为 success 但 selected_tool 为空，这是一个异常状态")
+                else:
+                    # 从retrieved_tools中找到对应的完整路由定义
+                    selected_route_id = parse_result["selected_tool"]["route_id"]
+                    selected_route_def = None
 
-                for route_def in retrieved_tools:
-                    if route_def.get("route_id") == selected_route_id:
-                        selected_route_def = route_def
-                        break
+                    for route_def in retrieved_tools:
+                        if route_def.get("route_id") == selected_route_id:
+                            selected_route_def = route_def
+                            break
 
-                if selected_route_def:
-                    if verbose:
-                        logger.debug("[阶段4] 参数验证与订阅解析")
-                        logger.debug("-" * 80)
+                    if selected_route_def:
+                        if verbose:
+                            logger.debug("[阶段5] 构建API路径")
+                            logger.debug("-" * 80)
 
-                    # ⭐ 新增：参数验证与订阅解析（基于 schema）
-                    try:
-                        validated_params = validate_and_resolve_params(
-                            params=parse_result["parameters_filled"],
-                            tool_schema=selected_route_def,  # 完整的 schema
-                            user_query=user_query,
-                            user_id=None  # TODO: 从上下文获取 user_id
+                        # 使用PathBuilder重新构建路径（验证）
+                        verified_path = self.path_builder.build(
+                            route_def=selected_route_def,
+                            parameters=parse_result["parameters_filled"],
                         )
 
-                        # 更新参数
-                        parse_result["parameters_filled"] = validated_params
+                        parse_result["generated_path"] = verified_path
 
                         if verbose:
-                            logger.debug(f"参数验证完成: {validated_params}")
-
-                    except Exception as e:
-                        logger.warning(
-                            f"⚠️ 参数验证失败，使用原始参数: {e}",
-                            exc_info=True
-                        )
-                        # 降级：继续使用 LLM 提取的原始参数
-
-                    # ========== 阶段5: 路径构建 ==========
-                    if verbose:
-                        logger.debug("[阶段5] 构建API路径")
-                        logger.debug("-" * 80)
-
-                    # 使用PathBuilder重新构建路径（验证）
-                    verified_path = self.path_builder.build(
-                        route_def=selected_route_def,
-                        parameters=parse_result["parameters_filled"],
-                    )
-
-                    parse_result["generated_path"] = verified_path
-
-                    if verbose:
-                        logger.debug(f"路径已构建: {verified_path}")
+                            logger.debug(f"路径已构建: {verified_path}")
 
             # ========== 返回结果 ==========
             parse_result["retrieved_tools"] = retrieved_tools
