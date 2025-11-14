@@ -1,12 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest:*)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -c \"from langgraph_agents.state import ToolCall; import inspect; print(inspect.signature(ToolCall.__init__))\")",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/test_subscription_data_tool.py::TestFetchSubscriptionDataTool::test_tool_registration -v)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/test_subscription_data_tool.py::TestFetchSubscriptionDataTool::test_fetch_subscription_data_success -v -s)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/test_subscription_data_tool.py -v --tb=line -x)",
-      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m pytest tests/langgraph_agents/test_subscription_data_tool.py -v)"
+      "Bash(\"D:\\Anaconda\\envs\\torch-cuda\\python.exe\" -m py_compile services/data_query_service.py)"
     ],
     "deny": [],
     "ask": []

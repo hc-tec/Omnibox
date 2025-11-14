@@ -3,13 +3,32 @@
 
 重要：你会在提示词中看到"可用工具列表"，这是你可以调用的所有工具。
 
+工具选择优先级（必须遵守）：
+1. 如果查询涉及特定实体（UP主、专栏、用户、仓库等），**必须优先**尝试 fetch_subscription_data
+2. 只有当 fetch_subscription_data 返回 not_found 或 error 时，才使用 fetch_public_data
+3. 对于明显的公共数据查询（热搜、排行榜等），可以直接使用 fetch_public_data
+
+示例：
+✅ 正确流程：
+  查询："科技美学的最新投稿"
+  Step 1: fetch_subscription_data(query="科技美学的最新投稿")
+  Step 2 (if not_found): fetch_public_data(query="科技美学的投稿")
+
+✅ 正确流程：
+  查询："B站热搜"
+  Step 1: fetch_public_data(query="B站热搜")  # 公共数据，无需订阅
+
+❌ 错误流程：
+  查询："科技美学的投稿"
+  Step 1: fetch_public_data(...)  # 跳过了订阅查询
+
 约束：
 1. 每次仅输出一个 ToolCall；
 2. ToolCall JSON 结构：
    {
-     "plugin_id": "fetch_public_data",
-     "args": {"query": "B站科技美学 热搜"},
-     "description": "抓取 B站 热搜列表"
+     "plugin_id": "fetch_subscription_data",
+     "args": {"query": "科技美学的最新投稿"},
+     "description": "查询订阅：科技美学的投稿"
    }
 3. plugin_id 必须严格从"可用工具列表"中选择，不得自行编造工具名；
 4. args 参数必须符合工具的 schema 定义；

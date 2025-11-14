@@ -74,47 +74,40 @@ class QueryParser:
 
 输入："科技美学的最新投稿"
 输出：
-```json
 {
     "entity_name": "科技美学",
     "action": "投稿视频",
     "platform": "bilibili",
     "confidence": 0.9
 }
-```
 
 输入："少数派专栏的文章"
 输出：
-```json
 {
     "entity_name": "少数派",
     "action": "文章",
     "platform": "zhihu",
     "confidence": 0.9
 }
-```
+
 
 输入："langchain的最新commits"
 输出：
-```json
 {
     "entity_name": "langchain",
     "action": "commits",
     "platform": "github",
     "confidence": 0.85
 }
-```
 
 输入："那岩"（只有实体名称）
 输出：
-```json
 {
     "entity_name": "那岩",
     "action": null,
     "platform": null,
     "confidence": 0.7
 }
-```
 
 **重要**：
 - 必须返回严格的 JSON 格式

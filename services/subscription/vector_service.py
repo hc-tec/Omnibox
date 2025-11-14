@@ -171,7 +171,7 @@ class SubscriptionVectorStore:
 
         # 向量检索
         results = self.collection.query(
-            query_embeddings=[query_embedding.tolist()],
+            query_embeddings=query_embedding.tolist(),  # encode_queries 已返回 (1, 1024)，直接 tolist() 即可
             n_results=top_k,
             where=where
         )

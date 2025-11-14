@@ -65,6 +65,7 @@ class ParallelQueryExecutor:
         sub_queries: List[SubQuery],
         use_cache: bool = True,
         prefer_single_route: bool = False,
+        user_id: Optional[int] = None,  # Phase 2: 用户 ID
     ) -> List[SubQueryResult]:
         """
         并行执行多个子查询
@@ -73,6 +74,7 @@ class ParallelQueryExecutor:
             sub_queries: 子查询列表
             use_cache: 是否使用缓存
             prefer_single_route: 是否优先使用单路模式（仅执行primary route，忽略RAG候选路由）
+            user_id: 用户 ID（Phase 2，游客模式可为 None）
 
         Returns:
             List[SubQueryResult]: 所有子查询的执行结果
@@ -82,9 +84,10 @@ class ParallelQueryExecutor:
             return []
 
         logger.info(
-            "开始并行执行 %d 个子查询 (prefer_single_route=%s)",
+            "开始并行执行 %d 个子查询 (prefer_single_route=%s, user_id=%s)",
             len(sub_queries),
-            prefer_single_route
+            prefer_single_route,
+            user_id,
         )
 
         # 提交所有任务
@@ -96,6 +99,7 @@ class ParallelQueryExecutor:
                 use_cache,
                 idx,
                 prefer_single_route,
+                user_id,  # Phase 2: 传递 user_id
             )
             futures[future] = sub_query
 
@@ -166,6 +170,7 @@ class ParallelQueryExecutor:
         use_cache: bool,
         index: int,
         prefer_single_route: bool,
+        user_id: Optional[int] = None,  # Phase 2: 用户 ID
     ) -> SubQueryResult:
         """
         执行单个子查询
@@ -174,6 +179,8 @@ class ParallelQueryExecutor:
             sub_query: 子查询
             use_cache: 是否使用缓存
             index: 查询索引
+            prefer_single_route: 是否优先使用单路模式
+            user_id: 用户 ID（Phase 2，游客模式可为 None）
 
         Returns:
             SubQueryResult: 执行结果
@@ -190,6 +197,7 @@ class ParallelQueryExecutor:
                 filter_datasource=sub_query.datasource,
                 use_cache=use_cache,
                 prefer_single_route=prefer_single_route,
+                user_id=user_id,  # Phase 2: 传递 user_id
             )
 
             execution_time = time.time() - start_time

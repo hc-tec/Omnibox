@@ -29,6 +29,7 @@ from services.panel.component_planner import (
 from services.panel.llm_component_planner import LLMComponentPlanner
 from services.panel.adapters import get_route_manifest
 from query_processor.llm_client import create_llm_client
+from services.subscription.subscription_resolver import SubscriptionResolver
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class ChatService:
         max_parallel_queries: int = 3,  # 并行查询最大数量
         query_timeout: int = 30,  # 单个查询超时时间（秒）
         force_single_route: Optional[bool] = None,
+        enable_subscription: bool = True,  # Phase 2: 是否启用订阅集成
     ):
         """
         初始化对话服务。
@@ -99,6 +101,7 @@ class ChatService:
             component_planner_config: 组件规划器配置（可选）
             max_parallel_queries: 并行查询的最大工作线程数（默认 3）
             query_timeout: 每个查询的超时时间，秒（默认 30）
+            enable_subscription: 是否启用订阅集成（Phase 2，默认 True）
         """
         self.data_query_service = data_query_service
         self.research_service = research_service
@@ -161,6 +164,19 @@ class ChatService:
             logger.warning(f"LLM 组件规划器初始化失败，将仅使用规则引擎: {exc}")
             self.llm_component_planner = None
 
+        # Phase 2: 初始化订阅解析器（如果启用且 LLM 客户端可用）
+        self.subscription_resolver = None
+        if enable_subscription and llm_client:
+            try:
+                self.subscription_resolver = SubscriptionResolver(llm_client)
+                # 将订阅解析器注入到 DataQueryService（如果尚未注入）
+                if not data_query_service.subscription_resolver:
+                    data_query_service.subscription_resolver = self.subscription_resolver
+                logger.info("订阅解析器初始化完成并注入到 DataQueryService")
+            except Exception as exc:
+                logger.warning(f"订阅解析器初始化失败: {exc}")
+                self.subscription_resolver = None
+
         logger.info("ChatService 初始化完成")
 
     def chat(
@@ -171,6 +187,7 @@ class ChatService:
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
         mode: str = "auto",  # auto / simple / research / langgraph
         client_task_id: Optional[str] = None,
+        user_id: Optional[int] = None,  # Phase 2: 用户 ID（游客模式可为 None）
     ) -> ChatResponse:
         """
         处理用户查询（三层智能路由）。
@@ -186,11 +203,12 @@ class ChatService:
                 - research: 强制复杂研究（查询规划 + 并行执行）
                 - langgraph: 强制使用 LangGraph 工作流
             client_task_id: 客户端任务 ID（可选）
+            user_id: 用户 ID（Phase 2，游客模式可为 None）
 
         Returns:
             ChatResponse 对象
         """
-        logger.info("收到对话请求: %s (mode=%s)", user_query, mode)
+        logger.info("收到对话请求: %s (mode=%s, user_id=%s)", user_query, mode, user_id)
 
         try:
             llm_logs: List[Dict[str, Any]] = []
@@ -215,6 +233,7 @@ class ChatService:
                     intent_confidence=1.0,
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
+                    user_id=user_id,
                 )
 
             if mode == "research":
@@ -227,6 +246,7 @@ class ChatService:
                         intent_confidence=1.0,
                         layout_snapshot=layout_snapshot,
                         llm_logs=llm_logs,
+                        user_id=user_id,
                     )
                 else:
                     return self._handle_complex_research(
@@ -236,6 +256,7 @@ class ChatService:
                         intent_confidence=1.0,
                         layout_snapshot=layout_snapshot,
                         llm_logs=llm_logs,
+                        user_id=user_id,
                     )
 
             # 阶段1：LLM 意图分类（三层架构第一层）
@@ -249,6 +270,7 @@ class ChatService:
                     intent_confidence=0.5,
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
+                    user_id=user_id,
                 )
 
             intent_result: IntentClassification = self.intent_classifier.classify(user_query)
@@ -277,6 +299,7 @@ class ChatService:
                     intent_confidence=intent_result.confidence,
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
+                    user_id=user_id,
                 )
 
             elif intent_result.intent == "complex_research":
@@ -290,6 +313,7 @@ class ChatService:
                         intent_confidence=intent_result.confidence,
                         layout_snapshot=layout_snapshot,
                         llm_logs=llm_logs,
+                        user_id=user_id,
                     )
                 else:
                     return self._handle_complex_research(
@@ -299,6 +323,7 @@ class ChatService:
                         intent_confidence=intent_result.confidence,
                         layout_snapshot=layout_snapshot,
                         llm_logs=llm_logs,
+                        user_id=user_id,
                     )
 
             else:
@@ -311,6 +336,7 @@ class ChatService:
                     intent_confidence=intent_result.confidence,
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
+                    user_id=user_id,
                 )
 
         except Exception as exc:
@@ -330,15 +356,17 @@ class ChatService:
         intent_confidence: float,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
         llm_logs: Optional[List[Dict[str, Any]]] = None,
+        user_id: Optional[int] = None,  # Phase 2: 用户 ID
     ) -> ChatResponse:
         """处理简单查询意图（单次 RAG 调用）。"""
-        logger.debug("处理简单查询意图")
+        logger.debug("处理简单查询意图 (user_id=%s)", user_id)
 
         query_result = self.data_query_service.query(
             user_query=user_query,
             filter_datasource=filter_datasource,
             use_cache=use_cache,
-             prefer_single_route=self._should_force_single_route(filter_datasource),
+            prefer_single_route=self._should_force_single_route(filter_datasource),
+            user_id=user_id,  # Phase 2: 传递 user_id
         )
         llm_debug = self._clone_llm_logs(llm_logs)
 
@@ -531,6 +559,7 @@ class ChatService:
         intent_confidence: float,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
         llm_logs: Optional[List[Dict[str, Any]]] = None,
+        user_id: Optional[int] = None,  # Phase 2: 用户 ID
     ) -> ChatResponse:
         """
         处理复杂研究意图（LLM 查询规划 + 并行执行）。
@@ -546,11 +575,12 @@ class ChatService:
             use_cache: 是否使用缓存
             intent_confidence: 意图置信度
             layout_snapshot: 布局快照（可选）
+            user_id: 用户 ID（Phase 2，游客模式可为 None）
 
         Returns:
             ChatResponse 对象
         """
-        logger.info("处理复杂研究意图: %s", user_query)
+        logger.info("处理复杂研究意图: %s (user_id=%s)", user_query, user_id)
         llm_debug = self._clone_llm_logs(llm_logs)
 
         try:
@@ -596,6 +626,7 @@ class ChatService:
                 sub_queries=data_sub_queries,
                 use_cache=use_cache,
                 prefer_single_route=True,
+                user_id=user_id,  # Phase 2: 传递 user_id
             )
 
             # 第三步：聚合结果
@@ -795,6 +826,7 @@ class ChatService:
         use_cache: bool = True,
         intent_confidence: float = 0.95,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+        user_id: Optional[int] = None,  # Phase 2: 用户 ID
     ) -> Generator[Dict[str, Any], None, None]:
         """
         处理复杂研究意图（流式版本）。
@@ -952,6 +984,7 @@ class ChatService:
                         filter_datasource=effective_datasource,
                         use_cache=use_cache,
                         prefer_single_route=prefer_single_route,
+                        user_id=user_id,  # Phase 2: 传递 user_id
                     )
 
                     if query_result.status == "success":
