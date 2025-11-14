@@ -239,7 +239,7 @@ def validate_and_resolve_params(
     tool_schema: dict,
     user_query: str,
     user_id: Optional[int] = None
-) -> Dict[str, str]:
+) -> Tuple[Dict[str, str], Dict[str, bool]]:
     """
     验证参数并通过订阅系统解析（高级接口）
 
@@ -260,6 +260,7 @@ def validate_and_resolve_params(
         3. 解析失败时使用原值（降级处理）
     """
     validated = {}
+    resolution_status = {}  # 记录每个参数的解析状态
     params_needing_resolution = []
 
     logger.info(
@@ -303,6 +304,10 @@ def validate_and_resolve_params(
         if resolved_identifiers:
             # 解析成功，合并标识符
             validated.update(resolved_identifiers)
+            # 标记为解析成功
+            for param_name in params_needing_resolution:
+                if param_name in resolved_identifiers:
+                    resolution_status[param_name] = True
             logger.info(
                 f"✅ 订阅解析成功: {entity_name} → {resolved_identifiers}"
             )
@@ -313,6 +318,7 @@ def validate_and_resolve_params(
             )
             for param_name in params_needing_resolution:
                 validated[param_name] = params[param_name]
+                resolution_status[param_name] = False  # 标记为解析失败
 
-    logger.info(f"参数验证与解析完成: {validated}")
-    return validated
+    logger.info(f"参数验证与解析完成: {validated}, 解析状态: {resolution_status}")
+    return validated, resolution_status

@@ -97,21 +97,6 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251114-subscription-architecture-refactor-v2.md` - **订阅系统架构重构方案 v2.0**（Codex 审核修订版，阶段推进中 ⏳）✨NEW
-  - **v2.0 核心改进**：
-    - ✅ **Phase 0: 扩展工具定义元数据**（新增阶段，2天）
-      - 在 datasource_definitions.json 添加 platform、entity_type、parameter_type 字段
-      - 重建 RAG 向量库，确保 schema 完整
-    - ✅ **移除启发式判断**：基于 schema.parameter_type 标记（entity_ref/literal/enum）
-    - ✅ **详细迁移计划**：明确每个 Phase 的改造点和依赖关系
-  - **解决的 Codex 问题**：
-    - 问题1：元数据来源缺失 → Phase 0 扩展 schema
-    - 问题2：启发式触发条件 → 改用 schema 标记
-    - 问题3：缺少迁移计划 → 详细的任务清单和依赖关系
-  - **当前进度（2025-11-15）**：Phase 0-4 均已完成（Schema 元数据 / entity_resolver_helper / RAG 集成 / Service 清理 / LangGraph 提示统一），Phase 5 文档归档进行中。
-  - 6 个 Phase（新增 Phase 0），预计 6.5 天
-- `workflow/251114-subscription-architecture-refactor.md` - **订阅系统架构重构方案 v1.0**（已被 v2.0 取代 ⚠️）
-  - ⚠️  Codex 审核发现问题：元数据来源缺失、启发式判断易误判、缺少迁移计划
 - `workflow/251113-subscription-system-implementation.md` - **订阅管理系统 Phase 1 实施任务**（已完成 ✅）
   - 基础订阅管理（数据库 + Service + API + 前端）
   - Stage 1-4 全部完成，20 个测试用例全部通过
@@ -130,6 +115,16 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/done/251115-websocket-unification-and-p0p1-fixes.md` - **WebSocket 统一 + P0/P1 问题修复** [✅ 完成 2025-11-15]
+  - WebSocket 架构优化：统一 `/api/v1/chat/stream` 和 `/api/v1/chat/research-stream` 为单一端点，净减少 163 行代码
+  - P0 修复 - LangGraph 模式缺少兜底逻辑：`research_service` 未初始化时正确回退到简单查询
+  - P1 修复 - 订阅解析失败被误判为成功：引入 `resolution_status: Dict[str, bool]`，orchestrator 检查实际解析状态
+  - 前端适配：`useResearchWebSocket` 更新为统一端点，添加 `mode: "research"` 参数
+- `workflow/done/251114-subscription-architecture-refactor-v2.md` - **订阅系统架构重构方案 v2.0**（Codex 审核修订版）[✅ 完成 2025-11-15]
+  - Phase 0-5 全部完成（Schema 元数据 / entity_resolver_helper / RAG 集成 / Service 清理 / LangGraph 提示统一 / 文档归档）
+  - 运行时修复：8 个问题全部修复（Vector DB Schema / LLM Prompt / Subscription Vector Service / Research Mode / WebSocket 统一 / LangGraph 兜底 / 订阅解析状态 / 文档更新）
+  - 核心改进：移除启发式判断，基于 schema.parameter_type 标记（entity_ref/literal/enum）
+  - 详细迁移计划：明确每个 Phase 的改造点和依赖关系
 - `workflow/done/251114-subscription-integration.md` - **订阅系统集成到主查询流程**（DataQueryService订阅预检、ChatService集成、Codex审查修复）[✅ 完成 2025-11-14]
   - Stage 1-4: LangGraph Prompt优化、DataQueryService核心改造、ChatService集成、测试覆盖（27个测试全部通过）
   - Codex修复：缓存API、DataExecutor API、集成测试

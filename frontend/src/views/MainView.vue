@@ -105,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles } from "lucide-vue-next";
 import PanelWorkspace from "@/features/panel/PanelWorkspace.vue";
@@ -118,6 +118,7 @@ import { usePanelActions } from "@/features/panel/usePanelActions";
 import { usePanelStore } from "@/store/panelStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
 import { persistResearchTaskQuery } from "@/features/research/utils/taskStorage";
+import { useResearchWebSocket } from "@/composables/useResearchWebSocket";
 import type { PanelSizePreset } from "@/shared/panelSizePresets";
 import type { QueryMode } from "@/features/research/types/researchTypes";
 
@@ -168,6 +169,44 @@ const handleReset = () => {
   reset();
 };
 
+// 管理多个研究任务的 WebSocket 连接
+const activeWebSocketConnections = ref<Map<string, ReturnType<typeof useResearchWebSocket>>>(new Map());
+
+function connectResearchWebSocket(taskId: string, query: string) {
+  // 如果已经存在连接，先断开
+  if (activeWebSocketConnections.value.has(taskId)) {
+    const existingConn = activeWebSocketConnections.value.get(taskId);
+    existingConn?.disconnect();
+    activeWebSocketConnections.value.delete(taskId);
+  }
+
+  // 创建新的 WebSocket 连接
+  const wsConnection = useResearchWebSocket({
+    taskId,
+    autoReconnect: true,
+  });
+
+  activeWebSocketConnections.value.set(taskId, wsConnection);
+
+  // 连接并发送查询
+  wsConnection.connect();
+
+  // 等待连接建立后发送查询（使用 watch 监听连接状态）
+  const unwatch = watch(
+    () => wsConnection.isConnected.value,
+    (connected) => {
+      if (connected) {
+        wsConnection.sendResearchRequest({
+          query,
+          use_cache: true,
+        });
+        unwatch(); // 只执行一次
+      }
+    },
+    { immediate: true }
+  );
+}
+
 const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) => {
   if (payload.mode === "research") {
     const taskId = researchStore.createTask(payload.query, payload.mode);
@@ -179,10 +218,22 @@ const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) 
     return;
   }
 
-  await submit(payload);
+  const result = await submit(payload);
+
+  // 如果后端要求流式研究，在主页面启动 WebSocket 连接
+  if (result.requiresStreaming && result.taskId) {
+    connectResearchWebSocket(result.taskId, payload.query);
+  }
 };
 
 const handleDeleteTask = (taskId: string) => {
+  // 断开 WebSocket 连接
+  const wsConnection = activeWebSocketConnections.value.get(taskId);
+  if (wsConnection) {
+    wsConnection.disconnect();
+    activeWebSocketConnections.value.delete(taskId);
+  }
+  // 删除任务
   researchStore.deleteTask(taskId);
 };
 
@@ -236,6 +287,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleShortcut);
+  // 断开所有 WebSocket 连接
+  activeWebSocketConnections.value.forEach((conn) => conn.disconnect());
+  activeWebSocketConnections.value.clear();
 });
 </script>
 

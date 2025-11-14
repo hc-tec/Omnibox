@@ -239,40 +239,62 @@ async def chat_stream(
     chat_service: Any = Depends(get_chat_service)
 ):
     """
-    WebSocket流式对话接口
+    统一 WebSocket 流式对话接口
 
-    按阶段推送处理进度和数据
+    支持两种模式：
+    1. 普通查询模式 (mode != "research"): 返回 stage/data/error/complete 消息
+    2. 研究模式 (mode == "research"): 返回 research_* 消息
 
     消息格式:
-    - 客户端发送: {"query": "...", "filter_datasource": null, "use_cache": true}
+    - 客户端发送:
+      {
+        "query": "...",
+        "filter_datasource": null,
+        "use_cache": true,
+        "mode": "auto" | "simple" | "research",
+        "task_id": "task-xxx" (可选，研究模式使用)
+      }
     - 服务端推送: 参见 api/schemas/stream_messages.py
 
     连接地址: ws://host:port/api/v1/chat/stream
+    查询参数: ?task_id=xxx (可选，研究模式使用)
 
-    Example:
+    Example (普通模式):
         ```python
-        import asyncio
-        import websockets
-        import json
-
         async def test():
             uri = "ws://localhost:8000/api/v1/chat/stream"
             async with websockets.connect(uri) as ws:
-                # 发送查询
                 await ws.send(json.dumps({"query": "虎扑步行街最新帖子"}))
-
-                # 接收流式消息
                 async for message in ws:
                     data = json.loads(message)
                     print(f"[{data['type']}] {data}")
                     if data['type'] == 'complete':
                         break
         ```
+
+    Example (研究模式):
+        ```python
+        async def test():
+            uri = "ws://localhost:8000/api/v1/chat/stream?task_id=task-123"
+            async with websockets.connect(uri) as ws:
+                await ws.send(json.dumps({
+                    "query": "分析up主行业101的视频",
+                    "mode": "research"
+                }))
+                async for message in ws:
+                    data = json.loads(message)
+                    print(f"[{data['type']}] {data}")
+                    if data['type'] == 'research_complete':
+                        break
+        ```
     """
     # 接受连接
     await websocket.accept()
+
+    # 从查询参数或后续请求中获取 task_id
+    initial_task_id = websocket.query_params.get("task_id")
     stream_id = generate_stream_id()
-    logger.info(f"[{stream_id}] WebSocket连接已建立")
+    logger.info(f"[{stream_id}] WebSocket连接已建立 (task_id={initial_task_id})")
 
     try:
         # 接收查询请求
@@ -281,40 +303,81 @@ async def chat_stream(
         filter_datasource = request_data.get("filter_datasource")
         use_cache = request_data.get("use_cache", True)
         layout_snapshot = request_data.get("layout_snapshot")
+        mode = request_data.get("mode", "auto")
+        task_id = request_data.get("task_id") or initial_task_id
 
-        logger.info(f"[{stream_id}] 收到查询: {user_query}")
+        logger.info(f"[{stream_id}] 收到查询: {user_query} (mode={mode}, task_id={task_id})")
 
         # 验证查询
         if not user_query or not user_query.strip():
-            error_msg = ErrorMessage(
-                stream_id=stream_id,
-                error_code="VALIDATION_ERROR",
-                error_message="查询不能为空",
-                stage=None,
-            )
-            await websocket.send_json(error_msg.model_dump())
+            if mode == "research":
+                error_msg = {
+                    "type": "research_error",
+                    "stream_id": stream_id,
+                    "task_id": task_id or f"task-{uuid.uuid4().hex[:16]}",
+                    "step_id": None,
+                    "error_code": "VALIDATION_ERROR",
+                    "error_message": "查询不能为空",
+                    "timestamp": "",
+                }
+            else:
+                error_msg = ErrorMessage(
+                    stream_id=stream_id,
+                    error_code="VALIDATION_ERROR",
+                    error_message="查询不能为空",
+                    stage=None,
+                ).model_dump()
+            await websocket.send_json(error_msg)
             await websocket.close()
             return
 
-        # 在线程池中执行同步的流式处理
-        # 注意：这里不能直接用run_in_threadpool，因为生成器需要逐个yield
-        # 需要在线程池中执行生成器，然后在主协程中发送
-
-        # 方案：使用run_in_threadpool包装一个同步函数，该函数调用生成器并收集所有消息
-        # 但这样就失去了流式效果。正确做法是在主协程中循环，每次在线程池中获取下一个消息
-
-        # 更简单的方案：直接使用asyncio.to_thread + 生成器
         import asyncio
 
-        # 创建生成器
-        message_generator = stream_chat_processing(
-            chat_service=chat_service,
-            user_query=user_query,
-            stream_id=stream_id,
-            filter_datasource=filter_datasource,
-            use_cache=use_cache,
-            layout_snapshot=layout_snapshot,
-        )
+        # 根据模式选择不同的生成器
+        if mode == "research":
+            # 研究模式：调用 ChatService 的流式研究方法
+            if not hasattr(chat_service, '_handle_complex_research_streaming'):
+                error_msg = {
+                    "type": "research_error",
+                    "stream_id": stream_id,
+                    "task_id": task_id or f"task-{uuid.uuid4().hex[:16]}",
+                    "step_id": None,
+                    "error_code": "NOT_SUPPORTED",
+                    "error_message": "ChatService 不支持流式研究（缺少 _handle_complex_research_streaming 方法）",
+                    "timestamp": "",
+                }
+                await websocket.send_json(error_msg)
+                await websocket.close()
+                return
+
+            # 确保有 task_id
+            if not task_id:
+                task_id = f"task-{uuid.uuid4().hex[:16]}"
+
+            logger.info(f"[{stream_id}] 启动研究模式 (task_id={task_id})")
+
+            # 创建研究模式生成器
+            message_generator = chat_service._handle_complex_research_streaming(
+                task_id=task_id,
+                user_query=user_query,
+                filter_datasource=filter_datasource,
+                use_cache=use_cache,
+                intent_confidence=0.95,  # 研究模式固定高置信度
+                layout_snapshot=layout_snapshot,
+            )
+        else:
+            # 普通模式：使用原有的流式处理
+            logger.info(f"[{stream_id}] 启动普通查询模式")
+
+            # 创建普通模式生成器
+            message_generator = stream_chat_processing(
+                chat_service=chat_service,
+                user_query=user_query,
+                stream_id=stream_id,
+                filter_datasource=filter_datasource,
+                use_cache=use_cache,
+                layout_snapshot=layout_snapshot,
+            )
 
         # 在线程池中逐个获取消息
         while True:

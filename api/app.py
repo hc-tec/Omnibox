@@ -15,7 +15,6 @@ from api.controllers.chat_controller import (
     shutdown_services,
 )
 from api.controllers.chat_stream import router as chat_stream_router
-from api.controllers.research_stream import router as research_stream_router
 from api.controllers.research_controller import router as research_router
 from api.controllers.subscription_controller import router as subscription_router
 from api.middleware.exception_handlers import (
@@ -76,8 +75,7 @@ def create_app() -> FastAPI:
 
     # ========== 注册路由 ==========
     app.include_router(chat_router)
-    app.include_router(chat_stream_router)  # WebSocket流式接口
-    app.include_router(research_stream_router)  # WebSocket研究流式接口
+    app.include_router(chat_stream_router)  # 统一的 WebSocket 流式接口（支持普通查询和研究模式）
     app.include_router(research_router)
     app.include_router(subscription_router)  # 订阅管理接口
 

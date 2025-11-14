@@ -30,6 +30,26 @@ from services.panel.llm_component_planner import LLMComponentPlanner
 from services.panel.adapters import get_route_manifest
 from query_processor.llm_client import create_llm_client
 
+# 导入拆分的工具函数
+from services.chat.utils import (
+    merge_planner_engines,
+    clone_llm_logs,
+    compose_debug_payload,
+    guess_datasource,
+    format_source_hint,
+    format_retrieved_tools,
+    resolve_tool_route,
+)
+from services.chat.dataset_utils import (
+    dataset_from_result,
+    dataset_records,
+    infer_dataset_item_count,
+    build_dataset_preview,
+    summarize_datasets,
+    format_success_message,
+    build_analysis_prompt,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -196,10 +216,35 @@ class ChatService:
 
         try:
             llm_logs: List[Dict[str, Any]] = []
-            # 阶段0：如果显式指定 LangGraph 研究模式
-            if mode == "langgraph":
+
+            # ==================== 统一的复杂研究检测 ====================
+            # 无论是 mode="research" 还是 LLM 判断为 complex_research
+            # 都应该返回统一的"需要流式接口"响应
+
+            is_research_mode = False
+            research_reasoning = ""
+            research_confidence = 1.0
+
+            # 情况1：用户显式选择研究模式
+            if mode == "research":
+                is_research_mode = True
+                research_reasoning = "用户显式选择研究模式"
+                research_confidence = 1.0
+                logger.info("用户显式选择研究模式")
+
+            # 情况2：LangGraph 模式（特殊的研究模式）
+            elif mode == "langgraph":
                 if not self.research_service:
                     logger.warning("LangGraph 模式被请求但 ResearchService 未初始化，回退到简单查询")
+                    return self._handle_simple_query(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        use_cache=use_cache,
+                        intent_confidence=0.5,
+                        layout_snapshot=layout_snapshot,
+                        llm_logs=llm_logs,
+                        user_id=user_id,
+                    )
                 else:
                     return self._handle_langgraph_research(
                         user_query=user_query,
@@ -208,8 +253,8 @@ class ChatService:
                         client_task_id=client_task_id,
                     )
 
-            # 阶段0.5：如果显式指定简单查询或复杂研究
-            if mode == "simple":
+            # 情况3：显式指定简单查询
+            elif mode == "simple":
                 return self._handle_simple_query(
                     user_query=user_query,
                     filter_datasource=filter_datasource,
@@ -220,22 +265,12 @@ class ChatService:
                     user_id=user_id,
                 )
 
-            if mode == "research":
-                # ⚠️ 重要：用户显式选择研究模式，但同步接口不适合流式展示
-                # 返回特殊响应引导前端使用 WebSocket 流式接口
-                logger.info("用户显式选择研究模式，建议前端使用流式研究接口")
-
-                return ChatResponse(
-                    success=True,
-                    intent_type="complex_research",
-                    message="已切换到研究模式，正在准备研究流程...",
-                    metadata={
-                        "intent_confidence": 1.0,
-                        "reasoning": "用户显式选择研究模式",
-                        "requires_streaming": True,  # ← 关键：告诉前端需要流式接口
-                        "websocket_endpoint": "/api/v1/chat/research-stream",  # 流式接口地址
-                        "mode": "research",
-                    }
+            # 如果已经确定是研究模式，直接返回流式提示
+            if is_research_mode:
+                return self._create_streaming_required_response(
+                    reasoning=research_reasoning,
+                    confidence=research_confidence,
+                    llm_logs=llm_logs,
                 )
 
             # 阶段1：LLM 意图分类（三层架构第一层）
@@ -282,21 +317,13 @@ class ChatService:
                 )
 
             elif intent_result.intent == "complex_research":
-                # ⚠️ 重要：复杂研究需要使用流式接口
-                # 同步接口不适合展示研究进度，返回特殊响应引导前端切换
-                logger.info("检测到复杂研究意图，建议前端使用流式研究接口")
+                # ⚠️ 重要：LLM 识别为复杂研究，需要使用流式接口
+                logger.info("LLM 识别为复杂研究意图，引导前端使用流式接口")
 
-                return ChatResponse(
-                    success=True,
-                    intent_type="complex_research",
-                    message="这是一个复杂研究任务，建议使用研究模式获得更好的体验。",
-                    metadata={
-                        "intent_confidence": intent_result.confidence,
-                        "reasoning": intent_result.reasoning,
-                        "requires_streaming": True,  # ← 关键：告诉前端需要流式接口
-                        "websocket_endpoint": "/api/v1/chat/research-stream",  # 流式接口地址
-                        "debug": self._compose_debug_payload(None, llm_logs, None),
-                    }
+                return self._create_streaming_required_response(
+                    reasoning=intent_result.reasoning,
+                    confidence=intent_result.confidence,
+                    llm_logs=llm_logs,
                 )
 
             else:
@@ -341,7 +368,7 @@ class ChatService:
             prefer_single_route=self._should_force_single_route(filter_datasource),
             user_id=user_id,  # Phase 2: 传递 user_id
         )
-        llm_debug = self._clone_llm_logs(llm_logs)
+        llm_debug = clone_llm_logs(llm_logs)
 
         if query_result.status == "success":
             datasets = query_result.datasets or []
@@ -353,13 +380,13 @@ class ChatService:
                 layout_snapshot=layout_snapshot,
             )
 
-            message = self._format_success_message(
+            message = format_success_message(
                 datasets=datasets,
                 fallback_feed=query_result.feed_title,
                 fallback_source=query_result.source,
             )
 
-            debug_info = self._compose_debug_payload(
+            debug_info = compose_debug_payload(
                 panel_result.debug,
                 llm_debug,
                 query_result.rag_trace or None,
@@ -376,8 +403,8 @@ class ChatService:
                 "planner_reasons": panel_result.debug.get("planner_reasons"),
                 "planner_engine": panel_result.debug.get("planner_engine"),
                 "debug": debug_info,
-                "datasets": self._summarize_datasets(datasets, query_result),
-                "retrieved_tools": self._format_retrieved_tools(query_result.retrieved_tools),
+                "datasets": summarize_datasets(datasets, query_result),
+                "retrieved_tools": format_retrieved_tools(query_result.retrieved_tools),
             }
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
@@ -415,10 +442,10 @@ class ChatService:
                 metadata=metadata,
             )
 
-        formatted_tools = self._format_retrieved_tools(query_result.retrieved_tools)
+        formatted_tools = format_retrieved_tools(query_result.retrieved_tools)
 
         if query_result.status == "needs_clarification":
-            debug_payload = self._compose_debug_payload(
+            debug_payload = compose_debug_payload(
                 None,
                 llm_debug,
                 query_result.rag_trace or None,
@@ -437,7 +464,7 @@ class ChatService:
             )
 
         if query_result.status == "not_found":
-            debug_payload = self._compose_debug_payload(
+            debug_payload = compose_debug_payload(
                 None,
                 llm_debug,
                 query_result.rag_trace or None,
@@ -455,7 +482,7 @@ class ChatService:
                 },
             )
 
-        debug_payload = self._compose_debug_payload(None, llm_debug, query_result.rag_trace or None)
+        debug_payload = compose_debug_payload(None, llm_debug, query_result.rag_trace or None)
         return ChatResponse(
             success=False,
             intent_type="data_query",
@@ -468,6 +495,43 @@ class ChatService:
                 "retrieved_tools": formatted_tools,
                 "debug": debug_payload,
             },
+        )
+
+    def _create_streaming_required_response(
+        self,
+        reasoning: str,
+        confidence: float,
+        llm_logs: Optional[List[Dict[str, Any]]] = None,
+    ) -> ChatResponse:
+        """
+        创建"需要流式接口"的统一响应
+
+        ⚠️ 核心原则：复杂研究的唯一真理 = WebSocket 流式接口
+        无论是 mode="research" 还是 LLM 识别为 complex_research，
+        都应该通过这个方法返回统一的响应。
+
+        Args:
+            reasoning: 判断为复杂研究的理由
+            confidence: 置信度
+            llm_logs: LLM 调用日志
+
+        Returns:
+            ChatResponse 对象，包含 requires_streaming=True 标记
+        """
+        logger.info("返回流式研究提示: %s (置信度 %.2f)", reasoning, confidence)
+
+        return ChatResponse(
+            success=True,
+            intent_type="complex_research",
+            message="这是一个复杂研究任务，正在为您准备深度研究流程...",
+            metadata={
+                "intent_confidence": confidence,
+                "reasoning": reasoning,
+                "requires_streaming": True,  # ← 核心标记
+                "websocket_endpoint": "/api/v1/chat/stream",
+                "suggested_action": "使用 WebSocket 连接获取流式研究进度",
+                "debug": compose_debug_payload(None, llm_logs, None),
+            }
         )
 
     def _handle_chitchat(
@@ -493,7 +557,7 @@ class ChatService:
         user_query_lower = user_query.lower().strip()
         for keyword, response in chitchat_responses.items():
             if keyword.lower() in user_query_lower:
-                debug_payload = self._compose_debug_payload(
+                debug_payload = compose_debug_payload(
                     None,
                     self._clone_llm_logs(llm_logs),
                     None,
@@ -508,7 +572,7 @@ class ChatService:
                     metadata=metadata,
                 )
 
-        debug_payload = self._compose_debug_payload(
+        debug_payload = compose_debug_payload(
             None,
             self._clone_llm_logs(llm_logs),
             None,
@@ -523,273 +587,6 @@ class ChatService:
             message='我是RSS数据聚合助手。您可以问我关于各种平台数据的问题，比如"虎扑步行街最新帖子"、"B站热门视频"等。',
             metadata=metadata,
         )
-
-    def _handle_complex_research(
-        self,
-        user_query: str,
-        filter_datasource: Optional[str],
-        use_cache: bool,
-        intent_confidence: float,
-        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
-        llm_logs: Optional[List[Dict[str, Any]]] = None,
-        user_id: Optional[int] = None,  # Phase 2: 用户 ID
-    ) -> ChatResponse:
-        """
-        处理复杂研究意图（LLM 查询规划 + 并行执行）。
-
-        流程：
-        1. 使用 LLMQueryPlanner 分解查询为多个子查询
-        2. 使用 ParallelQueryExecutor 并行执行所有子查询
-        3. 聚合结果并生成面板
-
-        Args:
-            user_query: 用户查询
-            filter_datasource: 过滤数据源（可选）
-            use_cache: 是否使用缓存
-            intent_confidence: 意图置信度
-            layout_snapshot: 布局快照（可选）
-            user_id: 用户 ID（Phase 2，游客模式可为 None）
-
-        Returns:
-            ChatResponse 对象
-        """
-        logger.info("处理复杂研究意图: %s (user_id=%s)", user_query, user_id)
-        llm_debug = self._clone_llm_logs(llm_logs)
-
-        try:
-            # 第一步：LLM 查询规划（三层架构第二层）
-            query_plan: QueryPlan = self.query_planner.plan(user_query)
-            if query_plan.debug:
-                llm_debug.append(dict(query_plan.debug))
-
-            if not query_plan.sub_queries:
-                logger.warning("查询规划未生成子查询，回退到简单查询")
-                return self._handle_simple_query(
-                    user_query=user_query,
-                    filter_datasource=filter_datasource,
-                    use_cache=use_cache,
-                    intent_confidence=intent_confidence,
-                    layout_snapshot=layout_snapshot,
-                    llm_logs=llm_debug,
-                )
-
-            logger.info(
-                "查询规划完成: %d 个子查询 - %s",
-                len(query_plan.sub_queries),
-                query_plan.reasoning,
-            )
-
-            data_sub_queries = [sq for sq in query_plan.sub_queries if sq.task_type == "data_fetch"]
-            if not data_sub_queries:
-                logger.warning("查询规划未包含 data_fetch 子查询，回退到简单查询")
-                return self._handle_simple_query(
-                    user_query=user_query,
-                    filter_datasource=filter_datasource,
-                    use_cache=use_cache,
-                    intent_confidence=intent_confidence,
-                    layout_snapshot=layout_snapshot,
-                    llm_logs=llm_debug,
-                )
-            analysis_sub_queries = [
-                sq for sq in query_plan.sub_queries if sq.task_type in {"analysis", "report"}
-            ]
-
-            # 第二步：并行执行数据子查询（三层架构第三层）
-            sub_query_results: List[SubQueryResult] = self.parallel_executor.execute_parallel(
-                sub_queries=data_sub_queries,
-                use_cache=use_cache,
-                prefer_single_route=True,
-                user_id=user_id,  # Phase 2: 传递 user_id
-            )
-
-            # 第三步：聚合结果
-            success_results = [
-                result for result in sub_query_results
-                if result.result and result.result.status == "success"
-            ]
-
-            if not success_results:
-                # 所有子查询都失败
-                error_messages = [
-                    f"- {result.sub_query.query}: {result.error}"
-                    for result in sub_query_results
-                    if result.error
-                ]
-                return ChatResponse(
-                    success=False,
-                    intent_type="complex_research",
-                    message=f"复杂研究失败，所有子查询均未成功：\n" + "\n".join(error_messages),
-                    metadata={
-                        "query_plan": query_plan.reasoning,
-                        "sub_query_count": len(query_plan.sub_queries),
-                        "success_count": 0,
-                        "intent_confidence": intent_confidence,
-                        "debug": self._compose_debug_payload(
-                            None,
-                            llm_debug,
-                            None,
-                        ),
-                    },
-                )
-
-            # 第四步：构建聚合数据集
-            aggregated_datasets: List[QueryDataset] = []
-            for result in success_results:
-                query_result = result.result
-                datasets = query_result.datasets or []
-                if datasets:
-                    aggregated_datasets.extend(datasets)
-                else:
-                    # 如果没有 datasets，从 result 构造一个
-                    aggregated_datasets.append(self._dataset_from_result(query_result))
-
-            # 第五步：生成面板（复用 _build_panel 逻辑）
-            # 使用第一个成功的 query_result 作为主结果
-            primary_result = success_results[0].result
-            panel_result = self._build_panel(
-                query_result=primary_result,
-                datasets=aggregated_datasets,
-                intent_confidence=intent_confidence,
-                user_query=user_query,
-                layout_snapshot=layout_snapshot,
-            )
-
-            # 第五步：执行分析子查询（LLM 总结）
-            analysis_summaries = self._run_analysis_sub_queries(
-                analysis_sub_queries,
-                aggregated_datasets,
-            )
-
-            # 第六步：构造响应消息
-            message_parts = []
-            for result in success_results:
-                query_result = result.result
-                feed = query_result.feed_title or "数据"
-                message_parts.append(f"{feed}（{len(query_result.items or [])} 条）")
-
-            message = f"已完成复杂研究，获取 {len(success_results)} 组数据：" + "；".join(message_parts)
-            if analysis_summaries:
-                message += "\n分析总结：" + "；".join(item["summary"] for item in analysis_summaries)
-
-            # 第七步：构造元数据
-            rag_traces = [
-                result.result.rag_trace
-                for result in success_results
-                if result.result and result.result.rag_trace
-            ]
-            if len(rag_traces) == 1:
-                rag_debug = rag_traces[0]
-            elif rag_traces:
-                rag_debug = rag_traces
-            else:
-                rag_debug = None
-
-            debug_info = self._compose_debug_payload(
-                panel_result.debug,
-                llm_debug,
-                rag_debug,
-            )
-
-            metadata: Dict[str, Any] = {
-                "generated_path": primary_result.generated_path,
-                "source": primary_result.source,
-                "cache_hit": primary_result.cache_hit,
-                "intent_confidence": intent_confidence,
-                "feed_title": primary_result.feed_title,
-                "component_confidence": panel_result.component_confidence,
-                "requested_components": panel_result.debug.get("requested_components"),
-                "planner_reasons": panel_result.debug.get("planner_reasons"),
-                "planner_engine": panel_result.debug.get("planner_engine"),
-                "debug": debug_info,
-                "datasets": self._summarize_datasets(aggregated_datasets, primary_result),
-                "retrieved_tools": self._format_retrieved_tools(primary_result.retrieved_tools),
-                # 复杂研究特有元数据
-                "research_type": "complex_research",
-                "query_plan": {
-                    "reasoning": query_plan.reasoning,
-                    "sub_query_count": len(query_plan.sub_queries),
-                    "success_count": len(success_results),
-                    "failure_count": len(sub_query_results) - len(success_results),
-                    "estimated_time": query_plan.estimated_time,
-                },
-                "sub_queries": [
-                    {
-                        "query": result.sub_query.query,
-                        "datasource": result.sub_query.datasource,
-                        "status": "success" if result.result else "failed",
-                        "error": result.error,
-                        "execution_time": result.execution_time,
-                        "item_count": len(result.result.items) if result.result else 0,
-                        "task_type": result.sub_query.task_type,
-                    }
-                    for result in sub_query_results
-                ],
-            }
-            if analysis_summaries:
-                metadata["analysis"] = analysis_summaries
-                metadata["sub_queries"].extend(
-                    [
-                        {
-                            "query": entry["query"],
-                            "datasource": "analysis",
-                            "status": "analysis",
-                            "error": None,
-                            "execution_time": entry.get("execution_time"),
-                            "item_count": entry.get("item_count"),
-                            "analysis_summary": entry["summary"],
-                            "task_type": entry.get("task_type", "analysis"),
-                        }
-                        for entry in analysis_summaries
-                    ]
-                )
-
-            # 提取警告信息
-            blocks_debug = debug_info.get("blocks", [])
-            warnings = []
-            for block in blocks_debug:
-                if block.get("using_default_adapter"):
-                    warnings.append({
-                        "type": "missing_adapter",
-                        "message": block.get("adapter_warning", "No adapter registered"),
-                        "block_id": block.get("data_block_id"),
-                    })
-                if block.get("using_fallback"):
-                    warnings.append({
-                        "type": "fallback_rendering",
-                        "message": block.get("fallback_reason", "Using fallback component"),
-                        "block_id": block.get("data_block_id"),
-                    })
-                if block.get("skipped"):
-                    warnings.append({
-                        "type": "component_skipped",
-                        "message": block.get("skip_reason", "Component generation skipped"),
-                        "block_id": block.get("data_block_id"),
-                    })
-
-            if warnings:
-                metadata["warnings"] = warnings
-
-            return ChatResponse(
-                success=True,
-                intent_type="complex_research",
-                message=message,
-                data=panel_result.payload,
-                data_blocks=panel_result.data_blocks,
-                metadata=metadata,
-            )
-
-        except Exception as exc:
-            logger.error("复杂研究处理失败: %s", exc, exc_info=True)
-            return ChatResponse(
-                success=False,
-                intent_type="complex_research",
-                message=f"复杂研究失败：{exc}",
-                metadata={
-                    "error": str(exc),
-                    "intent_confidence": intent_confidence,
-                    "debug": self._compose_debug_payload(None, llm_debug, None),
-                },
-            )
 
     def _handle_complex_research_streaming(
         self,
@@ -966,12 +763,12 @@ class ChatService:
                         if datasets:
                             aggregated_datasets.extend(datasets)
                         else:
-                            aggregated_datasets.append(self._dataset_from_result(query_result))
+                            aggregated_datasets.append(dataset_from_result(query_result))
 
                         # 生成面板
                         panel_result = self._build_panel(
                             query_result=query_result,
-                            datasets=datasets or [self._dataset_from_result(query_result)],
+                            datasets=datasets or [dataset_from_result(query_result)],
                             intent_confidence=intent_confidence,
                             user_query=sub_query.query,
                             layout_snapshot=layout_snapshot,
@@ -1067,7 +864,7 @@ class ChatService:
 
             # ========== 第三步：执行分析子查询 ==========
             if analysis_sub_queries and aggregated_datasets and self._llm_client:
-                dataset_summary, total_items = self._build_dataset_preview(aggregated_datasets)
+                dataset_summary, total_items = build_dataset_preview(aggregated_datasets)
 
                 if dataset_summary and total_items > 0:
                     for idx, sub_query in enumerate(analysis_sub_queries):
@@ -1086,7 +883,7 @@ class ChatService:
                         }
 
                         try:
-                            prompt = self._build_analysis_prompt(sub_query.query, dataset_summary)
+                            prompt = build_analysis_prompt(sub_query.query, dataset_summary)
                             response = self._llm_client.chat(
                                 messages=[
                                     {"role": "system", "content": "你是一名资深的数据分析师，擅长归纳总结。"},
@@ -1193,14 +990,14 @@ class ChatService:
     ) -> PanelGenerationResult:
         """将数据查询结果（可含多数据集）转换为 PanelPayload。"""
         # datasets 为空列表或 None 时，使用 query_result 构造单个数据集
-        normalized = datasets or [self._dataset_from_result(query_result)]
+        normalized = datasets or [dataset_from_result(query_result)]
         block_inputs: List[PanelBlockInput] = []
         planner_reasons_acc: List[str] = []
         planner_engines: List[str] = []
 
         for index, dataset in enumerate(normalized, start=1):
             source_info = SourceInfo(
-                datasource=self._guess_datasource(dataset.generated_path),
+                datasource=guess_datasource(dataset.generated_path),
                 route=dataset.generated_path or "",
                 params={},
                 fetched_at=None,
@@ -1211,14 +1008,14 @@ class ChatService:
                 source_info.route,
                 user_query=user_query,
                 layout_snapshot=layout_snapshot,
-                item_count=self._infer_dataset_item_count(dataset),
+                item_count=infer_dataset_item_count(dataset),
             )
             planner_engines.append(planner_engine)
             planner_reasons_acc.extend([f"[dataset-{index}] {reason}" for reason in planner_reasons])
 
             block_input = PanelBlockInput(
                 block_id=f"data_block_{uuid4().hex[:8]}",
-                records=self._dataset_records(dataset),
+                records=dataset_records(dataset),
                 source_info=source_info,
                 title=dataset.feed_title,
                 stats={"intent_confidence": intent_confidence, "dataset_index": index},
@@ -1232,7 +1029,7 @@ class ChatService:
             history_token=None,
         )
         result.debug.setdefault("planner_reasons", planner_reasons_acc)
-        result.debug.setdefault("planner_engine", self._merge_planner_engines(planner_engines))
+        result.debug.setdefault("planner_engine", merge_planner_engines(planner_engines))
         result.debug.setdefault(
             "requested_components",
             [block_input.requested_components for block_input in block_inputs],
@@ -1291,44 +1088,6 @@ class ChatService:
 
         return planned_components, planner_reasons, planner_engine
 
-    @staticmethod
-    def _dataset_from_result(query_result: DataQueryResult) -> QueryDataset:
-        return QueryDataset(
-            route_id=None,
-            provider=None,
-            name=query_result.feed_title,
-            generated_path=query_result.generated_path,
-            items=query_result.items,
-            feed_title=query_result.feed_title,
-            source=query_result.source,
-            cache_hit=query_result.cache_hit,
-            reasoning=query_result.reasoning,
-            payload=query_result.payload,
-        )
-
-    @staticmethod
-    def _dataset_records(dataset: QueryDataset) -> List[Dict[str, Any]]:
-        if dataset.payload and isinstance(dataset.payload, dict):
-            return [dataset.payload]
-        return dataset.items or []
-
-    @staticmethod
-    def _infer_dataset_item_count(dataset: QueryDataset) -> int:
-        records = ChatService._dataset_records(dataset)
-        return len(records)
-
-    @staticmethod
-    def _merge_planner_engines(engines: List[str]) -> str:
-        if not engines:
-            return "rule"
-        if len(set(engines)) == 1:
-            return engines[0]
-        if "llm" in engines:
-            return "llm"
-        if "error" in engines and "rule" in engines:
-            return "mixed"
-        return engines[0]
-
     def _should_force_single_route(self, filter_datasource: Optional[str]) -> bool:
         if filter_datasource:
             return True
@@ -1352,13 +1111,13 @@ class ChatService:
         if not analysis_sub_queries or not datasets or not self._llm_client:
             return []
 
-        dataset_summary, total_items = self._build_dataset_preview(datasets)
+        dataset_summary, total_items = build_dataset_preview(datasets)
         if not dataset_summary or total_items == 0:
             return []
 
         summaries: List[Dict[str, Any]] = []
         for sub_query in analysis_sub_queries:
-            prompt = self._build_analysis_prompt(sub_query.query, dataset_summary)
+            prompt = build_analysis_prompt(sub_query.query, dataset_summary)
             try:
                 response = self._llm_client.chat(
                     messages=[
@@ -1386,182 +1145,6 @@ class ChatService:
                     "task_type": sub_query.task_type or "analysis",
                 })
         return summaries
-
-    @staticmethod
-    def _build_analysis_prompt(analysis_query: str, dataset_summary: str) -> str:
-        return (
-            f"用户需要回答的问题是：{analysis_query}\n"
-            "以下是最近抓取到的数据，请基于这些数据总结内容趋势、主题或方向。"
-            "务必引用数据中的具体现象，输出要点式总结。\n"
-            f"{dataset_summary}\n"
-            "请给出不超过4条的分析结论。"
-        )
-
-    def _build_dataset_preview(self, datasets: List[QueryDataset], max_items: int = 20) -> Tuple[str, int]:
-        """
-        构建数据集预览文本，在多个数据集间均匀分配采样数量。
-
-        Args:
-            datasets: 数据集列表
-            max_items: 最大采样数量
-
-        Returns:
-            (预览文本, 实际采样数量)
-        """
-        if not datasets:
-            return "", 0
-
-        lines: List[str] = []
-        count = 0
-
-        # 计算每个数据集的采样数量（均匀分配）
-        items_per_dataset = max(1, max_items // len(datasets))
-
-        for dataset in datasets:
-            header = dataset.feed_title or dataset.generated_path or "数据集"
-            lines.append(f"[{header}]")
-            records = self._dataset_records(dataset)
-
-            # 限制当前数据集的采样数量
-            dataset_count = 0
-            for record in records:
-                if count >= max_items:
-                    break
-                if dataset_count >= items_per_dataset:
-                    break
-
-                title = record.get("title") or record.get("name") or record.get("keyword") or "未命名"
-                desc = record.get("description") or record.get("summary") or ""
-                lines.append(f"- {title}: {desc[:120]}")
-                count += 1
-                dataset_count += 1
-
-        return "\n".join(lines), count
-
-    @staticmethod
-    def _clone_llm_logs(llm_logs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-        if not llm_logs:
-            return []
-        return [dict(entry) for entry in llm_logs]
-
-    @staticmethod
-    def _compose_debug_payload(
-        panel_debug: Optional[Dict[str, Any]] = None,
-        llm_logs: Optional[List[Dict[str, Any]]] = None,
-        rag_trace: Optional[Any] = None,
-    ) -> Dict[str, Any]:
-        debug_info: Dict[str, Any] = {}
-        if panel_debug:
-            debug_info.update(panel_debug)
-        if llm_logs:
-            debug_info.setdefault("llm_calls", []).extend([
-                dict(entry) for entry in llm_logs
-            ])
-        if rag_trace:
-            debug_info["rag"] = rag_trace
-        return debug_info
-
-    @staticmethod
-    def _guess_datasource(generated_path: Optional[str]) -> str:
-        """通过生成的路径推测数据源标识。"""
-        if not generated_path:
-            return "unknown"
-        stripped = generated_path.strip("/")
-        if not stripped:
-            return "unknown"
-        return stripped.split("/")[0]
-
-    def _format_success_message(
-        self,
-        datasets: List[QueryDataset],
-        fallback_feed: Optional[str],
-        fallback_source: Optional[str],
-    ) -> str:
-        if not datasets:
-            if fallback_feed:
-                return f"已获取 {fallback_feed} 的数据卡片"
-            return "已获取数据卡片"
-
-        if len(datasets) == 1:
-            dataset = datasets[0]
-            feed = dataset.feed_title or dataset.name or fallback_feed or "数据"
-            source_hint = self._format_source_hint(dataset.source or fallback_source)
-            return f"已获取 {feed}（{len(dataset.items or [])} 条{source_hint}）"
-
-        parts = []
-        for dataset in datasets:
-            feed = dataset.feed_title or dataset.name or "数据"
-            source_hint = self._format_source_hint(dataset.source)
-            parts.append(f"{feed}（{len(dataset.items or [])} 条{source_hint}）")
-        return f"已获取 {len(datasets)} 组数据：" + "；".join(parts)
-
-    @staticmethod
-    def _format_source_hint(source: Optional[str]) -> str:
-        if source == "local":
-            return "本地"
-        if source == "fallback":
-            return "公共"
-        return "远程"
-
-    def _summarize_datasets(self, datasets: List[QueryDataset], query_result: DataQueryResult) -> List[Dict[str, Any]]:
-        summary: List[Dict[str, Any]] = []
-        records = datasets or [self._dataset_from_result(query_result)]
-        for dataset in records:
-            summary.append(
-                {
-                    "route": dataset.generated_path,
-                    "feed_title": dataset.feed_title,
-                    "source": dataset.source,
-                    "item_count": len(dataset.items or []),
-                }
-            )
-        return summary
-
-    @staticmethod
-    def _format_retrieved_tools(retrieved_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        格式化 RAG 检索到的候选工具列表，用于前端展示。
-
-        Args:
-            retrieved_tools: RAG 检索返回的工具列表
-
-        Returns:
-            格式化后的工具列表，包含关键信息
-        """
-        if not retrieved_tools:
-            return []
-
-        formatted = []
-        for tool in retrieved_tools:
-            formatted.append({
-                "route_id": tool.get("route_id"),
-                "name": tool.get("name"),
-                "provider": tool.get("datasource") or tool.get("provider_id"),
-                "description": (tool.get("description") or "")[:120],
-                "score": tool.get("score"),
-                "route": ChatService._resolve_tool_route(tool),
-                "example_path": tool.get("example_path"),
-            })
-        return formatted
-
-    @staticmethod
-    def _resolve_tool_route(tool: Dict[str, Any]) -> Optional[str]:
-        if tool.get("route"):
-            return tool["route"]
-
-        path_template = tool.get("path_template")
-        if isinstance(path_template, list) and path_template:
-            return path_template[0]
-        if isinstance(path_template, str):
-            return path_template
-
-        if tool.get("generated_path"):
-            return tool.get("generated_path")
-
-        if tool.get("example_path"):
-            return tool.get("example_path")
-
-        return None
 
     def _handle_langgraph_research(
         self,

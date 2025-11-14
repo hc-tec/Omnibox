@@ -178,7 +178,7 @@ class RAGInAction:
                             # 即使 LLM 说需要澄清，也尝试订阅解析
                             # 因为 LLM 可能提取到了人类友好名称（如"行业101"），只是不确定是否是有效ID
                             if original_params:
-                                validated_params = validate_and_resolve_params(
+                                validated_params, resolution_status = validate_and_resolve_params(
                                     params=original_params,
                                     tool_schema=selected_route_def,  # 完整的 schema
                                     user_query=user_query,
@@ -190,18 +190,32 @@ class RAGInAction:
 
                                 if verbose:
                                     logger.debug(f"参数验证完成: {validated_params}")
+                                    logger.debug(f"解析状态: {resolution_status}")
 
                                 # ⭐ 关键修复：如果订阅解析成功，将状态改为 success
+                                # 不再检查键是否存在，而是检查解析是否真正成功
                                 if parse_result["status"] == "needs_clarification":
-                                    # 检查是否所有必需参数都已解析
+                                    # 检查是否所有必需参数都已成功解析
                                     required_params = selected_route_def.get("required_identifiers", [])
-                                    if all(param in validated_params for param in required_params):
+                                    all_resolved = all(
+                                        resolution_status.get(param, False)
+                                        for param in required_params
+                                    )
+                                    if all_resolved and required_params:
                                         logger.info(
                                             f"✅ 订阅解析成功，将状态从 needs_clarification 改为 success"
                                         )
                                         parse_result["status"] = "success"
                                         parse_result["clarification_question"] = None
                                         parse_result["reasoning"] = "通过订阅系统成功解析实体标识符"
+                                    else:
+                                        failed_params = [
+                                            param for param in required_params
+                                            if not resolution_status.get(param, False)
+                                        ]
+                                        logger.warning(
+                                            f"⚠️ 部分参数解析失败，保持 needs_clarification 状态: {failed_params}"
+                                        )
 
                         except Exception as e:
                             logger.warning(

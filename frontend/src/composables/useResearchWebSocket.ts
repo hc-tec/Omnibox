@@ -38,7 +38,7 @@ const {
 
 const viewStore = useResearchViewStore();
 const researchTaskStore = useResearchStore();
-const envWsBase = import.meta.env.VITE_RESEARCH_WS_BASE as string | undefined;
+const envWsBase = import.meta.env.VITE_WS_BASE as string | undefined;
 
 const ws = ref<WebSocket | null>(null);
   const isConnecting = ref(false);
@@ -46,8 +46,9 @@ const ws = ref<WebSocket | null>(null);
   const error = ref<string | null>(null);
   const reconnectAttempts = ref(0);
   const currentTaskId = ref(taskId);
+// 统一使用 /api/v1/chat/stream 端点
 const wsBaseUrl = ref(
-  resolveWsBase(url ?? envWsBase, "/api/v1/chat/research-stream", API_BASE)
+  resolveWsBase(url ?? envWsBase, "/api/v1/chat/stream", API_BASE)
 );
   let reconnectTimer: number | null = null;
 
@@ -124,6 +125,7 @@ const wsBaseUrl = ref(
 
     const message = {
       ...payload,
+      mode: "research",  // 添加 mode 参数，让后端识别为研究模式
       task_id: currentTaskId.value,
     };
 

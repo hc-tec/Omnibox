@@ -12,6 +12,12 @@ interface SubmitPayload {
   client_task_id?: string | null;
 }
 
+export interface SubmitResult {
+  response: PanelResponse;
+  requiresStreaming: boolean;
+  taskId?: string;
+}
+
 export function usePanelActions(initialQuery = "我想看看bilibili热点") {
   const panelStore = usePanelStore();
   const { state, hasPanel } = storeToRefs(panelStore);
@@ -22,7 +28,7 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
 
   const isBusy = computed(() => state.value.loading || state.value.streamLoading);
 
-  const submit = async (payload: SubmitPayload): Promise<PanelResponse> => {
+  const submit = async (payload: SubmitPayload): Promise<SubmitResult> => {
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
     const response = await panelStore.fetchPanel(
@@ -32,8 +38,29 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
       payload.mode,
       payload.client_task_id ?? null
     );
-    maybeSuggestResearchTask(response, payload);
-    return response;
+
+    // 检查是否需要启动流式研究
+    const requiresStreaming = response.metadata?.requires_streaming === true;
+    let taskId: string | undefined;
+
+    if (requiresStreaming) {
+      // 创建研究任务（processing 状态），不跳转
+      taskId = researchStore.createTask(query.value, "research", undefined, {
+        status: "processing",
+        metadata: response.metadata,
+        autoDetected: true,
+      });
+      persistResearchTaskQuery(taskId, query.value);
+    } else {
+      // 使用原有的建议逻辑（创建 idle 任务卡片）
+      maybeSuggestResearchTask(response, payload);
+    }
+
+    return {
+      response,
+      requiresStreaming,
+      taskId,
+    };
   };
 
   const startStream = (payload: { query: string; datasource?: string | null; mode?: string }) => {
@@ -55,8 +82,9 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
    *
    * 业务逻辑：
    * 1. 当用户使用 auto 或 simple 模式查询时，如果后端判断为 complex_research 意图
-   * 2. 则在主界面创建一个 idle 状态的研究任务建议卡片
-   * 3. 用户可以点击卡片启动研究，或直接忽略
+   * 2. 如果提供了 router，则 submit() 会自动跳转到研究页面（不会调用此函数）
+   * 3. 如果没有提供 router（降级场景），则在主界面创建一个 idle 状态的研究任务建议卡片
+   * 4. 用户可以点击卡片启动研究，或直接忽略
    *
    * 去重策略：
    * - 相同 query 且状态为 idle 的任务：更新 metadata
