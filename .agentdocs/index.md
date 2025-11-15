@@ -37,6 +37,15 @@
   - 通用模式（Props接口、数据获取、字段映射、响应式调整）
   - 组件注册机制（DynamicBlockRenderer、ComponentManifest）
 
+- `frontend-ui-design-patterns.md` - **前端 UI 设计范式**（设计新组件/界面时必读）✨NEW
+  - **设计理念**：玻璃态质感、状态驱动设计、渐进式披露、即时反馈（0.1s 响应法则）、平台感知
+  - **卡片组件设计**：三段式结构、状态配色系统（5 种状态）、平台配色方案（6 个平台）
+  - **交互动效规范**：禁止缩放变换、推荐微妙过渡（颜色/透明度/位移）
+  - **标准组件**：徽章（Badge）、按钮（Button）、信息面板（提示/警告/错误）
+  - **表单设计**：分组布局、输入框样式、对话框设计
+  - **参考实现**：ResearchLiveCard、SubscriptionCard、SubscriptionForm
+  - **设计决策记录**：为什么禁止 scale 动效、为什么使用大圆角、为什么状态条只有 1px
+
 ### 后端架构（必读）
 - `backend-architecture.md` - 后端（Integration/Service/Controller层）架构设计与技术约束，修改任何后端代码时必读
   - Integration层可复用组件（DataExecutor、CacheService）使用规范
@@ -97,6 +106,13 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251115-unified-workspace-architecture.md` - **统一工作区架构设计方案**（设计方案，待评审）✨NEW
+  - **核心问题**：研究卡片与普通面板割裂、无统一历史记录、缺少进度反馈、普通查询无身份信息
+  - **解决方案**：所有查询都生成卡片，统一生命周期（pending → processing → completed）
+  - **即时反馈设计**：0.1s 响应法则、骨架屏、实时进度推送
+  - **卡片身份信息**：查询文本 + 时间戳 + 模式标识 + 触发来源
+  - **后端支持**：快速刷新机制（复用元数据，节省 70-80% 时间）、交互式研究工作流（计划审核）
+  - **实施路线图**：5 个阶段（基础卡片系统 → 进度反馈 → 快速刷新 → 交互式研究 → 持久化）
 - `workflow/251113-subscription-system-implementation.md` - **订阅管理系统 Phase 1 实施任务**（已完成 ✅）
   - 基础订阅管理（数据库 + Service + API + 前端）
   - Stage 1-4 全部完成，20 个测试用例全部通过
@@ -306,6 +322,7 @@
 - **导航保护** - 返回主页面时不调用 `disconnect()`，不调用 `store.reset()`，保留数据供后续查看
 - **资源清理** - 删除任务时调用 `disconnectAndCleanup()`，应用卸载时调用 `cleanupAllConnections()`
 - **数据库集成准备** - 当后端接入数据库持久化时，管理器架构无需改动，只需在智能初始化时从 API 加载数据
+- **⚠️ 初始化时序约束** - 在 MainView 创建 WebSocket 连接之前，必须先初始化 researchViewStore（`viewStore.initializeTask(taskId, query)`），确保 `task_id` 被正确设置。否则当 WebSocket 消息到达时，store 的 `task_id` 仍为 `null`，导致 ResearchView 无法识别已有数据而重新初始化。参见 `MainView.vue:172-190`。
 - **关键方法**：
   - `useResearchWebSocketManager(options)` - 获取或创建连接（自动复用已有连接）
   - `sendResearchRequestOnce(payload)` - 带去重保护的请求发送（幂等操作）
