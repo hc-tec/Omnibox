@@ -330,3 +330,15 @@
   - `disconnectAndCleanup()` - 断开连接并清理资源
   - `cleanupAllConnections()` - 清理所有连接（应用级）
 - **验证方式** - 查看控制台日志：首次连接显示"创建新连接"+"首次发送研究请求"，后续打开显示"复用现有连接"+"研究请求已发送，跳过"
+
+### 开发者模式与组件调试（2025-11-16 新增）
+- **开发者模式 Store** - `frontend/src/store/devModeStore.ts` 提供全局开发者模式状态管理，支持 localStorage 持久化
+- **ComponentInspector** - `frontend/src/features/panel/components/ComponentInspector.vue` 用于显示组件调试信息
+  - **设计规范**：完全遵循 QueryCard 的设计语言（`bg-background/95`、`border-border/30`、shadcn-vue 组件）
+  - **展示内容**：组件基础信息（类型、ID、标题、置信度）、数据块信息（数据源、记录数、路由）、数据字段 Schema、Props/Options/Raw JSON
+  - **交互方式**：Tab 式导航（概览、Props、Options、Raw JSON）、居中模态对话框（`max-w-5xl`、`max-h-90vh`）
+- **组件点击支持** - `DynamicBlockRenderer.vue` 在开发者模式下支持点击组件 header 触发 `inspect-component` 事件
+  - 事件传递链：DynamicBlockRenderer → PanelBoard → PanelWorkspace → MainView
+  - 开发者模式视觉反馈：显示"🔧 DEV"徽章、边框高亮（`border-primary/30`）、悬停发光效果
+- **⚠️ 当前状态**：QueryCard Inspector 已删除（不再支持查询卡片点击查看调试信息），MainView 中的开发者模式按钮已删除（暂无 UI 入口启用开发者模式）
+- **未来扩展**：可考虑通过设置页面、快捷键（如 `Ctrl+Shift+D`）或命令面板来启用开发者模式

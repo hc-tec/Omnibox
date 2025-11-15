@@ -6,7 +6,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { QueryCard, CardStatus, QueryMode, TriggerSource, RefreshMetadata } from '@/types/queryCard';
-import type { UIBlock } from '@/shared/types/panel';
+import type { UIBlock, PanelResponse, StreamMessage, PanelStreamFetchPayload } from '@/shared/types/panel';
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   // ========== 状态 ==========
@@ -144,7 +144,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function updateCardResult(
     cardId: string,
     panels: UIBlock[],
-    refresh_metadata?: RefreshMetadata
+    refresh_metadata?: RefreshMetadata,
+    inspectorData?: {
+      metadata?: PanelResponse['metadata'];
+      message?: string;
+      streamLog?: StreamMessage[];
+      fetchSnapshot?: PanelStreamFetchPayload | null;
+    }
   ) {
     const card = getCard(cardId);
     if (!card) return;
@@ -155,6 +161,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     card.completed_at = new Date().toISOString();
     card.updated_at = card.completed_at;
     card.progress = 100;
+
+    // 保存 Inspector 调试信息
+    if (inspectorData) {
+      card.metadata = inspectorData.metadata;
+      card.message = inspectorData.message;
+      card.streamLog = inspectorData.streamLog;
+      card.fetchSnapshot = inspectorData.fetchSnapshot;
+    }
   }
 
   /**

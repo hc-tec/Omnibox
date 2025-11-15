@@ -2,13 +2,22 @@
   <article
     class="panel-block"
     :style="styleVars"
-    :class="[{ 'is-unknown': !resolved.ability }, resolved.ability?.tag ?? 'unknown']"
+    :class="[
+      { 'is-unknown': !resolved.ability, 'dev-mode': devModeEnabled },
+      resolved.ability?.tag ?? 'unknown'
+    ]"
+    @click="handleBlockClick"
   >
     <header class="panel-block__header">
       <h3>{{ displayTitle }}</h3>
-      <span v-if="resolved.block.confidence !== undefined" class="confidence">
-        置信度 {{ (resolved.block.confidence * 100).toFixed(0) }}%
-      </span>
+      <div class="flex items-center gap-2">
+        <span v-if="devModeEnabled" class="dev-indicator">
+          🔧 DEV
+        </span>
+        <span v-if="resolved.block.confidence !== undefined" class="confidence">
+          置信度 {{ (resolved.block.confidence * 100).toFixed(0) }}%
+        </span>
+      </div>
     </header>
 
     <section class="panel-block__body">
@@ -44,6 +53,8 @@
 import { computed, withDefaults } from "vue";
 import type { UIBlock, DataBlock } from "../../../shared/types/panel";
 import { resolveBlock } from "../../../../utils/panelHelpers";
+import { useDevModeStore } from "@/store/devModeStore";
+import { storeToRefs } from "pinia";
 import ListPanelBlock from "./ListPanelBlock.vue";
 import LineChartBlock from "./LineChartBlock.vue";
 import StatisticCardBlock from "./StatisticCardBlock.vue";
@@ -69,6 +80,14 @@ const props = withDefaults(
     dataBlocks: () => ({} as Record<string, DataBlock>),
   }
 );
+
+const emit = defineEmits<{
+  (event: 'inspect-component', payload: { block: UIBlock; dataBlock: DataBlock | null }): void;
+}>();
+
+// 开发者模式
+const devModeStore = useDevModeStore();
+const { enabled: devModeEnabled } = storeToRefs(devModeStore);
 
 const targetBlock = computed<UIBlock | null>(() => {
   if (props.block) {
@@ -156,6 +175,24 @@ const styleVars = computed(() => {
     minHeight: `${minHeight}px`,
   };
 });
+
+/**
+ * 处理组件点击事件（开发者模式）
+ */
+function handleBlockClick(event: MouseEvent) {
+  if (!devModeEnabled.value) return;
+
+  // 只有点击在组件本身，不是子元素时才触发
+  const target = event.target as HTMLElement;
+  if (!target.closest('.panel-block__header')) return;
+
+  event.stopPropagation();
+
+  const block = resolved.value.block;
+  const dataBlock = resolved.value.dataBlock;
+
+  emit('inspect-component', { block, dataBlock });
+}
 </script>
 
 <style scoped>
@@ -174,6 +211,31 @@ const styleVars = computed(() => {
 .panel-block:hover {
   border-color: color-mix(in srgb, var(--border) 85%, transparent);
   background: color-mix(in srgb, var(--shell-surface) 35%, transparent);
+}
+
+/* 开发者模式样式 */
+.panel-block.dev-mode {
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.panel-block.dev-mode:hover {
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.panel-block.dev-mode .panel-block__header {
+  cursor: pointer;
+}
+
+.dev-indicator {
+  font-size: var(--panel-meta-size, 11px);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
 }
 
 .panel-block__header {

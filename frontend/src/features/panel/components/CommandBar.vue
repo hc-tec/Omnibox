@@ -161,6 +161,8 @@ function handleSubmit() {
   const value = localQuery.value.trim();
   if (!value) return;
   emit("submit", { query: value, mode: queryMode.value });
+  // 提交后清空输入框，方便输入下一个查询
+  localQuery.value = '';
 }
 
 function useSample(sample: string) {

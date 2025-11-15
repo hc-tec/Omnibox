@@ -51,15 +51,30 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
 
     if (requiresStreaming) {
       console.log('[usePanelActions] 创建研究任务 (processing 状态)');
-      // 创建研究任务（processing 状态），不跳转
-      taskId = researchStore.createTask(query.value, "research", undefined, {
-        status: "processing",
-        metadata: response.metadata,
-        autoDetected: true,
-      });
+      // 如果 MainView 已经创建了 workspace 卡片并传递了 client_task_id，使用它
+      // 否则创建新的研究任务
+      if (payload.client_task_id) {
+        console.log('[usePanelActions] 使用已存在的 workspace 卡片 taskId:', payload.client_task_id);
+        taskId = payload.client_task_id;
+        // 创建 researchStore 任务（关联到已存在的 workspace 卡片）
+        researchStore.createTask(query.value, "research", taskId, {
+          status: "processing",
+          metadata: response.metadata,
+          autoDetected: true,
+        });
+        persistResearchTaskQuery(taskId, query.value);
+      } else {
+        console.log('[usePanelActions] 创建新的研究任务（无 client_task_id）');
+        // 创建研究任务（processing 状态），不跳转
+        taskId = researchStore.createTask(query.value, "research", undefined, {
+          status: "processing",
+          metadata: response.metadata,
+          autoDetected: true,
+        });
+        persistResearchTaskQuery(taskId, query.value);
+      }
       console.log('[usePanelActions] 任务已创建, taskId:', taskId);
       console.log('[usePanelActions] researchStore.activeTasks:', researchStore.activeTasks);
-      persistResearchTaskQuery(taskId, query.value);
     } else {
       console.log('[usePanelActions] 不需要流式研究，使用建议逻辑');
       // 使用原有的建议逻辑（创建 idle 任务卡片）

@@ -7,6 +7,7 @@
           :blocks="panelState.blocks"
           :data-blocks="panelState.dataBlocks"
           @snapshot-change="panelStore.setLayoutSnapshot"
+          @inspect-component="$emit('inspect-component', $event)"
         />
       </template>
       <PanelEmptyState v-else />
@@ -16,6 +17,7 @@
 
 <script setup lang="ts">
 import { onMounted, withDefaults } from "vue";
+import type { UIBlock, DataBlock } from "@/shared/types/panel";
 import { usePanelActions } from "./usePanelActions";
 import { usePanelStore } from "../../store/panelStore";
 import PanelEmptyState from "./components/PanelEmptyState.vue";
@@ -29,6 +31,10 @@ const props = withDefaults(
     autoInitialize: true,
   }
 );
+
+const emit = defineEmits<{
+  (event: "inspect-component", payload: { block: UIBlock; dataBlock: DataBlock | null }): void;
+}>();
 
 const panelStore = usePanelStore();
 const { state: panelState, hasPanel, query, submit } = usePanelActions();

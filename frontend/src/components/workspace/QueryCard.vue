@@ -1,7 +1,8 @@
 <template>
   <div
-    class="query-card group relative overflow-hidden rounded-2xl border backdrop-blur-sm transition-all duration-300"
+    class="query-card group relative overflow-hidden rounded-2xl border backdrop-blur-sm transition-all duration-300 cursor-pointer"
     :class="cardClass"
+    @click="handleCardClick"
   >
     <!-- 顶部状态条 -->
     <div class="absolute top-0 left-0 right-0 h-1 transition-all duration-500" :class="statusBarClass" />
@@ -94,7 +95,17 @@
         <!-- Completed 状态：显示结果预览 -->
         <div v-else-if="card.status === 'completed'" class="space-y-3">
           <div class="rounded-xl border border-border/40 bg-muted/20 p-3">
-            <p class="text-xs text-muted-foreground">
+            <!-- 研究模式：显示研究相关信息 -->
+            <div v-if="card.mode === 'research' && researchTask" class="space-y-2">
+              <p class="text-xs text-muted-foreground">
+                研究已完成，执行了 {{ researchTask.execution_steps?.length || 0 }} 个步骤
+              </p>
+              <p v-if="researchTask.previews && researchTask.previews.length > 0" class="text-xs text-muted-foreground">
+                生成了 {{ researchTask.previews.length }} 个数据预览
+              </p>
+            </div>
+            <!-- 普通查询：显示面板信息 -->
+            <p v-else class="text-xs text-muted-foreground">
               查询已完成，生成了 {{ card.panels?.length || 0 }} 个数据面板
             </p>
           </div>
@@ -123,7 +134,7 @@
       >
         <div class="flex items-center justify-between gap-3">
           <span class="text-xs text-muted-foreground">
-            点击查看完整结果
+            点击卡片查看调试信息
           </span>
           <div class="flex gap-2">
             <Button
@@ -135,14 +146,6 @@
             >
               <RefreshCw class="h-3.5 w-3.5 mr-1.5" />
               刷新
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="h-8 rounded-lg text-xs"
-              @click.stop="$emit('open', card.id)"
-            >
-              查看详情
             </Button>
           </div>
         </div>
@@ -164,9 +167,11 @@ import {
   RefreshCw,
 } from 'lucide-vue-next';
 import type { QueryCard } from '@/types/queryCard';
+import type { ResearchTask } from '@/features/research/types/researchTypes';
 
 interface Props {
   card: QueryCard;
+  researchTask?: ResearchTask;
 }
 
 const props = defineProps<Props>();
@@ -174,8 +179,32 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   delete: [cardId: string];
   open: [cardId: string];
+  inspect: [cardId: string];
   refresh: [cardId: string];
 }>();
+
+// ========== 卡片点击逻辑 ==========
+/**
+ * 点击卡片主体的行为：
+ * - completed 研究模式：进入研究详情页面查看完整报告
+ * - completed 普通查询：显示调试信息（Inspector）
+ * - processing 状态：进入研究详情页面
+ * - error 状态：显示调试信息查看错误详情
+ * - pending 状态：暂不处理
+ */
+const handleCardClick = () => {
+  if (props.card.status === 'completed' && props.card.mode === 'research') {
+    // completed 研究卡片 → 进入研究页面查看完整报告
+    emit('open', props.card.id);
+  } else if (props.card.status === 'completed' || props.card.status === 'error') {
+    // completed 普通卡片 / error 卡片 → 显示 Inspector
+    emit('inspect', props.card.id);
+  } else if (props.card.status === 'processing') {
+    // processing 卡片 → 进入研究页面
+    emit('open', props.card.id);
+  }
+  // pending 状态不处理
+};
 
 // ========== 状态图标 ==========
 const statusIcon = computed(() => {

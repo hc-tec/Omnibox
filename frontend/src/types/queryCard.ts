@@ -3,7 +3,7 @@
  * 用于统一工作区的卡片管理
  */
 
-import type { UIBlock } from '@/shared/types/panel';
+import type { UIBlock, PanelResponse, StreamMessage, PanelStreamFetchPayload } from '@/shared/types/panel';
 
 /**
  * 查询模式
@@ -77,4 +77,16 @@ export interface QueryCard {
 
   /** 进度（0-100） */
   progress?: number;
+
+  /** Inspector 调试信息：响应元数据 */
+  metadata?: PanelResponse['metadata'];
+
+  /** Inspector 调试信息：响应消息 */
+  message?: string;
+
+  /** Inspector 调试信息：流式日志（RSS Hub 接口调用记录） */
+  streamLog?: StreamMessage[];
+
+  /** Inspector 调试信息：最后一次 fetch 快照 */
+  fetchSnapshot?: PanelStreamFetchPayload | null;
 }

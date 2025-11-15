@@ -17,6 +17,7 @@
           :block="item.block"
           :block-map="blockMap"
           :data-blocks="dataBlocks"
+          @inspect-component="$emit('inspect-component', $event)"
         />
       </div>
     </div>
@@ -47,6 +48,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: "snapshot-change", snapshot: LayoutSnapshotItem[]): void;
+  (event: "inspect-component", payload: { block: UIBlock; dataBlock: DataBlock | null }): void;
 }>();
 
 const panelStore = usePanelStore();

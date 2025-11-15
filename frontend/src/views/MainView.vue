@@ -39,9 +39,6 @@
           <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="toggleTheme">
             {{ isLight ? "Dark" : "Light" }}
           </button>
-          <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="inspectorOpen = true">
-            Inspector
-          </button>
           <WindowControls />
         </div>
       </header>
@@ -57,24 +54,18 @@
               v-for="card in workspaceStore.activeCards"
               :key="card.id"
               :card="card"
+              :research-task="card.mode === 'research' ? researchStore.getTask(card.id) : undefined"
               @delete="handleDeleteCard"
               @open="handleOpenCard"
               @refresh="handleRefreshCard"
             />
           </div>
 
-          <!-- Research Live Cards (保留兼容) -->
-          <div v-if="activeTasks.length > 0" class="research-cards-grid mb-6">
-            <ResearchLiveCard
-              v-for="task in activeTasks"
-              :key="task.task_id"
-              :task="task"
-              @delete="handleDeleteTask"
-              @open="handleOpenTask"
-            />
-          </div>
-
-          <PanelWorkspace class="min-h-[70vh]" :auto-initialize="false" />
+          <PanelWorkspace
+            class="min-h-[70vh]"
+            :auto-initialize="false"
+            @inspect-component="handleInspectComponent"
+          />
           <div class="hud mt-10 flex flex-wrap items-center justify-center gap-4 text-[11px] uppercase tracking-[0.35em] text-muted-foreground/80">
             <span class="rounded-full border border-border/60 px-4 py-1">{{ version ? `Desktop v${version}` : "Waiting for Desktop..." }}</span>
             <span>Ctrl/Cmd + Space → Focus</span>
@@ -85,30 +76,21 @@
       </main>
     </div>
 
-    <button
-      class="no-drag fixed bottom-28 right-6 z-30 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border/40 bg-[var(--shell-surface)]/85 text-muted-foreground shadow-2xl shadow-black/40 backdrop-blur transition hover:text-foreground"
-      @click="inspectorOpen = true"
-      aria-label="Open Inspector"
-    >
-      <Sparkles class="h-4 w-4" />
-    </button>
-
     <CommandPalette
       ref="commandPaletteRef"
-      :loading="panelState.loading"
+      :loading="false"
       :default-query="query"
       :has-layout="hasBlocks"
       @submit="handleCommandSubmit"
       @reset-panels="handleReset"
     />
 
-    <InspectorDrawer
-      :open="inspectorOpen"
-      :metadata="panelState.metadata"
-      :message="panelState.message"
-      :log="panelState.streamLog"
-      :fetch-snapshot="panelState.fetchSnapshot"
-      @close="inspectorOpen = false"
+    <!-- Component Inspector (for component debugging in dev mode) -->
+    <ComponentInspector
+      :open="componentInspectorOpen"
+      :block="inspectedComponent?.block"
+      :data-block="inspectedComponent?.dataBlock"
+      @close="componentInspectorOpen = false"
     />
 
     <!-- Action Inbox for Research Tasks -->
@@ -119,12 +101,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Sparkles } from "lucide-vue-next";
+import { storeToRefs } from "pinia";
 import PanelWorkspace from "@/features/panel/PanelWorkspace.vue";
 import CommandPalette from "@/features/panel/components/CommandPalette.vue";
-import InspectorDrawer from "@/features/panel/components/InspectorDrawer.vue";
+import ComponentInspector from "@/features/panel/components/ComponentInspector.vue";
 import WindowControls from "@/components/system/WindowControls.vue";
-import ResearchLiveCard from "@/features/research/components/ResearchLiveCard.vue";
 import ActionInbox from "@/features/research/components/ActionInbox.vue";
 import QueryCard from "@/components/workspace/QueryCard.vue";
 import { usePanelActions } from "@/features/panel/usePanelActions";
@@ -132,16 +113,20 @@ import { usePanelStore } from "@/store/panelStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
 import { useResearchViewStore } from "@/store/researchViewStore";
 import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useDevModeStore } from "@/store/devModeStore";
 import { persistResearchTaskQuery } from "@/features/research/utils/taskStorage";
 import { useResearchWebSocketManager } from "@/composables/useResearchWebSocketManager";
 import { generateUUID } from "@/utils/uuid";
 import type { PanelSizePreset } from "@/shared/panelSizePresets";
 import type { QueryMode } from "@/features/research/types/researchTypes";
+import type { QueryCard as QueryCardType } from "@/types/queryCard";
+import type { UIBlock, DataBlock } from "@/shared/types/panel";
 
 const router = useRouter();
 
 const version = ref<string | null>(null);
-const inspectorOpen = ref(false);
+const componentInspectorOpen = ref(false);
+const inspectedComponent = ref<{ block: UIBlock; dataBlock: DataBlock | null } | null>(null);
 const appearance = ref<"dark" | "light">("light"); // 默认浅色主题
 const isLight = computed(() => appearance.value === "light");
 const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null);
@@ -150,6 +135,8 @@ const { state: panelState, query, submit, reset } = usePanelActions();
 const panelStore = usePanelStore();
 const researchStore = useResearchStore();
 const workspaceStore = useWorkspaceStore();
+const devModeStore = useDevModeStore();
+const { enabled: devModeEnabled } = storeToRefs(devModeStore);
 const sizePreset = computed(() => panelStore.state.sizePreset);
 const sizeOptions: { label: string; value: PanelSizePreset }[] = [
   { label: "紧凑", value: "compact" },
@@ -157,7 +144,7 @@ const sizeOptions: { label: string; value: PanelSizePreset }[] = [
   { label: "宽松", value: "spacious" },
 ];
 const hasBlocks = computed(() => ((panelState.blocks?.length ?? 0) > 0));
-const activeTasks = computed(() => researchStore.activeTasks);
+
 
 const applyTheme = () => {
   const root = document.documentElement;
@@ -258,23 +245,51 @@ const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) 
       return;
     }
 
-    // 普通查询：提交到后端
-    const result = await submit(payload);
+    // 普通查询：提交到后端（传递 taskId 避免重复创建）
+    const result = await submit({
+      ...payload,
+      client_task_id: taskId,  // 传递已创建的 taskId
+    });
     console.log('[MainView] submit result:', result);
 
     // 后端自动检测为研究模式
     if (result.requiresStreaming && result.taskId) {
       console.log('[MainView] 后端识别为研究模式，启动 WebSocket 连接, taskId:', result.taskId);
+
+      // 更新 workspace 卡片的 mode 为 'research'（从 'simple' 升级）
+      const workspaceCard = workspaceStore.getCard(taskId);
+      if (workspaceCard && workspaceCard.mode === 'simple') {
+        console.log('[MainView] 更新卡片 mode: simple -> research');
+        workspaceCard.mode = 'research';
+        workspaceCard.updated_at = new Date().toISOString();
+      }
+
+      // 使用返回的 taskId 连接 WebSocket（应该与我们创建的 taskId 相同）
       connectResearchWebSocket(result.taskId, payload.query);
       return;
     }
 
     // 普通查询成功完成
     if (panelState.blocks && panelState.blocks.length > 0) {
+      // 注意：普通查询没有 streamLog（只有流式查询才有）
+      // 只保存 metadata 和 message
+      console.log('[MainView] 保存 Inspector 数据:');
+      console.log('[MainView] - response:', result.response);
+      console.log('[MainView] - response.metadata:', result.response.metadata);
+      console.log('[MainView] - response.message:', result.response.message);
+      console.log('[MainView] - panelState.metadata:', panelState.metadata);
+      console.log('[MainView] - panelState.message:', panelState.message);
+
       workspaceStore.updateCardResult(
         taskId,
         panelState.blocks,
-        panelState.metadata?.refresh_metadata
+        panelState.metadata?.refresh_metadata,
+        {
+          metadata: result.response.metadata,  // 使用 response 的 metadata
+          message: result.response.message,    // 使用 response 的 message
+          streamLog: [],  // 普通查询无流式日志
+          fetchSnapshot: null,  // 普通查询无 fetch 快照
+        }
       );
       console.log('[MainView] 普通查询完成，卡片已更新');
     } else {
@@ -292,61 +307,38 @@ const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) 
   }
 };
 
-const handleDeleteTask = (taskId: string) => {
-  // 使用全局管理器断开并清理连接
-  const wsManager = useResearchWebSocketManager({ taskId });
-  wsManager.disconnectAndCleanup();
-
-  // 删除任务
-  researchStore.deleteTask(taskId);
-};
-
-const handleOpenTask = async (taskId: string) => {
-  const task = researchStore.getTask(taskId);
-  if (!task) return;
-
-  // 保存原始状态，用于错误回滚
-  const originalStatus = task.status;
-
-  try {
-    // 只有 idle 状态的任务才需要改为 processing
-    // completed 和 processing 状态的任务直接打开查看
-    if (task.status === 'idle') {
-      researchStore.markTaskProcessing(taskId);
-    }
-
-    persistResearchTaskQuery(taskId, task.query);
-    await router.push({
-      path: `/research/${taskId}`,
-      query: { query: task.query },
-    });
-  } catch (error) {
-    // 路由跳转失败时回滚状态
-    console.error('Failed to navigate to research view:', error);
-    const currentTask = researchStore.getTask(taskId);
-    if (currentTask) {
-      currentTask.status = originalStatus;
-      currentTask.updated_at = new Date().toISOString();
-    }
-  }
-};
-
 const handleDeleteCard = (cardId: string) => {
   console.log('[MainView] 删除卡片:', cardId);
   workspaceStore.deleteCard(cardId);
 };
 
-const handleOpenCard = (cardId: string) => {
+/**
+ * 处理组件检查事件（开发者模式）
+ */
+const handleInspectComponent = (payload: { block: UIBlock; dataBlock: DataBlock | null }) => {
+  console.log('[MainView] 打开组件调试信息:', payload);
+  inspectedComponent.value = payload;
+  componentInspectorOpen.value = true;
+};
+
+const handleOpenCard = async (cardId: string) => {
   const card = workspaceStore.getCard(cardId);
   if (!card) {
     console.warn('[MainView] 卡片不存在:', cardId);
     return;
   }
 
-  console.log('[MainView] 打开卡片:', cardId);
-  // TODO: 实现卡片详情页面（展开卡片或跳转到详情视图）
-  // 暂时只在控制台显示
-  console.log('[MainView] 卡片详情:', card);
+  console.log('[MainView] 打开卡片（进入研究页面）:', cardId, 'mode:', card.mode);
+
+  try {
+    // processing 状态的卡片，跳转到研究详情页面查看实时进度
+    await router.push({
+      path: `/research/${cardId}`,
+      query: { query: card.query },
+    });
+  } catch (error) {
+    console.error('[MainView] 打开卡片失败:', error);
+  }
 };
 
 const handleRefreshCard = async (cardId: string) => {
@@ -394,9 +386,16 @@ const handleRefreshCard = async (cardId: string) => {
       workspaceStore.updateCardResult(
         cardId,
         result.data.blocks,
-        result.metadata?.refresh_metadata
+        result.metadata?.refresh_metadata,
+        {
+          metadata: result.metadata,
+          message: result.message || '快速刷新完成',
+          // 快速刷新没有 streamLog，保留原有的或空数组
+          streamLog: card.streamLog || [],
+          fetchSnapshot: null,
+        }
       );
-      console.log('[MainView] 卡片刷新完成:', cardId);
+      console.log('[MainView] 卡片刷新完成（保留 Inspector 数据）:', cardId);
     } else {
       workspaceStore.updateCardStatus(cardId, 'completed', {
         current_step: '刷新完成',
