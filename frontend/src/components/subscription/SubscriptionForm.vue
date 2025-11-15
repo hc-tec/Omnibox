@@ -211,7 +211,7 @@ function handleClose() {
               id="display_name"
               v-model="formData.display_name"
               placeholder="如：科技美学"
-              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+              class="rounded-xl border-border/40 bg-background/50"
             />
           </div>
 
@@ -221,7 +221,7 @@ function handleClose() {
             <div class="space-y-2">
               <Label for="platform" class="text-sm font-medium">平台 *</Label>
               <Select v-model="formData.platform">
-                <SelectTrigger id="platform" class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:shadow-sm focus:shadow-indigo-500/10">
+                <SelectTrigger id="platform" class="rounded-xl border-border/40 bg-background/50">
                   <SelectValue placeholder="选择平台" />
                 </SelectTrigger>
                 <SelectContent class="rounded-xl">
@@ -238,7 +238,7 @@ function handleClose() {
             <div class="space-y-2">
               <Label for="entity_type" class="text-sm font-medium">实体类型 *</Label>
               <Select v-model="formData.entity_type">
-                <SelectTrigger id="entity_type" class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:shadow-sm focus:shadow-indigo-500/10">
+                <SelectTrigger id="entity_type" class="rounded-xl border-border/40 bg-background/50">
                   <SelectValue placeholder="选择实体类型" />
                 </SelectTrigger>
                 <SelectContent class="rounded-xl">
@@ -264,7 +264,7 @@ function handleClose() {
               v-model="identifiersText"
               placeholder='{"uid": "12345"}'
               rows="3"
-              class="font-mono text-sm rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+              class="font-mono text-sm rounded-xl border-border/40 bg-background/50"
             />
             <p class="text-xs text-muted-foreground">
               示例：B站UP主 {"uid": "12345"}，GitHub {"owner": "xxx", "repo": "yyy"}
@@ -284,7 +284,7 @@ function handleClose() {
               v-model="formData.description"
               placeholder="简要描述"
               rows="2"
-              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+              class="rounded-xl border-border/40 bg-background/50"
             />
           </div>
 
@@ -295,7 +295,7 @@ function handleClose() {
               id="avatar_url"
               v-model="formData.avatar_url"
               placeholder="https://..."
-              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+              class="rounded-xl border-border/40 bg-background/50"
             />
           </div>
 
@@ -306,7 +306,7 @@ function handleClose() {
               id="aliases"
               v-model="aliasesText"
               placeholder="科技美学, 科技美学Official, 那岩"
-              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+              class="rounded-xl border-border/40 bg-background/50"
             />
           </div>
 
@@ -317,7 +317,7 @@ function handleClose() {
               id="tags"
               v-model="tagsText"
               placeholder="数码, 科技, 测评"
-              class="rounded-xl border-border/40 bg-background/50 transition-all duration-200 focus:border-indigo-500/50 focus:bg-background/80 focus:shadow-sm focus:shadow-indigo-500/10"
+              class="rounded-xl border-border/40 bg-background/50"
             />
           </div>
         </div>
@@ -328,18 +328,16 @@ function handleClose() {
           variant="outline"
           @click="handleClose"
           :disabled="loading"
-          class="rounded-xl border-border/40 transition-all duration-200 hover:scale-105 hover:shadow-sm"
+          class="rounded-xl border-border/40"
         >
           取消
         </Button>
         <Button
           @click="handleSubmit"
           :disabled="loading"
-          class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-500 via-blue-500 to-indigo-600 shadow-lg shadow-indigo-500/25 transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-indigo-500/40 disabled:opacity-50 disabled:hover:scale-100"
+          class="rounded-xl bg-gradient-to-br from-indigo-500 via-blue-500 to-indigo-600 shadow-md shadow-indigo-500/20 disabled:opacity-50"
         >
-          <!-- 提交按钮发光效果 -->
-          <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-          <span class="relative flex items-center gap-2">
+          <span class="flex items-center gap-2">
             <span v-if="loading" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
             {{ loading ? '提交中...' : '提交' }}
           </span>

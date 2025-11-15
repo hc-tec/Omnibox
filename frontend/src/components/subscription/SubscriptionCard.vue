@@ -81,9 +81,9 @@ const platformColors = computed(() => {
 // 卡片整体样式
 const cardClass = computed(() => {
   if (!props.subscription.is_active) {
-    return 'border-border/30 bg-card/30 hover:border-border/50 hover:shadow-md'
+    return 'border-border/30 bg-card/30 hover:border-border/50'
   }
-  return `border-border/40 bg-card/50 hover:border-${platformColors.value.border.split('-')[1]}/60 hover:shadow-lg hover:${platformColors.value.shadow}`
+  return 'border-border/40 bg-card/50 hover:border-border/60'
 })
 
 // 顶部状态条样式
@@ -91,15 +91,15 @@ const statusBarClass = computed(() => {
   if (!props.subscription.is_active) {
     return 'bg-gradient-to-r from-gray-400/50 to-gray-500/50'
   }
-  return `bg-gradient-to-r ${platformColors.value.from.replace('/20', '/70')} ${platformColors.value.to.replace('/20', '/70')} group-hover:shadow-md group-hover:${platformColors.value.shadow}`
+  return `bg-gradient-to-r ${platformColors.value.from.replace('/20', '/70')} ${platformColors.value.to.replace('/20', '/70')}`
 })
 
 // 背景渐变
 const backgroundGradient = computed(() => {
   if (!props.subscription.is_active) {
-    return 'group-hover:opacity-5 bg-gradient-to-br from-gray-500/10 to-slate-500/10'
+    return 'group-hover:opacity-3 bg-gradient-to-br from-gray-500/10 to-slate-500/10'
   }
-  return `group-hover:opacity-5 bg-gradient-to-br ${platformColors.value.from} ${platformColors.value.to}`
+  return `group-hover:opacity-3 bg-gradient-to-br ${platformColors.value.from} ${platformColors.value.to}`
 })
 
 // 头像容器样式（有图片时）
@@ -107,7 +107,8 @@ const avatarContainerClass = computed(() => {
   if (!props.subscription.is_active) {
     return 'ring-2 ring-gray-400/20'
   }
-  return `ring-2 ring-${platformColors.value.border.split('-')[1]}/30 group-hover:ring-${platformColors.value.border.split('-')[1]}/50 group-hover:shadow-lg group-hover:${platformColors.value.shadow}`
+  const color = platformColors.value.border.split('-')[1]
+  return `ring-2 ring-${color}/30`
 })
 
 // 图标容器样式（无图片时）
@@ -115,7 +116,8 @@ const iconContainerClass = computed(() => {
   if (!props.subscription.is_active) {
     return 'bg-gradient-to-br from-gray-500/20 to-slate-500/20 ring-2 ring-gray-400/20 text-muted-foreground'
   }
-  return `bg-gradient-to-br ${platformColors.value.from} ${platformColors.value.to} ring-2 ring-${platformColors.value.border.split('-')[1]}/30 group-hover:ring-${platformColors.value.border.split('-')[1]}/50 group-hover:shadow-lg group-hover:${platformColors.value.shadow}`
+  const color = platformColors.value.border.split('-')[1]
+  return `bg-gradient-to-br ${platformColors.value.from} ${platformColors.value.to} ring-2 ring-${color}/30`
 })
 </script>
 
@@ -139,7 +141,7 @@ const iconContainerClass = computed(() => {
         <!-- 头像 -->
         <div
           v-if="subscription.avatar_url"
-          class="flex-shrink-0 transition-all duration-300"
+          class="flex-shrink-0"
           :class="avatarContainerClass"
         >
           <img
@@ -150,7 +152,7 @@ const iconContainerClass = computed(() => {
         </div>
         <div
           v-else
-          class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl text-lg font-semibold transition-all duration-300"
+          class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl text-lg font-semibold"
           :class="iconContainerClass"
         >
           {{ subscription.display_name[0] }}
@@ -214,7 +216,7 @@ const iconContainerClass = computed(() => {
           <button
             v-for="action in subscription.supported_actions"
             :key="action"
-            class="inline-flex items-center rounded-lg border border-border/40 bg-background/50 px-2.5 py-1 text-xs font-medium transition-all duration-200 hover:scale-105 hover:border-primary/40 hover:bg-primary/10 hover:text-primary hover:shadow-sm"
+            class="inline-flex items-center rounded-lg border border-border/40 bg-background/50 px-2.5 py-1 text-xs font-medium transition-colors duration-200 hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
             @click="handleActionClick(action)"
           >
             {{ getActionDisplayName(action) }}
@@ -227,7 +229,7 @@ const iconContainerClass = computed(() => {
       <Button
         variant="ghost"
         size="sm"
-        class="flex-1 rounded-xl text-xs h-8 transition-all duration-200 hover:scale-105"
+        class="flex-1 rounded-xl text-xs h-8"
         @click="handleEdit"
       >
         <Pencil class="mr-1.5 h-3.5 w-3.5" />
@@ -236,7 +238,7 @@ const iconContainerClass = computed(() => {
       <Button
         variant="ghost"
         size="sm"
-        class="flex-1 rounded-xl text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10 transition-all duration-200 hover:scale-105"
+        class="flex-1 rounded-xl text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
         @click="handleDelete"
       >
         <Trash2 class="mr-1.5 h-3.5 w-3.5" />

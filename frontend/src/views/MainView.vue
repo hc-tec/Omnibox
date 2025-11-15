@@ -117,6 +117,7 @@ import ActionInbox from "@/features/research/components/ActionInbox.vue";
 import { usePanelActions } from "@/features/panel/usePanelActions";
 import { usePanelStore } from "@/store/panelStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
+import { useResearchViewStore } from "@/store/researchViewStore";
 import { persistResearchTaskQuery } from "@/features/research/utils/taskStorage";
 import { useResearchWebSocketManager } from "@/composables/useResearchWebSocketManager";
 import type { PanelSizePreset } from "@/shared/panelSizePresets";
@@ -171,6 +172,14 @@ const handleReset = () => {
 
 function connectResearchWebSocket(taskId: string, query: string) {
   console.log('[MainView] connectResearchWebSocket:', { taskId, query });
+
+  // 先初始化 researchViewStore，确保 task_id 被设置
+  // 这样当 WebSocket 消息到达时，store 中就有正确的 task_id 了
+  const viewStore = useResearchViewStore();
+  if (viewStore.state.task_id !== taskId) {
+    console.log('[MainView] 初始化 researchViewStore, taskId:', taskId);
+    viewStore.initializeTask(taskId, query);
+  }
 
   // 使用全局 WebSocket 管理器（自动处理连接复用）
   const wsManager = useResearchWebSocketManager({

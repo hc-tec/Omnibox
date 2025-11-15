@@ -186,16 +186,21 @@ async function initializeResearch() {
   // researchViewStore 包含完整数据（steps、panels、analyses）
   // researchStore 只包含预览数据（execution_steps、previews）
   // 所以应该直接使用 researchViewStore 中的数据，不要从 researchStore 同步！
+  console.log("[ResearchView] 检查 researchViewStore 状态:");
+  console.log(`  - store.state.task_id: ${store.state.task_id}`);
+  console.log(`  - props.taskId: ${props.taskId}`);
+  console.log(`  - store.state.steps.length: ${store.state.steps.length}`);
+  console.log(`  - store.state.panels.length: ${store.state.panels.length}`);
+  console.log(`  - store.state.analyses.length: ${store.state.analyses.length}`);
+
   const hasDataInViewStore = store.state.task_id === props.taskId && store.state.steps.length > 0;
 
   if (hasDataInViewStore) {
     console.log("[ResearchView] researchViewStore 已有数据，复用现有数据");
-    console.log(`[ResearchView] - ${store.state.steps.length} 个步骤`);
-    console.log(`[ResearchView] - ${store.state.panels.length} 个面板`);
-    console.log(`[ResearchView] - ${store.state.analyses.length} 个分析`);
     // WebSocket 消息会持续更新 researchViewStore，无需手动同步
   } else {
     console.log("[ResearchView] 初始化新任务或任务 ID 不匹配，重新初始化");
+    console.log(`  原因: task_id匹配=${store.state.task_id === props.taskId}, 有步骤=${store.state.steps.length > 0}`);
     // 初始化新任务
     // WebSocket 连接会自动接收消息并更新 researchViewStore
     store.initializeTask(props.taskId, resolvedQuery);
@@ -216,7 +221,7 @@ onMounted(() => {
 });
 
 // 监听 WebSocket 连接状态，连接成功后发送研究请求（带去重保护）
-watch(wsConnected, (connected) => {
+watch(() => wsConnected.value, (connected) => {
   if (connected && store.state.query) {
     // 检查是否已经发送过研究请求
     if (hasRequestSent()) {
