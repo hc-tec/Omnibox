@@ -51,7 +51,19 @@
           class="canvas-flow mx-auto w-full px-4 py-12 pb-28 sm:px-6 md:px-10 md:py-8 2xl:px-8"
           style="max-width: clamp(320px, calc(100vw - 4rem), 2400px);"
         >
-          <!-- Research Live Cards -->
+          <!-- Unified Workspace Cards -->
+          <div v-if="workspaceStore.activeCards.length > 0" class="workspace-cards-grid mb-6">
+            <QueryCard
+              v-for="card in workspaceStore.activeCards"
+              :key="card.id"
+              :card="card"
+              @delete="handleDeleteCard"
+              @open="handleOpenCard"
+              @refresh="handleRefreshCard"
+            />
+          </div>
+
+          <!-- Research Live Cards (保留兼容) -->
           <div v-if="activeTasks.length > 0" class="research-cards-grid mb-6">
             <ResearchLiveCard
               v-for="task in activeTasks"
@@ -114,12 +126,15 @@ import InspectorDrawer from "@/features/panel/components/InspectorDrawer.vue";
 import WindowControls from "@/components/system/WindowControls.vue";
 import ResearchLiveCard from "@/features/research/components/ResearchLiveCard.vue";
 import ActionInbox from "@/features/research/components/ActionInbox.vue";
+import QueryCard from "@/components/workspace/QueryCard.vue";
 import { usePanelActions } from "@/features/panel/usePanelActions";
 import { usePanelStore } from "@/store/panelStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
 import { useResearchViewStore } from "@/store/researchViewStore";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 import { persistResearchTaskQuery } from "@/features/research/utils/taskStorage";
 import { useResearchWebSocketManager } from "@/composables/useResearchWebSocketManager";
+import { generateUUID } from "@/utils/uuid";
 import type { PanelSizePreset } from "@/shared/panelSizePresets";
 import type { QueryMode } from "@/features/research/types/researchTypes";
 
@@ -134,6 +149,7 @@ const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null);
 const { state: panelState, query, submit, reset } = usePanelActions();
 const panelStore = usePanelStore();
 const researchStore = useResearchStore();
+const workspaceStore = useWorkspaceStore();
 const sizePreset = computed(() => panelStore.state.sizePreset);
 const sizeOptions: { label: string; value: PanelSizePreset }[] = [
   { label: "紧凑", value: "compact" },
@@ -212,29 +228,67 @@ function connectResearchWebSocket(taskId: string, query: string) {
 const handleCommandSubmit = async (payload: { query: string; mode: QueryMode }) => {
   console.log('[MainView] handleCommandSubmit:', payload);
 
-  // 用户主动选择"研究"模式：创建任务卡片，不自动跳转
-  if (payload.mode === "research") {
-    const taskId = researchStore.createTask(payload.query, payload.mode);
-    persistResearchTaskQuery(taskId, payload.query);
-    console.log('[MainView] 用户选择研究模式，创建任务卡片, taskId:', taskId);
-    connectResearchWebSocket(taskId, payload.query);
-    return;
-  }
+  // Step 1: 立即生成卡片（< 100ms）
+  const taskId = generateUUID();
+  const card = workspaceStore.createCard({
+    id: taskId,
+    query: payload.query,
+    mode: payload.mode === 'research' ? 'research' : 'simple',
+    trigger_source: 'manual_input',
+  });
+  console.log('[MainView] 已创建卡片, taskId:', taskId);
 
-  // 普通查询：提交到后端，可能被自动识别为研究模式
-  const result = await submit(payload);
-  console.log('[MainView] submit result:', result);
-  console.log('[MainView] requiresStreaming:', result.requiresStreaming);
-  console.log('[MainView] taskId:', result.taskId);
+  // Step 2: 异步提交到后端
+  try {
+    // 更新卡片状态为 processing
+    workspaceStore.updateCardStatus(taskId, 'processing', {
+      current_step: '正在提交查询...',
+      progress: 10,
+    });
 
-  // 后端自动检测为研究模式：在主页面启动 WebSocket 连接
-  if (result.requiresStreaming && result.taskId) {
-    console.log('[MainView] 后端识别为研究模式，启动 WebSocket 连接, taskId:', result.taskId);
-    connectResearchWebSocket(result.taskId, payload.query);
-  } else {
-    console.warn('[MainView] 未启动 WebSocket 连接');
-    console.warn('  requiresStreaming:', result.requiresStreaming);
-    console.warn('  taskId:', result.taskId);
+    // 用户主动选择"研究"模式：创建任务卡片 + 启动 WebSocket
+    if (payload.mode === "research") {
+      // 使用相同的 taskId 创建研究任务，确保 workspace 卡片和研究任务关联
+      const researchTaskId = researchStore.createTask(payload.query, payload.mode, taskId);
+      persistResearchTaskQuery(researchTaskId, payload.query);
+      console.log('[MainView] 用户选择研究模式，创建研究任务, researchTaskId === taskId:', researchTaskId, taskId);
+      connectResearchWebSocket(researchTaskId, payload.query);
+
+      // 研究模式：卡片状态由 WebSocket 更新，这里不做处理
+      return;
+    }
+
+    // 普通查询：提交到后端
+    const result = await submit(payload);
+    console.log('[MainView] submit result:', result);
+
+    // 后端自动检测为研究模式
+    if (result.requiresStreaming && result.taskId) {
+      console.log('[MainView] 后端识别为研究模式，启动 WebSocket 连接, taskId:', result.taskId);
+      connectResearchWebSocket(result.taskId, payload.query);
+      return;
+    }
+
+    // 普通查询成功完成
+    if (panelState.blocks && panelState.blocks.length > 0) {
+      workspaceStore.updateCardResult(
+        taskId,
+        panelState.blocks,
+        panelState.metadata?.refresh_metadata
+      );
+      console.log('[MainView] 普通查询完成，卡片已更新');
+    } else {
+      // 无结果数据
+      workspaceStore.updateCardStatus(taskId, 'completed', {
+        current_step: '查询完成',
+        progress: 100,
+      });
+    }
+  } catch (error) {
+    console.error('[MainView] 查询失败:', error);
+    workspaceStore.updateCardStatus(taskId, 'error', {
+      error_message: error instanceof Error ? error.message : '查询失败',
+    });
   }
 };
 
@@ -277,6 +331,86 @@ const handleOpenTask = async (taskId: string) => {
   }
 };
 
+const handleDeleteCard = (cardId: string) => {
+  console.log('[MainView] 删除卡片:', cardId);
+  workspaceStore.deleteCard(cardId);
+};
+
+const handleOpenCard = (cardId: string) => {
+  const card = workspaceStore.getCard(cardId);
+  if (!card) {
+    console.warn('[MainView] 卡片不存在:', cardId);
+    return;
+  }
+
+  console.log('[MainView] 打开卡片:', cardId);
+  // TODO: 实现卡片详情页面（展开卡片或跳转到详情视图）
+  // 暂时只在控制台显示
+  console.log('[MainView] 卡片详情:', card);
+};
+
+const handleRefreshCard = async (cardId: string) => {
+  const card = workspaceStore.getCard(cardId);
+  if (!card) {
+    console.warn('[MainView] 卡片不存在:', cardId);
+    return;
+  }
+
+  if (!card.refresh_metadata) {
+    console.warn('[MainView] 卡片缺少 refresh_metadata，无法快速刷新:', cardId);
+    return;
+  }
+
+  console.log('[MainView] 快速刷新卡片:', cardId, card.refresh_metadata);
+
+  // Phase 3: 快速刷新流程
+  try {
+    // 1. 标记为 processing 状态
+    workspaceStore.updateCardStatus(cardId, 'processing', {
+      current_step: '正在刷新数据...',
+      progress: 30,
+    });
+
+    // 2. 调用后端快速刷新 API
+    const response = await fetch('/api/v1/refresh', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        refresh_metadata: card.refresh_metadata,
+        layout_snapshot: panelStore.getLayoutSnapshot(),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`刷新失败：HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    // 3. 更新卡片结果
+    if (result.data && result.data.blocks && result.data.blocks.length > 0) {
+      workspaceStore.updateCardResult(
+        cardId,
+        result.data.blocks,
+        result.metadata?.refresh_metadata
+      );
+      console.log('[MainView] 卡片刷新完成:', cardId);
+    } else {
+      workspaceStore.updateCardStatus(cardId, 'completed', {
+        current_step: '刷新完成',
+        progress: 100,
+      });
+    }
+  } catch (error) {
+    console.error('[MainView] 卡片刷新失败:', error);
+    workspaceStore.updateCardStatus(cardId, 'error', {
+      error_message: error instanceof Error ? error.message : '刷新失败',
+    });
+  }
+};
+
 const setSizePreset = (preset: PanelSizePreset) => {
   panelStore.setSizePreset(preset);
 };
@@ -311,6 +445,24 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.workspace-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .workspace-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  }
+}
+
+@media (min-width: 1536px) {
+  .workspace-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  }
+}
+
 .research-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

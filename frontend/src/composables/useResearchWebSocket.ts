@@ -5,6 +5,7 @@
 import { ref } from "vue";
 import { useResearchViewStore } from "@/store/researchViewStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 import { resolveHttpBase, resolveWsBase } from "@/shared/networkBase";
 import type {
   ResearchAnalysis,
@@ -38,6 +39,7 @@ const {
 
 const viewStore = useResearchViewStore();
 const researchTaskStore = useResearchStore();
+const workspaceStore = useWorkspaceStore();
 const envWsBase = import.meta.env.VITE_WS_BASE as string | undefined;
 
 const ws = ref<WebSocket | null>(null);
@@ -162,6 +164,23 @@ const wsBaseUrl = ref(
             details: message.details,
             timestamp: message.timestamp,
           } as ResearchStep);
+
+          // Phase 2: 更新 workspace 卡片进度
+          const workspaceCard = workspaceStore.getCard(message.task_id || currentTaskId.value);
+          if (workspaceCard && workspaceCard.mode === 'research') {
+            // 计算进度：根据步骤状态推进
+            // 简单策略：每个步骤推进 20%，最多到 90%（最后 10% 留给完成）
+            const currentProgress = workspaceCard.progress || 10;
+            const newProgress = message.status === 'success'
+              ? Math.min(currentProgress + 20, 90)
+              : currentProgress;
+
+            workspaceStore.updateCardProgress(
+              message.task_id || currentTaskId.value,
+              newProgress,
+              message.action || '正在研究...'
+            );
+          }
           break;
         case "research_panel":
           viewStore.handleResearchPanel({
@@ -189,6 +208,29 @@ const wsBaseUrl = ref(
             message: message.message,
             summary: message.summary,
           });
+
+          // Phase 2: 标记 workspace 卡片为完成
+          const completedCard = workspaceStore.getCard(message.task_id || currentTaskId.value);
+          if (completedCard && completedCard.mode === 'research') {
+            if (message.success) {
+              workspaceStore.updateCardStatus(
+                message.task_id || currentTaskId.value,
+                'completed',
+                {
+                  current_step: '研究完成',
+                  progress: 100,
+                }
+              );
+            } else {
+              workspaceStore.updateCardStatus(
+                message.task_id || currentTaskId.value,
+                'error',
+                {
+                  error_message: message.message || '研究失败',
+                }
+              );
+            }
+          }
           break;
         case "research_error":
           viewStore.handleResearchError({
@@ -196,6 +238,18 @@ const wsBaseUrl = ref(
             error_message: message.error_message,
           });
           error.value = `[${message.error_code}] ${message.error_message}`;
+
+          // Phase 2: 标记 workspace 卡片为错误
+          const errorCard = workspaceStore.getCard(message.task_id || currentTaskId.value);
+          if (errorCard && errorCard.mode === 'research') {
+            workspaceStore.updateCardStatus(
+              message.task_id || currentTaskId.value,
+              'error',
+              {
+                error_message: `[${message.error_code}] ${message.error_message}`,
+              }
+            );
+          }
           break;
         default:
           console.warn("[useResearchWebSocket] Unknown message type:", message.type);

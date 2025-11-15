@@ -112,6 +112,17 @@ export interface PanelResponse {
     requires_streaming?: boolean | null;
     websocket_endpoint?: string | null;
     suggested_action?: string | null;
+    // Phase 2: 快速刷新元数据
+    refresh_metadata?: {
+      route_id: string;
+      generated_path: string;
+      retrieved_tools?: Array<{
+        route_id: string;
+        name: string;
+        score: number;
+      }>;
+      query_plan?: any;
+    } | null;
   };
 }
 

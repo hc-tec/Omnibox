@@ -168,3 +168,136 @@ def test_data_query_service_propagates_retrieved_tools_on_failure():
 
     assert result.status == "needs_clarification"
     assert result.retrieved_tools == retrieved_tools
+
+
+# Phase 3: 快速刷新功能测试
+
+
+class _MockDataExecutor:
+    """Mock 数据执行器，用于测试快速刷新功能"""
+
+    def __init__(self, fetch_return_value):
+        self._fetch_return_value = fetch_return_value
+        self.fetch_calls = []
+
+    def fetch(self, generated_path, cache_key, use_cache=True):
+        self.fetch_calls.append({
+            "generated_path": generated_path,
+            "cache_key": cache_key,
+            "use_cache": use_cache,
+        })
+        return self._fetch_return_value
+
+
+def test_fetch_data_directly_success():
+    """测试快速刷新成功获取数据"""
+    mock_api_result = {
+        "items": [{"title": "刷新后数据-1"}, {"title": "刷新后数据-2"}],
+        "title": "刷新后 Feed",
+        "source": "rsshub",
+        "cache_hit": "none",
+    }
+    executor = _MockDataExecutor(mock_api_result)
+
+    service = DataQueryService(
+        rag_in_action=None,  # 快速刷新不需要 RAG
+        data_executor=executor,
+        cache_service=_DummyCache(),
+    )
+
+    result = service.fetch_data_directly(
+        route_id="demo/hot",
+        generated_path="/demo/hot",
+        use_cache=False,
+    )
+
+    # 验证返回结果
+    assert result.status == "success"
+    assert len(result.items) == 2
+    assert result.items[0]["title"] == "刷新后数据-1"
+    assert result.feed_title == "刷新后 Feed"
+    assert result.generated_path == "/demo/hot"
+    assert result.source == "rsshub"
+    assert result.cache_hit == "none"
+
+    # 验证调用参数
+    assert len(executor.fetch_calls) == 1
+    assert executor.fetch_calls[0]["generated_path"] == "/demo/hot"
+    assert executor.fetch_calls[0]["use_cache"] is False
+
+
+def test_fetch_data_directly_no_items():
+    """测试快速刷新返回空数据"""
+    mock_api_result = {"items": [], "title": "Empty Feed"}
+    executor = _MockDataExecutor(mock_api_result)
+
+    service = DataQueryService(
+        rag_in_action=None,
+        data_executor=executor,
+        cache_service=_DummyCache(),
+    )
+
+    result = service.fetch_data_directly(
+        route_id="demo/empty",
+        generated_path="/demo/empty",
+        use_cache=False,
+    )
+
+    assert result.status == "not_found"
+    assert result.items == []
+    assert result.reasoning == "数据获取失败：未返回数据"
+
+
+def test_fetch_data_directly_with_cache():
+    """测试快速刷新使用缓存"""
+    mock_api_result = {
+        "items": [{"title": "cached-data"}],
+        "title": "Cached Feed",
+        "source": "rsshub",
+        "cache_hit": "rss_cache",
+    }
+    executor = _MockDataExecutor(mock_api_result)
+
+    service = DataQueryService(
+        rag_in_action=None,
+        data_executor=executor,
+        cache_service=_DummyCache(),
+    )
+
+    result = service.fetch_data_directly(
+        route_id="demo/cached",
+        generated_path="/demo/cached",
+        use_cache=True,
+    )
+
+    assert result.status == "success"
+    assert len(result.items) == 1
+    assert result.cache_hit == "rss_cache"
+
+    # 验证使用了缓存参数
+    assert executor.fetch_calls[0]["use_cache"] is True
+
+
+def test_fetch_data_directly_exception_handling():
+    """测试快速刷新异常处理"""
+    executor = _MockDataExecutor(None)
+    # 模拟抛出异常
+    def fetch_with_error(*args, **kwargs):
+        raise RuntimeError("网络连接失败")
+    executor.fetch = fetch_with_error
+
+    service = DataQueryService(
+        rag_in_action=None,
+        data_executor=executor,
+        cache_service=_DummyCache(),
+    )
+
+    result = service.fetch_data_directly(
+        route_id="demo/error",
+        generated_path="/demo/error",
+        use_cache=False,
+    )
+
+    assert result.status == "error"
+    assert result.items == []
+    assert "网络连接失败" in result.reasoning

@@ -194,6 +194,64 @@ class DataQueryService:
                 rag_trace=rag_trace,
             )
 
+    def fetch_data_directly(
+        self,
+        route_id: Optional[str],
+        generated_path: str,
+        use_cache: bool = False,
+    ) -> DataQueryResult:
+        """
+        快速刷新：直接使用 generated_path 获取数据，跳过 RAG 检索。
+
+        Phase 3: 快速刷新功能
+        - 直接调用数据获取 API
+        - 不进行 RAG 检索
+        - 不使用缓存（默认）
+
+        Args:
+            route_id: RSSHub 路由 ID（可选）
+            generated_path: 生成的完整路径（如 "/bilibili/hot-search"）
+            use_cache: 是否使用缓存（默认 False）
+
+        Returns:
+            DataQueryResult
+        """
+        logger.info("直接获取数据: route_id=%s, generated_path=%s", route_id, generated_path)
+
+        try:
+            # 直接调用数据获取 API
+            api_result = self.data_executor.fetch(
+                generated_path=generated_path,
+                cache_key=generated_path,
+                use_cache=use_cache,
+            )
+
+            if not api_result or not api_result.get("items"):
+                return DataQueryResult(
+                    status="not_found",
+                    items=[],
+                    reasoning="数据获取失败：未返回数据",
+                    generated_path=generated_path,
+                )
+
+            return DataQueryResult(
+                status="success",
+                items=api_result.get("items", []),
+                feed_title=api_result.get("title", ""),
+                generated_path=generated_path,
+                source=api_result.get("source", "rsshub"),
+                cache_hit=api_result.get("cache_hit", "none"),
+            )
+
+        except Exception as exc:
+            logger.error(f"直接获取数据失败: {exc}", exc_info=True)
+            return DataQueryResult(
+                status="error",
+                items=[],
+                reasoning=f"数据获取异常: {exc}",
+                generated_path=generated_path,
+            )
+
     def close(self):
         if self._own_executor and self.data_executor:
             self.data_executor.close()

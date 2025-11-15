@@ -82,6 +82,12 @@ class ResponseMetadata(BaseModel):
     suggested_action: Optional[str] = Field(
         None, description="建议的前端操作（当requires_streaming=True时提供）"
     )
+    refresh_metadata: Optional[Dict[str, Any]] = Field(
+        None, description="快速刷新元数据（Phase 3），包含 route_id、generated_path、retrieved_tools"
+    )
+    is_refresh: Optional[bool] = Field(
+        None, description="是否为快速刷新请求（Phase 3）"
+    )
 
 
 class LayoutSnapshotItem(BaseModel):
@@ -93,6 +99,19 @@ class LayoutSnapshotItem(BaseModel):
     y: int = Field(..., ge=0, description="栅格 Y 坐标")
     w: int = Field(..., ge=1, description="栅格宽度")
     h: int = Field(..., ge=1, description="栅格高度")
+
+
+class RefreshRequest(BaseModel):
+    """快速刷新请求体（Phase 3）。"""
+
+    refresh_metadata: Dict[str, Any] = Field(
+        ...,
+        description="刷新元数据，包含 route_id、generated_path"
+    )
+    layout_snapshot: Optional[List[LayoutSnapshotItem]] = Field(
+        default=None,
+        description="前端上报的布局快照（可选）",
+    )
 
 
 class ChatRequest(BaseModel):

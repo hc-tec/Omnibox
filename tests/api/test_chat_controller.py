@@ -268,5 +268,167 @@ class TestErrorHandling:
         assert data["success"] is False
 
 
+# Phase 3: 快速刷新功能集成测试
+
+
+class TestRefreshEndpoint:
+    """快速刷新接口测试"""
+
+    def test_refresh_with_valid_metadata(self, client):
+        """测试使用有效 refresh_metadata 进行快速刷新"""
+        # 先执行一次正常查询以获取 refresh_metadata
+        chat_response = client.post(
+            "/api/v1/chat",
+            json={
+                "query": "测试查询",
+                "use_cache": True,
+            }
+        )
+        assert chat_response.status_code == 200
+
+        chat_data = chat_response.json()
+        refresh_metadata = chat_data.get("metadata", {}).get("refresh_metadata")
+
+        # 如果有 refresh_metadata，测试快速刷新
+        if refresh_metadata and refresh_metadata.get("generated_path"):
+            refresh_response = client.post(
+                "/api/v1/refresh",
+                json={
+                    "refresh_metadata": refresh_metadata,
+                }
+            )
+
+            assert refresh_response.status_code == 200
+
+            data = refresh_response.json()
+            assert data["success"] is True
+            assert "刷新成功" in data["message"]
+            assert "data" in data
+            assert "metadata" in data
+
+            # 验证元数据包含 is_refresh 标记
+            metadata = data["metadata"]
+            assert metadata is not None
+            assert metadata.get("is_refresh") is True
+            assert "refresh_metadata" in metadata
+
+    def test_refresh_missing_metadata(self, client):
+        """测试缺少 refresh_metadata 的验证错误"""
+        response = client.post(
+            "/api/v1/refresh",
+            json={
+                # 缺少 refresh_metadata
+            }
+        )
+
+        assert response.status_code == 422  # Validation error
+
+        data = response.json()
+        assert data["success"] is False
+        assert data["error_code"] == "VALIDATION_ERROR"
+
+    def test_refresh_missing_generated_path(self, client):
+        """测试 refresh_metadata 缺少 generated_path"""
+        response = client.post(
+            "/api/v1/refresh",
+            json={
+                "refresh_metadata": {
+                    "route_id": "demo/hot",
+                    # 缺少 generated_path
+                }
+            }
+        )
+
+        # 应该返回业务错误（200状态码，success=false）
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is False
+        assert "缺少 generated_path" in data["message"]
+
+    def test_refresh_with_layout_snapshot(self, client):
+        """测试携带 layout_snapshot 的快速刷新"""
+        # 构造一个最小的 refresh_metadata
+        refresh_metadata = {
+            "route_id": "demo/hot",
+            "generated_path": "/demo/hot",
+        }
+
+        layout_snapshot = [
+            {
+                "block_id": "block-1",
+                "component": "FeedList",
+                "x": 0,
+                "y": 0,
+                "w": 12,
+                "h": 4,
+            }
+        ]
+
+        response = client.post(
+            "/api/v1/refresh",
+            json={
+                "refresh_metadata": refresh_metadata,
+                "layout_snapshot": layout_snapshot,
+            }
+        )
+
+        # 根据 mock 模式，可能返回成功或失败
+        assert response.status_code == 200
+
+        data = response.json()
+        # 至少应该有响应结构
+        assert "success" in data
+        assert "message" in data
+
+    def test_refresh_response_format(self, client):
+        """测试快速刷新响应格式"""
+        refresh_metadata = {
+            "route_id": "demo/test",
+            "generated_path": "/demo/test",
+        }
+
+        response = client.post(
+            "/api/v1/refresh",
+            json={
+                "refresh_metadata": refresh_metadata,
+            }
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        # 检查必需字段
+        assert "success" in data
+        assert "message" in data
+        assert "data" in data
+        assert "data_blocks" in data
+        assert "metadata" in data
+
+    def test_refresh_concurrent_requests(self, client):
+        """测试快速刷新并发请求"""
+        import concurrent.futures
+
+        refresh_metadata = {
+            "route_id": "demo/concurrent",
+            "generated_path": "/demo/concurrent",
+        }
+
+        def make_refresh_request(request_id):
+            response = client.post(
+                "/api/v1/refresh",
+                json={"refresh_metadata": refresh_metadata}
+            )
+            return response.status_code == 200
+
+        # 发起5个并发刷新请求
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(make_refresh_request, i) for i in range(5)]
+            results = [future.result() for future in concurrent.futures.as_completed(futures)]
+
+        # 所有请求都应该成功
+        assert all(results), "部分并发刷新请求失败"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

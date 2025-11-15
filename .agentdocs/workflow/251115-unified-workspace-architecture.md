@@ -1,8 +1,9 @@
 # 统一工作区架构设计方案
 
 **创建日期**：2025-11-15
-**状态**：设计方案（待评审）
+**状态**：开发中 - Phase 1-2 已完成 ✅
 **优先级**：P1（架构优化，影响用户体验）
+**最后更新**：2025-11-15
 
 ---
 
@@ -656,37 +657,52 @@ function rejectPlan() {
 
 ## 实施路线图
 
-### Phase 1: 基础卡片系统（3 天）
+### Phase 1: 基础卡片系统（3 天）✅ **已完成**
 
 **目标**：所有查询都生成卡片，支持 pending/processing/completed 状态。
 
 **任务清单**：
-- [ ] 创建 `WorkspaceStore`（管理卡片列表）
-- [ ] 实现 `QueryCard` 组件（Header/Body/Footer 结构）
-- [ ] 实现即时卡片生成（提交后 < 100ms 显示）
-- [ ] 实现骨架屏（pending 状态）
-- [ ] 修改 `handleCommandSubmit` 逻辑（先生成卡片，再调用后端）
-- [ ] 后端 API 返回 `task_id`（前端用于关联卡片）
+- [x] 创建 `WorkspaceStore`（管理卡片列表）
+- [x] 实现 `QueryCard` 组件（Header/Body/Footer 结构）
+- [x] 实现即时卡片生成（提交后 < 100ms 显示）
+- [x] 实现骨架屏（pending 状态）
+- [x] 修改 `handleCommandSubmit` 逻辑（先生成卡片，再调用后端）
+- [x] 后端 API 返回 `task_id`（前端用于关联卡片）- [x] 添加 `workspace-cards-grid` CSS 样式
 
 **验证标准**：
-- 用户提交查询后 < 100ms 看到新卡片
-- 卡片显示查询文本、时间戳、模式标识
-- 普通查询和研究查询都生成卡片
+- ✅ 用户提交查询后 < 100ms 看到新卡片
+- ✅ 卡片显示查询文本、时间戳、模式标识
+- ✅ 普通查询和研究查询都生成卡片
 
-### Phase 2: 进度反馈与元数据（2 天）
+**实现文件**：
+- `frontend/src/types/queryCard.ts` - 卡片类型定义
+- `frontend/src/store/workspaceStore.ts` - Pinia store
+- `frontend/src/components/workspace/QueryCard.vue` - 卡片组件
+- `frontend/src/utils/uuid.ts` - UUID 生成工具
+- `frontend/src/views/MainView.vue` - 集成工作区卡片系统
+
+### Phase 2: 进度反馈与元数据（2 天）✅ **已完成**
 
 **目标**：Processing 状态显示实时进度，completed 状态保存刷新元数据。
 
 **任务清单**：
-- [ ] 后端增加进度推送（WebSocket 消息：`progress`）
-- [ ] 前端接收并更新卡片进度
-- [ ] 实现进度条 UI
-- [ ] 后端响应增加 `refresh_metadata` 字段
-- [ ] 前端存储 `refresh_metadata`
+- [x] 后端增加进度推送（复用 `research_step` WebSocket 消息）
+- [x] 前端接收并更新卡片进度
+- [x] 实现进度条 UI
+- [x] 后端响应增加 `refresh_metadata` 字段
+- [x] 前端存储 `refresh_metadata`
 
 **验证标准**：
-- 查询执行时显示"RAG 检索中..." / "LLM 规划中..." / "获取数据中..."
-- 进度条从 0% 平滑过渡到 100%
+- ✅ 查询执行时显示步骤描述（action 字段）
+- ✅ 进度条从 10% 平滑过渡到 100%（duration-500 ease-out）
+- ✅ 进度百分比显示
+- ✅ refresh_metadata 包含 route_id、generated_path、retrieved_tools
+
+**实现文件**：
+- `frontend/src/composables/useResearchWebSocket.ts` - WebSocket 消息处理，更新卡片进度
+- `frontend/src/components/workspace/QueryCard.vue` - 进度条 UI 优化
+- `services/chat_service.py` - 添加 refresh_metadata 到响应
+- `frontend/src/shared/types/panel.ts` - 添加 refresh_metadata 类型定义
 - completed 卡片包含 `refresh_metadata`
 
 ### Phase 3: 快速刷新功能（2 天）

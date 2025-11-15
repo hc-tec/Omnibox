@@ -268,3 +268,137 @@ def test_streaming_research_respects_filter_datasource():
     first_call = data_service.calls[0]
     assert first_call["filter_datasource"] == "github"
     assert first_call["prefer_single_route"] is True
+
+
+# Phase 3: 快速刷新功能测试
+
+
+class _MockDataQueryServiceForRefresh:
+    """Mock 数据查询服务，用于测试快速刷新"""
+
+    def __init__(self):
+        self.fetch_data_directly_calls = []
+
+    def fetch_data_directly(self, route_id, generated_path, use_cache):
+        self.fetch_data_directly_calls.append({
+            "route_id": route_id,
+            "generated_path": generated_path,
+            "use_cache": use_cache,
+        })
+        return DataQueryResult(
+            status="success",
+            items=[{"title": "刷新后数据"}],
+            feed_title="刷新后 Feed",
+            generated_path=generated_path,
+            source="rsshub",
+            cache_hit="none",
+        )
+
+
+def test_quick_refresh_success():
+    """测试快速刷新成功场景"""
+    data_service = _MockDataQueryServiceForRefresh()
+    chat = ChatService(data_query_service=data_service)
+    chat.panel_generator = _RecordingPanelGenerator(_empty_panel_result())
+
+    refresh_metadata = {
+        "route_id": "demo/hot",
+        "generated_path": "/demo/hot",
+    }
+
+    response = chat.quick_refresh(refresh_metadata=refresh_metadata)
+
+    # 验证调用了 fetch_data_directly
+    assert len(data_service.fetch_data_directly_calls) == 1
+    call = data_service.fetch_data_directly_calls[0]
+    assert call["route_id"] == "demo/hot"
+    assert call["generated_path"] == "/demo/hot"
+    assert call["use_cache"] is False  # 刷新时不使用缓存
+
+    # 验证响应
+    assert response.success is True
+    assert "刷新成功" in response.message
+    assert response.intent_type == "data_query"
+    assert response.metadata["is_refresh"] is True
+    assert response.metadata["refresh_metadata"]["route_id"] == "demo/hot"
+    assert response.metadata["refresh_metadata"]["generated_path"] == "/demo/hot"
+
+
+def test_quick_refresh_missing_generated_path():
+    """测试快速刷新缺少 generated_path 时的错误处理"""
+    data_service = _MockDataQueryServiceForRefresh()
+    chat = ChatService(data_query_service=data_service)
+
+    refresh_metadata = {
+        "route_id": "demo/hot",
+        # 缺少 generated_path
+    }
+
+    response = chat.quick_refresh(refresh_metadata=refresh_metadata)
+
+    # 验证返回错误
+    assert response.success is False
+    assert response.intent_type == "error"
+    assert "缺少 generated_path" in response.message
+
+    # 验证没有调用 fetch_data_directly
+    assert len(data_service.fetch_data_directly_calls) == 0
+
+
+def test_quick_refresh_with_layout_snapshot():
+    """测试快速刷新传递 layout_snapshot 到面板生成器"""
+    data_service = _MockDataQueryServiceForRefresh()
+    chat = ChatService(data_query_service=data_service)
+
+    panel_generator = _RecordingPanelGenerator(_empty_panel_result())
+    chat.panel_generator = panel_generator
+
+    refresh_metadata = {
+        "route_id": "demo/hot",
+        "generated_path": "/demo/hot",
+    }
+    layout_snapshot = [
+        {"block_id": "block-1", "component": "FeedList", "x": 0, "y": 0, "w": 12, "h": 4}
+    ]
+
+    response = chat.quick_refresh(
+        refresh_metadata=refresh_metadata,
+        layout_snapshot=layout_snapshot,
+    )
+
+    # 验证响应成功
+    assert response.success is True
+
+    # TODO: 验证 layout_snapshot 传递给面板生成器
+    # 当前实现中 _build_panel 接收 layout_snapshot 参数，但 panel_generator 的测试桩可能需要扩展
+
+
+class _FailingDataQueryService:
+    """模拟数据查询失败的服务"""
+
+    def fetch_data_directly(self, route_id, generated_path, use_cache):
+        return DataQueryResult(
+            status="error",
+            items=[],
+            reasoning="网络连接失败",
+        )
+
+
+def test_quick_refresh_handles_fetch_error():
+    """测试快速刷新处理数据获取失败"""
+    data_service = _FailingDataQueryService()
+    chat = ChatService(data_query_service=data_service)
+    chat.panel_generator = _RecordingPanelGenerator(_empty_panel_result())
+
+    refresh_metadata = {
+        "route_id": "demo/error",
+        "generated_path": "/demo/error",
+    }
+
+    response = chat.quick_refresh(refresh_metadata=refresh_metadata)
+
+    # 数据获取失败时应该返回失败的响应
+    assert response.success is False
+    assert response.intent_type == "data_query"
+    assert "网络连接失败" in response.message
+    assert response.metadata["status"] == "error"

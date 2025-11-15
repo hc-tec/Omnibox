@@ -183,6 +183,106 @@ class ChatService:
 
         logger.info("ChatService 初始化完成")
 
+    def quick_refresh(
+        self,
+        refresh_metadata: Dict[str, Any],
+        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+        user_id: Optional[int] = None,
+    ) -> ChatResponse:
+        """
+        快速刷新：跳过 RAG/LLM 推理，直接使用 refresh_metadata 重新获取数据。
+
+        Phase 3: 快速刷新功能
+        - 跳过意图识别
+        - 跳过 RAG 检索
+        - 直接使用 route_id 和 generated_path 调用数据 API
+        - 生成面板并返回
+
+        Args:
+            refresh_metadata: 刷新元数据，包含 route_id、generated_path
+            layout_snapshot: 当前面板布局快照（可选）
+            user_id: 用户 ID（Phase 2，游客模式可为 None）
+
+        Returns:
+            ChatResponse 对象
+        """
+        generated_path = refresh_metadata.get("generated_path")
+        route_id = refresh_metadata.get("route_id")
+
+        if not generated_path:
+            return ChatResponse(
+                success=False,
+                intent_type="error",
+                message="刷新失败：缺少 generated_path",
+                metadata={"error": "missing_generated_path"},
+            )
+
+        logger.info("快速刷新数据: route_id=%s, generated_path=%s", route_id, generated_path)
+
+        try:
+            # 直接调用数据查询（使用 generated_path）
+            query_result = self.data_query_service.fetch_data_directly(
+                route_id=route_id,
+                generated_path=generated_path,
+                use_cache=False,  # 刷新时不使用缓存
+            )
+
+            if query_result.status != "success":
+                return ChatResponse(
+                    success=False,
+                    intent_type="data_query",
+                    message=f"刷新失败：{query_result.reasoning}",
+                    metadata={
+                        "status": query_result.status,
+                        "reasoning": query_result.reasoning,
+                    },
+                )
+
+            # 构建面板
+            datasets = query_result.datasets or []
+            panel_result = self._build_panel(
+                query_result=query_result,
+                datasets=datasets,
+                intent_confidence=1.0,  # 刷新时置信度为 1.0
+                user_query="[快速刷新]",
+                layout_snapshot=layout_snapshot,
+            )
+
+            # 构建新的 refresh_metadata
+            new_refresh_metadata = {
+                "route_id": route_id,
+                "generated_path": query_result.generated_path or generated_path,
+                "retrieved_tools": refresh_metadata.get("retrieved_tools", []),
+            }
+
+            metadata = {
+                "generated_path": query_result.generated_path,
+                "source": query_result.source,
+                "cache_hit": query_result.cache_hit,
+                "feed_title": query_result.feed_title,
+                "component_confidence": panel_result.component_confidence,
+                "refresh_metadata": new_refresh_metadata,
+                "is_refresh": True,  # 标记为刷新请求
+            }
+
+            return ChatResponse(
+                success=True,
+                intent_type="data_query",
+                message=f"刷新成功，获取 {len(datasets)} 个数据集",
+                data=panel_result.payload,
+                data_blocks=panel_result.data_blocks,
+                metadata=metadata,
+            )
+
+        except Exception as exc:
+            logger.error(f"快速刷新失败: {exc}", exc_info=True)
+            return ChatResponse(
+                success=False,
+                intent_type="error",
+                message=f"刷新失败：{exc}",
+                metadata={"error": str(exc)},
+            )
+
     def chat(
         self,
         user_query: str,
@@ -392,6 +492,21 @@ class ChatService:
                 query_result.rag_trace or None,
             )
 
+            # Phase 3: 构建 refresh_metadata（用于快速刷新）
+            # 从数据集或 retrieved_tools 中提取 route_id
+            route_id = ""
+            if datasets and datasets[0].route_id:
+                route_id = datasets[0].route_id
+            elif query_result.retrieved_tools:
+                # 从 RAG 检索到的第一个工具中获取 route_id
+                route_id = query_result.retrieved_tools[0].get("route_id", "")
+
+            refresh_metadata = {
+                "route_id": route_id,
+                "generated_path": query_result.generated_path or "",
+                "retrieved_tools": format_retrieved_tools(query_result.retrieved_tools),
+            }
+
             metadata: Dict[str, Any] = {
                 "generated_path": query_result.generated_path,
                 "source": query_result.source,
@@ -405,6 +520,7 @@ class ChatService:
                 "debug": debug_info,
                 "datasets": summarize_datasets(datasets, query_result),
                 "retrieved_tools": format_retrieved_tools(query_result.retrieved_tools),
+                "refresh_metadata": refresh_metadata,  # Phase 2: 快速刷新元数据
             }
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
@@ -626,6 +742,29 @@ class ChatService:
         start_time = time.time()
 
         logger.info("开始流式研究任务 (task_id=%s, stream_id=%s): %s", task_id, stream_id, user_query)
+
+        # P0 修复：检查 LLM 组件是否可用
+        if not self.query_planner:
+            logger.error("研究任务失败: query_planner 未初始化或不可用")
+            yield {
+                "type": "research_error",
+                "stream_id": stream_id,
+                "task_id": task_id,
+                "step_id": "initialization",
+                "error_code": "COMPONENT_UNAVAILABLE",
+                "error_message": "LLM 组件未初始化，无法执行复杂研究任务。请检查环境配置或稍后重试。",
+                "timestamp": datetime.now().isoformat(),
+            }
+            yield {
+                "type": "research_complete",
+                "stream_id": stream_id,
+                "task_id": task_id,
+                "success": False,
+                "message": "研究失败：LLM 组件不可用",
+                "total_time": time.time() - start_time,
+                "timestamp": datetime.now().isoformat(),
+            }
+            return
 
         try:
             # ========== 第一步：LLM 查询规划 ==========

@@ -16,7 +16,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from api.schemas.responses import ChatRequest, ChatResponse, ResponseMetadata, ErrorResponse
+from api.schemas.responses import ChatRequest, ChatResponse, ResponseMetadata, ErrorResponse, RefreshRequest
 from api.schemas.panel import (
     PanelPayload,
     UIBlock,
@@ -172,6 +172,118 @@ class MockChatService:
             message=message,
             data=panel_payload,
             data_blocks=data_blocks,
+            metadata=metadata,
+        )
+
+    def quick_refresh(
+        self,
+        refresh_metadata: Dict[str, Any],
+        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
+        user_id: Optional[int] = None,
+    ) -> SimpleChatResponse:
+        """
+        快速刷新的模拟实现
+
+        Phase 3: 快速刷新功能（Mock版本）
+        """
+        generated_path = refresh_metadata.get("generated_path")
+        route_id = refresh_metadata.get("route_id", "")
+
+        if not generated_path:
+            return SimpleChatResponse(
+                success=False,
+                intent_type="error",
+                message="刷新失败：缺少 generated_path",
+                metadata={"error": "missing_generated_path"},
+            )
+
+        # 生成模拟刷新数据
+        block_records = [
+            {
+                "title": f"刷新后数据：{route_id}",
+                "link": "https://example.com/mock/refresh",
+                "description": "这是刷新后的模拟数据，用于本地/测试环境。",
+                "pubDate": None,
+                "author": "mock-refresh",
+            }
+        ]
+        schema_summary = SchemaSummary(
+            fields=[
+                SchemaFieldSummary(name="title", type="text", sample=[block_records[0]["title"]]),
+                SchemaFieldSummary(name="link", type="url", sample=[block_records[0]["link"]]),
+                SchemaFieldSummary(name="description", type="text", sample=[block_records[0]["description"]]),
+            ],
+            stats={"total": 1},
+            schema_digest="List(title:text/link:url/description:text)",
+        )
+        data_block = DataBlock(
+            id="data_block_mock_refresh",
+            source_info=SourceInfo(
+                datasource="mock",
+                route=generated_path,
+                params={"route_id": route_id},
+                fetched_at=None,
+                request_id="mock-refresh-request",
+            ),
+            records=block_records,
+            stats={"total": 1},
+            schema_summary=schema_summary,
+            full_data_ref=None,
+        )
+        ui_block = UIBlock(
+            id="block-mock-refresh-1",
+            component="ListPanel",
+            data_ref=data_block.id,
+            data={
+                "items": block_records,
+                "schema": schema_summary.model_dump(),
+                "stats": data_block.stats,
+            },
+            props={
+                "title_field": "title",
+                "link_field": "link",
+                "description_field": "description",
+            },
+            options={"show_description": True, "span": 12},
+            interactions=[],
+            confidence=0.9,
+            title=f"刷新后数据：{route_id}",
+        )
+        layout = LayoutTree(
+            mode="append",
+            nodes=[
+                LayoutNode(
+                    type="row",
+                    id="row-1",
+                    children=[ui_block.id],
+                    props={"span": 12, "min_height": 320},
+                )
+            ],
+            history_token=None,
+        )
+        panel_payload = PanelPayload(mode="append", layout=layout, blocks=[ui_block])
+
+        metadata = {
+            "intent_type": "data_query",
+            "generated_path": generated_path,
+            "source": "mock",
+            "cache_hit": "none",
+            "feed_title": "模拟刷新数据",
+            "refresh_metadata": {
+                "route_id": route_id,
+                "generated_path": generated_path,
+                "retrieved_tools": refresh_metadata.get("retrieved_tools", []),
+            },
+            "is_refresh": True,  # Phase 3: 标记为刷新请求
+            "component_confidence": {"block-mock-refresh-1": 0.9},
+        }
+
+        return SimpleChatResponse(
+            success=True,
+            intent_type="data_query",
+            message=f"刷新成功，获取 1 个数据集（mock）",
+            data=panel_payload,
+            data_blocks={data_block.id: data_block},
             metadata=metadata,
         )
 
@@ -371,6 +483,78 @@ async def chat(
 
     except Exception as e:
         logger.error(f"对话请求处理失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"服务器内部错误: {str(e)}"
+        )
+
+
+@router.post(
+    "/refresh",
+    response_model=ChatResponse,
+    responses={
+        200: {"description": "成功", "model": ChatResponse},
+        400: {"description": "请求参数错误", "model": ErrorResponse},
+        500: {"description": "服务器内部错误", "model": ErrorResponse},
+        503: {"description": "服务不可用", "model": ErrorResponse},
+    },
+    summary="快速刷新接口",
+    description="使用 refresh_metadata 快速刷新数据，跳过 RAG/LLM 推理"
+)
+async def refresh(
+    request: RefreshRequest,
+    chat_service: Any = Depends(get_chat_service)
+) -> ChatResponse:
+    """
+    快速刷新接口
+
+    Phase 3: 快速刷新功能
+    - 跳过意图识别
+    - 跳过 RAG 检索
+    - 直接使用 refresh_metadata 重新获取数据
+
+    Args:
+        request: 刷新请求（包含 refresh_metadata）
+        chat_service: ChatService实例（依赖注入）
+
+    Returns:
+        ChatResponse: 刷新响应
+
+    Raises:
+        HTTPException: 请求参数错误或服务器错误
+    """
+    try:
+        logger.info(f"收到快速刷新请求: route_id={request.refresh_metadata.get('route_id')}")
+
+        # 使用run_in_threadpool避免阻塞事件循环
+        response = await run_in_threadpool(
+            chat_service.quick_refresh,
+            refresh_metadata=request.refresh_metadata,
+            layout_snapshot=request.layout_snapshot,
+        )
+
+        metadata = None
+        if response.metadata:
+            metadata = ResponseMetadata(
+                intent_type=response.metadata.get("intent_type"),
+                generated_path=response.metadata.get("generated_path"),
+                source=response.metadata.get("source"),
+                cache_hit=response.metadata.get("cache_hit"),
+                feed_title=response.metadata.get("feed_title"),
+                component_confidence=response.metadata.get("component_confidence"),
+                refresh_metadata=response.metadata.get("refresh_metadata"),
+            )
+
+        return ChatResponse(
+            success=response.success,
+            message=response.message,
+            data=response.data,
+            data_blocks=response.data_blocks,
+            metadata=metadata,
+        )
+
+    except Exception as e:
+        logger.error(f"快速刷新请求处理失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"服务器内部错误: {str(e)}"
