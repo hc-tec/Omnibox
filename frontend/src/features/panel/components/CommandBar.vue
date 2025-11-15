@@ -13,16 +13,18 @@
           </div>
           <div class="flex-1">
             <p class="text-[11px] uppercase tracking-[0.5em] text-muted-foreground">{{ copy.label }}</p>
-            <input
+            <textarea
               ref="inputRef"
               v-model="localQuery"
-              type="text"
               :placeholder="copy.placeholder"
               :disabled="loading"
-              class="w-full bg-transparent text-foreground placeholder:text-muted-foreground/80 focus:outline-none transition-all"
+              rows="1"
+              class="w-full resize-none bg-transparent text-foreground placeholder:text-muted-foreground/80 focus:outline-none transition-all overflow-hidden"
               :class="condensed ? 'text-base font-medium' : 'text-2xl font-semibold'"
               @focus="handleFocus"
               @blur="handleBlur"
+              @keydown="handleKeydown"
+              @input="adjustHeight"
             />
           </div>
         </div>
@@ -133,7 +135,7 @@ const copy = {
 const samples = copy.samples;
 const localQuery = ref(props.defaultQuery);
 const queryMode = ref<QueryMode>('auto');
-const inputRef = ref<HTMLInputElement | null>(null);
+const inputRef = ref<HTMLTextAreaElement | null>(null);
 const hovered = ref(false);
 const focused = ref(false);
 const condensed = computed(() => props.condensed ?? false);
@@ -178,6 +180,36 @@ function handleFocus() {
 function handleBlur() {
   focused.value = false;
   emit("focus-change", false);
+}
+
+/**
+ * 处理键盘事件
+ * Enter：提交表单
+ * Shift + Enter：换行（默认行为）
+ */
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    handleSubmit();
+  }
+}
+
+/**
+ * 自动调整 textarea 高度
+ */
+function adjustHeight() {
+  const textarea = inputRef.value;
+  if (!textarea) return;
+
+  // 重置高度以获取正确的 scrollHeight
+  textarea.style.height = 'auto';
+
+  // 设置新高度（最小1行，最大8行）
+  const lineHeight = condensed.value ? 24 : 36; // 根据字体大小估算
+  const maxHeight = lineHeight * 8;
+  const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+
+  textarea.style.height = `${newHeight}px`;
 }
 
 // 移除自动聚焦，用户需要手动点击或按快捷键打开

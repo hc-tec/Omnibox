@@ -36,6 +36,14 @@
           <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="navigateToSubscriptions">
             订阅管理
           </button>
+          <button
+            class="rounded-xl px-3 py-2 transition"
+            :class="devModeEnabled ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'"
+            @click="devModeStore.toggle()"
+            title="开发者模式：点击组件查看调试信息"
+          >
+            {{ devModeEnabled ? "🔧 开发模式" : "开发模式" }}
+          </button>
           <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="toggleTheme">
             {{ isLight ? "Dark" : "Light" }}
           </button>
