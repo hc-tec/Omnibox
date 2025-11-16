@@ -19,6 +19,7 @@ def register_user_interaction_tool(registry: ToolRegistry) -> None:
         registry,
         plugin_id="ask_user_clarification",
         description="请求用户澄清歧义，提供结构化选项",
+        execution_mode="full",  # 修复：必须走完整流程以触发 Reflector 的 REQUEST_HUMAN_CLARIFICATION
         schema={
             "type": "object",
             "properties": {

@@ -94,5 +94,6 @@ class GraphState(TypedDict, total=False):
     router_decision: Optional[RouterDecision]
     pending_tool_result: Optional[ToolExecutionPayload]
     last_tool_result: Optional[ToolExecutionPayload]  # V5.0 P0: Reflector 用于检查工具状态
+    working_memory: Dict[str, Any]  # V5.0 Phase 2: 轻量工具结果（不持久化）
     last_error: Optional[str]
 

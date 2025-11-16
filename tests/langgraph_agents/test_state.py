@@ -74,9 +74,9 @@ class TestReflection:
         assert refl.decision == "FINISH"
 
     def test_request_human_decision(self):
-        """测试 REQUEST_HUMAN 决策"""
-        refl = Reflection(decision="REQUEST_HUMAN", reasoning="需要澄清")
-        assert refl.decision == "REQUEST_HUMAN"
+        """测试 REQUEST_HUMAN_CLARIFICATION 决策"""
+        refl = Reflection(decision="REQUEST_HUMAN_CLARIFICATION", reasoning="需要澄清")
+        assert refl.decision == "REQUEST_HUMAN_CLARIFICATION"
 
 
 class TestGraphState:

@@ -117,11 +117,16 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251116-v5-p0-implementation.md` - **V5.0 Phase 1 (P0) 实施任务**（已完成核心功能）✨NEW
+- `workflow/251117-v5-phase2-lightweight-mode.md` - **V5.0 Phase 2: 轻量模式支持**（已完成）✅
+  - 目标：探索类工具跳过数据存储，提升效率
+  - 核心功能：ToolSpec 扩展、工作流路由、working_memory、Planner 集成
+  - 轻量工具：search_data_sources、ask_user_clarification
+  - 测试覆盖：5 个集成测试 + 34 个单元测试全部通过
+- `workflow/251116-v5-p0-implementation.md` - **V5.0 Phase 1 (P0) 实施任务**（已完成核心功能）
   - 4 个核心工具：search_data_sources、filter_data、compare_data、ask_user_clarification
   - 简化架构，直接启用 V5.0 工具（移除 Feature Flag）
   - 单元测试覆盖率 100% (32/32 通过)
-  - 待实施：集成测试（3 个场景）
+  - 代码质量修复：私有源信息、正则安全、静默失败、DataStasher 优化
 - `workflow/251115-unified-workspace-architecture.md` - **统一工作区架构设计方案**（设计方案，待评审）
   - **核心问题**：研究卡片与普通面板割裂、无统一历史记录、缺少进度反馈、普通查询无身份信息
   - **解决方案**：所有查询都生成卡片，统一生命周期（pending → processing → completed）

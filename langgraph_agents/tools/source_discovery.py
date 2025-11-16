@@ -70,6 +70,7 @@ def register_source_discovery_tool(registry: ToolRegistry) -> None:
         registry,
         plugin_id="search_data_sources",
         description="探索可用的数据源，支持查询 RSSHub 公开数据和私有数据源",
+        execution_mode="lightweight",  # V5.0 Phase 2: 轻量模式，快速探索
         schema={
             "type": "object",
             "properties": {

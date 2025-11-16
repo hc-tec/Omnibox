@@ -25,6 +25,39 @@ def _format_data_stash(data_stash: List[DataReference]) -> str:
     return "\n".join(lines)
 
 
+def _format_working_memory(working_memory: Dict) -> str:
+    """
+    V5.0 Phase 2: 格式化轻量工具结果（working_memory）。
+
+    轻量工具的结果不持久化，仅在当前会话中可用。
+    """
+    if not working_memory:
+        return "暂无轻量工具结果"
+
+    lines = []
+    for tool_id, result in working_memory.items():
+        status = result.get("status", "unknown")
+        description = result.get("description", "")
+        step_id = result.get("step_id", "?")
+
+        # 简化结果展示（避免过长）
+        result_data = result.get("result", {})
+        if isinstance(result_data, dict):
+            # 提取关键字段
+            if "public_sources" in result_data:
+                count = len(result_data.get("public_sources", []))
+                lines.append(f"- Step {step_id} [{tool_id}] ({status}): {description} → 找到 {count} 个数据源")
+            elif "question" in result_data:
+                question = result_data.get("question", "")
+                lines.append(f"- Step {step_id} [{tool_id}] ({status}): {description} → 用户澄清: {question}")
+            else:
+                lines.append(f"- Step {step_id} [{tool_id}] ({status}): {description}")
+        else:
+            lines.append(f"- Step {step_id} [{tool_id}] ({status}): {description}")
+
+    return "\n".join(lines)
+
+
 def create_planner_node(runtime: LangGraphRuntime):
     system_prompt = load_prompt("planner_system.txt")
 
@@ -45,6 +78,7 @@ def create_planner_node(runtime: LangGraphRuntime):
         if not query:
             raise ValueError("PlannerAgent: original_query 为空或缺失")
         data_stash = state.get("data_stash", [])
+        working_memory = state.get("working_memory", {})  # V5.0 Phase 2
         reflection = state.get("reflection")
         next_step = len(data_stash) + 1
         prompt_parts = [
@@ -53,6 +87,11 @@ def create_planner_node(runtime: LangGraphRuntime):
             f"\noriginal_query:\n{query}",
             f"\ndata_stash:\n{_format_data_stash(data_stash)}",
         ]
+
+        # V5.0 Phase 2: 添加轻量工具结果
+        if working_memory:
+            prompt_parts.append(f"\nworking_memory (轻量工具结果):\n{_format_working_memory(working_memory)}")
+
         if reflection:
             prompt_parts.append(f"\nlast_reflection:\nDecision={reflection.decision}\nReasoning={reflection.reasoning}")
         prompt = "\n\n".join(prompt_parts)

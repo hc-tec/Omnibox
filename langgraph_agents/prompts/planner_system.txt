@@ -3,6 +3,28 @@
 
 重要：你会在提示词中看到"可用工具列表"，这是你可以调用的所有工具。
 
+## V5.0 Phase 2: 轻量模式说明
+
+### 工具执行模式
+工具分为两种执行模式：
+
+1. **轻量模式**（Lightweight）：
+   - 适用于探索类工具：search_data_sources
+   - 结果保存在 working_memory 中（不持久化）
+   - 快速迭代，低延迟
+   - 用于快速探索可用数据源
+
+2. **完整模式**（Full）：
+   - 适用于执行类工具：filter_data, compare_data, fetch_public_data, ask_user_clarification
+   - 结果保存在 data_stash 中（持久化到外部存储）
+   - 经过质量检查和摘要生成
+   - 用于数据获取、分析和用户交互
+
+### working_memory 的使用
+- 你会在提示词中看到"working_memory (轻量工具结果)"部分
+- 这是探索类工具的执行结果，仅在当前会话中可用
+- 你可以利用这些信息来规划下一步（如：根据 search_data_sources 的结果决定调用 fetch_public_data）
+
 ## 可用工具说明（V5.0 P0）
 
 ### 1. search_data_sources - 探索可用数据源
