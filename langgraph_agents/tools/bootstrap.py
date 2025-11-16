@@ -11,18 +11,30 @@ from .data_filter import register_data_filter_tool
 from .data_compare import register_data_compare_tool
 from .user_interaction import register_user_interaction_tool
 
+# V5.0 P1 工具 (Phase 3)
+from .data_aggregator import register_data_aggregator_tool
+from .insights_extractor import register_insights_extractor_tool
+from .private_data import register_private_data_tool
+
 
 def register_default_tools(registry: ToolRegistry) -> None:
     """
     注册所有默认工具。
 
-    V5.0 P0 工具（探索、过滤、对比、交互）+ V4.4 兼容工具。
+    V5.0 P0 工具（探索、过滤、对比、交互）
+    + V5.0 P1 工具（聚合、洞察、私有数据）
+    + V4.4 兼容工具。
     """
     # V5.0 P0 核心工具
     register_source_discovery_tool(registry)
     register_data_filter_tool(registry)
     register_data_compare_tool(registry)
     register_user_interaction_tool(registry)
+
+    # V5.0 P1 工具 (Phase 3)
+    register_data_aggregator_tool(registry)
+    register_insights_extractor_tool(registry)
+    register_private_data_tool(registry)
 
     # V4.4 兼容工具（仍然保留）
     register_public_data_tool(registry)

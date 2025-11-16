@@ -117,6 +117,11 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
+  - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
+  - 核心工具：aggregate_data（聚合统计）、extract_insights（洞察提取）、fetch_private_data（私有数据框架）
+  - 测试覆盖：20 个 P1 工具测试 + 106 个完整测试套件全部通过
+  - 关键优化：错误处理统一化、容量限制保护、自动采样和超时保护
 - `workflow/251117-v5-phase2-lightweight-mode.md` - **V5.0 Phase 2: 轻量模式支持**（已完成）✅
   - 目标：探索类工具跳过数据存储，提升效率
   - 核心功能：ToolSpec 扩展、工作流路由、working_memory、Planner 集成
