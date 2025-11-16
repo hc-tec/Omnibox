@@ -49,18 +49,26 @@ def build_runtime(
     if notes_path:
         note_backend = MarkdownNoteStore(notes_path)
 
+    # V5.0 P0: 准备依赖项用于 extras 注入
+    actual_data_store = data_store or InMemoryResearchDataStore()
+    planner_llm_client = _require_llm(llms, "planner")
+
     context = ToolExecutionContext(
         data_query_service=data_query_service,
         note_backend=note_backend,
+        extras={
+            "data_store": actual_data_store,
+            "planner_llm": planner_llm_client,
+        },
     )
 
     runtime = LangGraphRuntime(
         router_llm=_require_llm(llms, "router"),
-        planner_llm=_require_llm(llms, "planner"),
+        planner_llm=planner_llm_client,
         reflector_llm=_require_llm(llms, "reflector"),
         synthesizer_llm=_require_llm(llms, "synthesizer"),
         tool_registry=registry,
-        data_store=data_store or InMemoryResearchDataStore(),
+        data_store=actual_data_store,
         tool_context=context,
         summarizer_llm=summarizer_llm,
     )

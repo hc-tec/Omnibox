@@ -32,29 +32,40 @@ class ToolExecutionPayload(BaseModel):
     """
     工具执行后的基础结果。
     DataStasher 负责将 raw_output 写入外部存储、生成摘要。
+
+    V5.0 P0: 新增 needs_user_input 状态，用于请求用户澄清。
     """
 
     call: ToolCall
     raw_output: Any = None
-    status: Literal["success", "error"] = "success"
+    status: Literal["success", "error", "needs_user_input"] = "success"
     error_message: Optional[str] = None
 
 
 class DataReference(BaseModel):
-    """指向外部存储中原始数据的元数据。"""
+    """
+    指向外部存储中原始数据的元数据。
+
+    V5.0 P0: 新增 needs_user_input 状态，用于请求用户澄清。
+    当 status="needs_user_input" 时，data_id 为 None（不存储到 data_store）。
+    """
 
     step_id: int
     tool_name: str
-    data_id: str = Field(..., description="外部存储主键")
+    data_id: Optional[str] = Field(None, description="外部存储主键（needs_user_input 时为 None）")
     summary: str = Field(..., description="廉价模型生成的摘要")
-    status: Literal["success", "error"] = "success"
+    status: Literal["success", "error", "needs_user_input"] = "success"
     error_message: Optional[str] = None
 
 
 class Reflection(BaseModel):
-    """Reflector 决策结果。"""
+    """
+    Reflector 决策结果。
 
-    decision: Literal["CONTINUE", "FINISH", "REQUEST_HUMAN"]
+    V5.0 P0: 新增 REQUEST_HUMAN_CLARIFICATION 决策类型。
+    """
+
+    decision: Literal["CONTINUE", "FINISH", "REQUEST_HUMAN_CLARIFICATION"]
     reasoning: str = Field(..., description="推理过程，Planner/Synthesizer 会引用")
 
 
@@ -82,5 +93,6 @@ class GraphState(TypedDict, total=False):
     human_in_loop_request: Optional[str]
     router_decision: Optional[RouterDecision]
     pending_tool_result: Optional[ToolExecutionPayload]
+    last_tool_result: Optional[ToolExecutionPayload]  # V5.0 P0: Reflector 用于检查工具状态
     last_error: Optional[str]
 

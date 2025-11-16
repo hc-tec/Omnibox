@@ -52,8 +52,27 @@ def create_data_stasher_node(runtime: LangGraphRuntime):
             return {}
 
         raw_output = pending.raw_output
-        data_id = runtime.data_store.save(raw_output)
-        summary = summarize(raw_output, state)
+
+        # V5.0 P0: 优化人机交互流程
+        # needs_user_input 状态不存储到 data_store，避免污染数据
+        if pending.status == "needs_user_input":
+            data_id = None
+            summary = f"等待用户澄清: {raw_output.get('question', '未知问题')}"
+            logger.info(
+                "DataStasher: 跳过存储 needs_user_input 状态 (step=%s)",
+                pending.call.step_id
+            )
+        else:
+            # 正常数据：保存到 data_store
+            data_id = runtime.data_store.save(raw_output)
+            summary = summarize(raw_output, state)
+            logger.info(
+                "DataStasher 完成: step=%s tool=%s data_id=%s",
+                pending.call.step_id,
+                pending.call.plugin_id,
+                data_id,
+            )
+
         data_ref = DataReference(
             step_id=pending.call.step_id,
             tool_name=pending.call.plugin_id,
@@ -65,13 +84,13 @@ def create_data_stasher_node(runtime: LangGraphRuntime):
 
         data_stash: List[DataReference] = list(state.get("data_stash", []))
         data_stash.append(data_ref)
-        logger.info(
-            "DataStasher 完成: step=%s tool=%s data_id=%s",
-            data_ref.step_id,
-            data_ref.tool_name,
-            data_id,
-        )
-        return {"data_stash": data_stash, "pending_tool_result": None}
+
+        # V5.0 P0: 保留 last_tool_result 供 Reflector 检查状态
+        return {
+            "data_stash": data_stash,
+            "pending_tool_result": None,
+            "last_tool_result": pending,
+        }
 
     return node
 

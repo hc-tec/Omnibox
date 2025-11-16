@@ -33,11 +33,24 @@ def create_reflector_node(runtime: LangGraphRuntime):
         if not query:
             raise ValueError("ReflectorAgent: original_query 为空或缺失")
         data_stash = state.get("data_stash", [])
+
+        # V5.0 P0: 检查最后一次工具执行状态
+        last_tool_result = state.get("last_tool_result")
+        tool_status_note = ""
+
+        if last_tool_result and hasattr(last_tool_result, "status"):
+            if last_tool_result.status == "needs_user_input":
+                # 工具请求用户输入，直接返回 REQUEST_HUMAN_CLARIFICATION
+                tool_status_note = "\n\n⚠️ 最后一步工具返回 'needs_user_input' 状态，需要用户澄清。"
+                logger.info("Reflector: 检测到 needs_user_input 状态")
+
         prompt = (
             f"{system_prompt}\n\n"
             f"original_query:\n{query}\n\n"
             f"collected_data:\n{_format_summaries(data_stash)}"
+            f"{tool_status_note}"
         )
+
         # 使用重试装饰器包装 LLM 调用
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():

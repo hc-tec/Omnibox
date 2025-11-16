@@ -117,7 +117,12 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251115-unified-workspace-architecture.md` - **统一工作区架构设计方案**（设计方案，待评审）✨NEW
+- `workflow/251116-v5-p0-implementation.md` - **V5.0 Phase 1 (P0) 实施任务**（已完成核心功能）✨NEW
+  - 4 个核心工具：search_data_sources、filter_data、compare_data、ask_user_clarification
+  - 简化架构，直接启用 V5.0 工具（移除 Feature Flag）
+  - 单元测试覆盖率 100% (32/32 通过)
+  - 待实施：集成测试（3 个场景）
+- `workflow/251115-unified-workspace-architecture.md` - **统一工作区架构设计方案**（设计方案，待评审）
   - **核心问题**：研究卡片与普通面板割裂、无统一历史记录、缺少进度反馈、普通查询无身份信息
   - **解决方案**：所有查询都生成卡片，统一生命周期（pending → processing → completed）
   - **即时反馈设计**：0.1s 响应法则、骨架屏、实时进度推送
