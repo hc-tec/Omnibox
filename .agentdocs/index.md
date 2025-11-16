@@ -117,6 +117,11 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251117-v5-phase4-multi-step-planning.md` - **V5.0 Phase 4: 多步执行计划与依赖解析**（已完成）✅
+  - 目标：支持多步工具调用和依赖解析，实现复杂数据分析工作流
+  - 核心功能：ExecutionPlan（执行计划）、StashReference（依赖解析）、ExecutionEngine（任务调度器）
+  - 测试覆盖：10 个 Phase 4 测试 + 129 个完整测试套件全部通过
+  - 关键特性：DAG 依赖图、JSONPath 字段提取、循环依赖检测、部分失败容忍
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
   - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
   - 核心工具：aggregate_data（聚合统计）、extract_insights（洞察提取）、fetch_private_data（私有数据框架）

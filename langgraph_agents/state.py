@@ -76,6 +76,100 @@ class RouterDecision(BaseModel):
     reasoning: str = Field(..., description="用于 UI 展示的解释")
 
 
+class StashReference(BaseModel):
+    """
+    指向 data_stash 中某个步骤结果的引用（V5.0 Phase 4）。
+
+    用于依赖解析，支持从前序步骤提取数据作为当前步骤的参数。
+    """
+
+    step_id: int = Field(..., description="引用的步骤 ID")
+    json_path: Optional[str] = Field(None, description="JSONPath 表达式，提取特定字段")
+
+    def resolve(self, data_stash: List[DataReference], data_store) -> Any:
+        """
+        解析引用，从 data_stash 和 data_store 中提取实际值。
+
+        Args:
+            data_stash: 当前的 data_stash
+            data_store: 外部数据存储
+
+        Returns:
+            解析后的值
+        """
+        # 查找对应的 DataReference
+        ref = next((r for r in data_stash if r.step_id == self.step_id), None)
+        if not ref:
+            raise ValueError(f"未找到 step_id={self.step_id} 的数据引用")
+
+        if ref.status != "success":
+            raise ValueError(f"step_id={self.step_id} 的执行失败，无法引用")
+
+        # 加载数据
+        data = data_store.load(ref.data_id)
+
+        # 如果指定了 JSONPath，提取字段
+        if self.json_path:
+            # 简化实现：支持基础的点号路径（如 "data.id"）
+            parts = self.json_path.split(".")
+            for part in parts:
+                if isinstance(data, dict):
+                    data = data.get(part)
+                elif isinstance(data, list) and part.isdigit():
+                    data = data[int(part)]
+                else:
+                    data = getattr(data, part, None)
+
+                if data is None:
+                    break
+
+        return data
+
+
+class ExecutionPlan(BaseModel):
+    """
+    多步执行计划（V5.0 Phase 4）。
+
+    PlannerAgent 输出的完整执行计划，包含多个步骤和依赖关系。
+    """
+
+    steps: List[ToolCall] = Field(..., description="有序的工具调用列表")
+    dependencies: Dict[int, List[int]] = Field(
+        default_factory=dict,
+        description="依赖关系：{step_id: [依赖的 step_id 列表]}"
+    )
+    reasoning: str = Field(..., description="规划推理过程")
+
+    def get_ready_steps(self, completed_step_ids: List[int]) -> List[ToolCall]:
+        """
+        获取所有依赖已满足、可以执行的步骤。
+
+        Args:
+            completed_step_ids: 已完成的步骤 ID 列表
+
+        Returns:
+            可执行的 ToolCall 列表
+        """
+        ready = []
+        completed_set = set(completed_step_ids)
+
+        for step in self.steps:
+            # 跳过已完成的步骤
+            if step.step_id in completed_set:
+                continue
+
+            # 检查依赖是否满足
+            deps = self.dependencies.get(step.step_id, [])
+            if all(dep_id in completed_set for dep_id in deps):
+                ready.append(step)
+
+        return ready
+
+    def is_complete(self, completed_step_ids: List[int]) -> bool:
+        """检查计划是否全部完成。"""
+        return len(completed_step_ids) == len(self.steps)
+
+
 class GraphState(TypedDict, total=False):
     """
     LangGraph 核心状态。
@@ -96,4 +190,6 @@ class GraphState(TypedDict, total=False):
     last_tool_result: Optional[ToolExecutionPayload]  # V5.0 P0: Reflector 用于检查工具状态
     working_memory: Dict[str, Any]  # V5.0 Phase 2: 轻量工具结果（不持久化）
     last_error: Optional[str]
+    execution_plan: Optional[ExecutionPlan]  # V5.0 Phase 4: 多步执行计划
+    completed_step_ids: List[int]  # V5.0 Phase 4: 已完成的步骤 ID
 
