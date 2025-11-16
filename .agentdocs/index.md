@@ -14,11 +14,22 @@
 - `panel-nested-components-design.md` - **面板组件嵌套架构设计**（支持 Card、Tabs 等容器组件嵌套子组件）
 - `../docs/langgraph-agents-design.md` - LangGraph 多代理研究工作流（V2 动态自适应方案）
 - `../docs/langgraph-agents-frontend-design.md` - LangGraph 动态研究在 Desktop Intelligence Studio 中的前端实时呈现方案
-- `langgraph-v4.4-architecture-design.md` - **LangGraph V4.4 架构设计方案 v1.0（2025-01-13 待评审）** ✨NEW
+- `langgraph-v4.4-architecture-design.md` - **LangGraph V4.4 架构设计方案 v1.0（2025-01-13 待评审）**
   - **状态**: 设计方案（待评审会议确认是否实施）
   - **核心改进**: V4.0（显式依赖解析）+ V4.1（扇出防爆）+ V4.2（工具发现，可选）+ V4.4（前置语义 + GraphRenderer）
   - **集成方案**: 与现有 V2 架构的渐进式集成路径（5个阶段，5.5-7.5天）
   - **关键决策**: 是否实施 V4.2 工具发现（建议：暂缓）
+- `langgraph-v5.0-flexible-agent-architecture.md` - **LangGraph V5.0 灵活代理架构设计方案（2025-01-16 待评审）** ✨NEW
+  - **状态**: 设计方案（解决 Agent 能力被单一工具限制的根本问题）
+  - **核心问题**: RAG+RSSHub 应该只是工具之一，而非 Agent 的全部能力
+  - **核心改进**:
+    - 工具库扩展：从 1 个工具扩展到 8+ 个（探索、过滤、对比、分析、交互）
+    - 流程优化：引入轻量模式（探索类工具跳过存储）+ 多步规划（支持依赖链）
+    - 数据流改进：工作记忆 vs 外部存储分层 + 知识图谱组织数据关系
+  - **P0 工具**: search_data_sources（发现数据源）、filter_data（数据过滤）、ask_user_clarification（用户交互）
+  - **实施路线**: 6 个阶段，约 14 天（3 周）
+  - **与 V4.4 关系**: V4.4 提供执行基础设施，V5.0 提供能力多样性，两者互补
+  - **AI IDE 参考**: 借鉴 Claude Code、Cursor、Kiro、Trae-agent 的工具设计模式
 - `runtime-persistence-plan.md` - Runtime CRUD 与持久化总体方案（账户/会话/研究/运行时配置/模型/RSSHub 等）
 
 ### 前端架构（必读）
