@@ -117,11 +117,6 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251117-v5-phase4-multi-step-planning.md` - **V5.0 Phase 4: 多步执行计划与依赖解析**（已完成）✅
-  - 目标：支持多步工具调用和依赖解析，实现复杂数据分析工作流
-  - 核心功能：ExecutionPlan（执行计划）、StashReference（依赖解析）、ExecutionEngine（任务调度器）
-  - 测试覆盖：10 个 Phase 4 测试 + 129 个完整测试套件全部通过
-  - 关键特性：DAG 依赖图、JSONPath 字段提取、循环依赖检测、部分失败容忍
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
   - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
   - 核心工具：aggregate_data（聚合统计）、extract_insights（洞察提取）、fetch_private_data（私有数据框架）
@@ -161,6 +156,17 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/done/251117-v5-phase5-data-flow-optimization.md` - **V5.0 Phase 5: 数据流优化（知识图谱 + 智能摘要）** [✅ 完成 2025-11-17]
+  - 目标：引入知识图谱和智能摘要，提升数据组织能力和决策智能性
+  - 核心功能：KnowledgeGraph（数据结构）、EnhancedDataReference（增强元数据）、MetadataExtractor（自动提取）、EnhancedDataStasher（图谱集成）、GraphHelper（决策支持）
+  - 测试覆盖：11 个 Phase 5 测试 + 143 个完整测试套件全部通过
+  - 关键特性：数据血缘追溯、质量评分、智能摘要、向后兼容
+  - 代码统计：新增 ~1,121 行代码（5 个新文件 + 1 个修改），测试覆盖率 100%
+- `workflow/done/251117-v5-phase4-multi-step-planning.md` - **V5.0 Phase 4: 多步执行计划与依赖解析** [✅ 完成 2025-11-17]
+  - 目标：支持多步工具调用和依赖解析，实现复杂数据分析工作流
+  - 核心功能：ExecutionPlan（执行计划）、StashReference（依赖解析）、ExecutionEngine（任务调度器）
+  - 测试覆盖：10 个 Phase 4 测试 + 129 个完整测试套件全部通过
+  - 关键特性：DAG 依赖图、JSONPath 字段提取、循环依赖检测、部分失败容忍
 - `workflow/251115-debugging-research-flow.md` - **研究模式前端流程调试与重复请求修复** [✅ 完成 2025-11-15]
   - **修复4项关键问题**：
     1. 后端 `ResponseMetadata` 缺失 `requires_streaming` 等字段（API schema + controller 修复）

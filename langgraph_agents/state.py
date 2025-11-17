@@ -5,11 +5,11 @@ LangGraph V2 状态与数据结构定义。
 
 该模块复用了《docs/langgrapg-agents-design.md》给出的约束：
 1. Planner 每次只输出一个 ToolCall；
-2. LangGraph 状态机仅存储“元数据”（引用、摘要），原始数据放入外部存储；
+2. LangGraph 状态机仅存储"元数据"（引用、摘要），原始数据放入外部存储；
 3. Reflector 负责决定流程是否继续/结束/请求人工协助。
 """
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict, TYPE_CHECKING
 
 try:
     from typing import Required
@@ -17,6 +17,9 @@ except ImportError:
     from typing_extensions import Required
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from .knowledge_graph import KnowledgeGraph
 
 
 class ToolCall(BaseModel):
@@ -56,6 +59,31 @@ class DataReference(BaseModel):
     summary: str = Field(..., description="廉价模型生成的摘要")
     status: Literal["success", "error", "needs_user_input"] = "success"
     error_message: Optional[str] = None
+
+
+class EnhancedDataReference(DataReference):
+    """
+    增强的数据引用（V5.0 Phase 5）。
+
+    在 DataReference 基础上添加结构化元数据和质量评分。
+    """
+
+    schema_info: Optional[Dict[str, str]] = Field(
+        None,
+        description="数据 Schema 信息：{field_name: field_type}"
+    )
+    statistics: Optional[Dict[str, Any]] = Field(
+        None,
+        description="数据统计信息：{record_count, field_stats, etc.}"
+    )
+    sample_items: Optional[List[Dict]] = Field(
+        None,
+        description="样本数据（前 3-5 条记录）"
+    )
+    quality_score: Optional[float] = Field(
+        None,
+        description="数据质量评分 (0-1)：完整性、一致性、准确性"
+    )
 
 
 class Reflection(BaseModel):
@@ -192,4 +220,5 @@ class GraphState(TypedDict, total=False):
     last_error: Optional[str]
     execution_plan: Optional[ExecutionPlan]  # V5.0 Phase 4: 多步执行计划
     completed_step_ids: List[int]  # V5.0 Phase 4: 已完成的步骤 ID
+    knowledge_graph: Optional[Any]  # V5.0 Phase 5: 知识图谱（Any 避免循环引用）
 
