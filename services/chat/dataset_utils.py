@@ -189,6 +189,61 @@ def build_analysis_prompt(analysis_query: str, dataset_summary: str) -> str:
     )
 
 
+def run_analysis_sub_queries(
+    analysis_sub_queries,
+    datasets: List[QueryDataset],
+    llm_client,
+) -> List[Dict[str, Any]]:
+    """
+    执行分析类子查询，对已有数据进行 LLM 总结。
+
+    Args:
+        analysis_sub_queries: 分析类子查询列表（SubQuery 对象）
+        datasets: 数据集列表
+        llm_client: LLM 客户端实例
+
+    Returns:
+        分析总结列表
+    """
+    if not analysis_sub_queries or not datasets or not llm_client:
+        return []
+
+    dataset_summary, total_items = build_dataset_preview(datasets)
+    if not dataset_summary or total_items == 0:
+        return []
+
+    summaries: List[Dict[str, Any]] = []
+    for sub_query in analysis_sub_queries:
+        prompt = build_analysis_prompt(sub_query.query, dataset_summary)
+        try:
+            response = llm_client.chat(
+                messages=[
+                    {"role": "system", "content": "你是一名资深的数据分析师，擅长归纳总结。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+            )
+
+            # 添加空值检查，确保 LLM 返回有效响应
+            if response is None or not response.strip():
+                raise ValueError("LLM 返回空响应")
+
+            summaries.append({
+                "query": sub_query.query,
+                "summary": response.strip(),
+                "item_count": total_items,
+                "task_type": getattr(sub_query, "task_type", None) or "analysis",
+            })
+        except Exception as exc:
+            logger.warning("分析子查询失败: %s", exc)
+            summaries.append({
+                "query": sub_query.query,
+                "summary": f"分析失败：{exc}",
+                "task_type": getattr(sub_query, "task_type", None) or "analysis",
+            })
+    return summaries
+
+
 # 为了保持向后兼容，导出一个带下划线的别名
 _dataset_from_result = dataset_from_result
 _dataset_records = dataset_records
@@ -197,3 +252,4 @@ _build_dataset_preview = build_dataset_preview
 _summarize_datasets = summarize_datasets
 _format_success_message = format_success_message
 _build_analysis_prompt = build_analysis_prompt
+_run_analysis_sub_queries = run_analysis_sub_queries

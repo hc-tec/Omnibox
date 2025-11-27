@@ -20,10 +20,31 @@
 - LangGraph: 在工具调用前，验证并解析实体标识符
 """
 
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 import logging
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ParamResolutionResult:
+    """兼容 tuple 解包和旧版直接返回 dict 的结果包装。"""
+
+    validated: Dict[str, str]
+    resolution_status: Dict[str, bool]
+
+    def __iter__(self):
+        yield self.validated
+        yield self.resolution_status
+
+    def __getitem__(self, index: int):
+        return (self.validated, self.resolution_status)[index]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, dict):
+            return self.validated == other
+        return tuple(self) == other
 
 
 def should_resolve_param(
@@ -100,7 +121,7 @@ def should_resolve_param(
         return False
 
     # =========================================================================
-    # ⚠️ 兜底：Schema 缺失时直接跳过（禁用启发式判断）
+    # ⚠️ 兜底：Schema 缺失时直接跳过（严格模式：禁止启发式判断）
     # =========================================================================
     logger.error(
         f"❌ [SCHEMA_INCOMPLETE] 参数 '{param_name}' 在 schema 中缺少 parameter_type 标记。"
@@ -108,9 +129,6 @@ def should_resolve_param(
     logger.error(
         f"   提示：请运行 'python -m scripts.rebuild_rag_vector_store --force' 重建向量库"
     )
-
-    # 严格模式：Schema 缺失时假设不需要解析，避免误判
-    # 这样可以让查询继续执行（使用原始参数值），而不是因为误判导致查询失败
     logger.warning(
         f"⚠️ [FALLBACK_SKIP] Schema 不完整，跳过订阅解析，使用原始参数值"
     )
@@ -168,19 +186,9 @@ def resolve_entity_from_schema(
     entity_type = tool_schema.get("entity_type")
 
     # =========================================================================
-    # =========================================================================
-    # 为缺少元数据的情况提供安全回退
+    # 严格模式：禁止启发式推断，Schema 缺失时直接返回 None
     # =========================================================================
     if not platform or not entity_type:
-        logger.warning(
-            f"⚠️ [SCHEMA_INCOMPLETE] [HEURISTIC_FALLBACK] "
-            f"工具 schema 缺少必要字段: "
-            f"platform={platform}, entity_type={entity_type}。"
-        )
-
-        # ⚠️ 禁用启发式推断：Schema 缺失时直接返回 None
-        # 启发式推断从相对路径推断 platform 注定会失败（如 "/user/video/:uid" → "user" 而不是 "bilibili"）
-        # 必须依赖 schema 中的明确标记
         logger.error(
             f"❌ [SCHEMA_INCOMPLETE] Schema 缺少必要字段，无法进行订阅解析："
         )
@@ -239,7 +247,7 @@ def validate_and_resolve_params(
     tool_schema: dict,
     user_query: str,
     user_id: Optional[int] = None
-) -> Tuple[Dict[str, str], Dict[str, bool]]:
+) -> ParamResolutionResult:
     """
     验证参数并通过订阅系统解析（高级接口）
 
@@ -321,4 +329,4 @@ def validate_and_resolve_params(
                 resolution_status[param_name] = False  # 标记为解析失败
 
     logger.info(f"参数验证与解析完成: {validated}, 解析状态: {resolution_status}")
-    return validated, resolution_status
+    return ParamResolutionResult(validated=validated, resolution_status=resolution_status)

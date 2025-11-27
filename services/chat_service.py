@@ -5,17 +5,27 @@
 
 import logging
 import time
-from typing import Dict, Any, Optional, List, Tuple, Generator
+from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field, asdict
 from uuid import uuid4
-from datetime import datetime
 
 from services.config import get_data_query_config
 from services.llm_intent_classifier import LLMIntentClassifier, IntentClassification
-from services.llm_query_planner import LLMQueryPlanner, QueryPlan, SubQuery
-from services.parallel_query_executor import ParallelQueryExecutor, SubQueryResult
 from services.data_query_service import DataQueryService, DataQueryResult, QueryDataset
 from api.schemas.panel import PanelPayload, DataBlock, SourceInfo
+from services.agent_graph import (
+    TaskGraphPlanner,
+    GraphExecutor,
+    TaskGraphPlan,
+    GraphExecutionResult,
+)
+from langgraph_agents.tools.registry import ToolRegistry
+from langgraph_agents.tools.bootstrap import register_default_tools
+from services.chat.task_graph_handler import (
+    execute_task_graph,
+    build_task_graph_metadata,
+)
+from services.chat.langgraph_handler import handle_langgraph_research
 from services.panel.panel_generator import (
     PanelGenerator,
     PanelBlockInput,
@@ -36,9 +46,7 @@ from services.chat.utils import (
     clone_llm_logs,
     compose_debug_payload,
     guess_datasource,
-    format_source_hint,
     format_retrieved_tools,
-    resolve_tool_route,
 )
 from services.chat.dataset_utils import (
     dataset_from_result,
@@ -47,7 +55,6 @@ from services.chat.dataset_utils import (
     build_dataset_preview,
     summarize_datasets,
     format_success_message,
-    build_analysis_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,24 +95,21 @@ class ChatResponse:
 
 class ChatService:
     """
-    对话服务（同步实现）。
+    对话服务（V5.0 Task Graph 架构）。
 
     统一入口，负责：
-    1. 三层智能意图识别（chitchat / simple_query / complex_research）
-    2. 简单查询：单次 RAG 调用
-    3. 复杂研究：LLM 查询规划 + 并行执行多个 RAG 查询
-    4. 生成智能数据面板结构
+    1. 意图识别（chitchat / data_query）
+    2. 所有数据查询通过 Task Graph 规划和执行
+    3. 生成智能数据面板结构
     """
 
     def __init__(
         self,
         data_query_service: DataQueryService,
-        llm_client=None,  # LLM 客户端，用于意图分类和查询规划
-        research_service=None,  # 研究服务（可选，用于 LangGraph 工作流）
+        llm_client=None,  # LLM 客户端，用于意图分类和 Task Graph 规划
+        research_service=None,  # 研究服务（可选，用于 LangGraph 深度研究）
         manage_data_service: bool = False,
         component_planner_config: Optional[ComponentPlannerConfig] = None,
-        max_parallel_queries: int = 3,  # 并行查询最大数量
-        query_timeout: int = 30,  # 单个查询超时时间（秒）
         force_single_route: Optional[bool] = None,
     ):
         """
@@ -113,12 +117,11 @@ class ChatService:
 
         Args:
             data_query_service: 数据查询服务实例
-            llm_client: LLM 客户端实例（用于意图分类和查询规划，可选）
-            research_service: 研究服务实例（可选，用于 LangGraph 复杂研究工作流）
+            llm_client: LLM 客户端实例（用于意图分类和 Task Graph 规划，可选）
+            research_service: 研究服务实例（可选，用于 LangGraph 深度研究工作流）
             manage_data_service: 是否由 ChatService 负责关闭 data_query_service
             component_planner_config: 组件规划器配置（可选）
-            max_parallel_queries: 并行查询的最大工作线程数（默认 3）
-            query_timeout: 每个查询的超时时间，秒（默认 30）
+            force_single_route: 是否强制单路由模式
         """
         self.data_query_service = data_query_service
         self.research_service = research_service
@@ -141,38 +144,35 @@ class ChatService:
                 logger.warning(f"LLM 客户端创建失败: {exc}")
                 llm_client = None
 
-        # 初始化三层架构组件
-        self.intent_classifier = None
-        self.query_planner = None
-        self.parallel_executor = None
         self._llm_client = llm_client
+        self.intent_classifier = None
+        self.task_graph_planner = None
+        self.graph_executor = None
 
+        # 初始化意图分类器
         if llm_client:
             try:
-                # Layer 1: 意图分类器
                 self.intent_classifier = LLMIntentClassifier(llm_client)
                 logger.info("LLM 意图分类器初始化完成")
-
-                # Layer 2: 查询规划器
-                self.query_planner = LLMQueryPlanner(llm_client)
-                logger.info("LLM 查询规划器初始化完成")
-
-                # Layer 3: 并行查询执行器
-                self.parallel_executor = ParallelQueryExecutor(
-                    data_query_service=data_query_service,
-                    max_workers=max_parallel_queries,
-                    timeout_per_query=query_timeout,
-                )
-                logger.info(
-                    "并行查询执行器初始化完成 (max_workers=%d, timeout=%ds)",
-                    max_parallel_queries,
-                    query_timeout,
-                )
             except Exception as exc:
-                logger.warning(f"三层架构组件初始化失败: {exc}")
+                logger.warning(f"意图分类器初始化失败: {exc}")
                 self.intent_classifier = None
-                self.query_planner = None
-                self.parallel_executor = None
+
+        # 初始化 Task Graph 组件（V5.0 核心）
+        # 创建 ToolRegistry 并注册默认工具，用于动态注入到 System Prompt
+        try:
+            tool_registry = ToolRegistry()
+            register_default_tools(tool_registry)
+            self.task_graph_planner = TaskGraphPlanner(
+                llm_client=llm_client,
+                tool_registry=tool_registry,
+            )
+            self.graph_executor = GraphExecutor(data_query_service=data_query_service)
+            logger.info("Task Graph 组件初始化完成（已注入 %d 个工具定义）", len(tool_registry.list_tools()))
+        except Exception as exc:
+            logger.warning("Task Graph 组件初始化失败: %s", exc)
+            self.task_graph_planner = None
+            self.graph_executor = None
 
         # 初始化 LLM 组件规划器（作为规则引擎的备选方案）
         try:
@@ -317,26 +317,29 @@ class ChatService:
         try:
             llm_logs: List[Dict[str, Any]] = []
 
-            # ==================== 统一的复杂研究检测 ====================
-            # 无论是 mode="research" 还是 LLM 判断为 complex_research
-            # 都应该返回统一的"需要流式接口"响应
+            # ==================== V5.0 统一数据查询架构 ====================
+            # 所有数据查询（simple_query / complex_research / mode=research）
+            # 统一通过 Task Graph 处理
 
-            is_research_mode = False
-            research_reasoning = ""
-            research_confidence = 1.0
-
-            # 情况1：用户显式选择研究模式
+            # 情况1：用户显式选择研究模式 → 使用 Task Graph
             if mode == "research":
-                is_research_mode = True
-                research_reasoning = "用户显式选择研究模式"
-                research_confidence = 1.0
-                logger.info("用户显式选择研究模式")
+                logger.info("用户显式选择研究模式，使用 Task Graph 处理")
+                return self._handle_data_query(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=1.0,
+                    layout_snapshot=layout_snapshot,
+                    llm_logs=llm_logs,
+                    user_id=user_id,
+                    is_complex=True,
+                )
 
             # 情况2：LangGraph 模式（特殊的研究模式）
             elif mode == "langgraph":
                 if not self.research_service:
-                    logger.warning("LangGraph 模式被请求但 ResearchService 未初始化，回退到简单查询")
-                    return self._handle_simple_query(
+                    logger.warning("LangGraph 模式被请求但 ResearchService 未初始化，回退到数据查询")
+                    return self._handle_data_query(
                         user_query=user_query,
                         filter_datasource=filter_datasource,
                         use_cache=use_cache,
@@ -355,7 +358,7 @@ class ChatService:
 
             # 情况3：显式指定简单查询
             elif mode == "simple":
-                return self._handle_simple_query(
+                return self._handle_data_query(
                     user_query=user_query,
                     filter_datasource=filter_datasource,
                     use_cache=use_cache,
@@ -365,19 +368,11 @@ class ChatService:
                     user_id=user_id,
                 )
 
-            # 如果已经确定是研究模式，直接返回流式提示
-            if is_research_mode:
-                return self._create_streaming_required_response(
-                    reasoning=research_reasoning,
-                    confidence=research_confidence,
-                    llm_logs=llm_logs,
-                )
-
             # 阶段1：LLM 意图分类（三层架构第一层）
             if not self.intent_classifier:
-                # 降级：如果 LLM 意图分类器不可用，默认为简单查询
-                logger.warning("LLM 意图分类器不可用，默认使用简单查询模式")
-                return self._handle_simple_query(
+                # 降级：如果 LLM 意图分类器不可用，默认为数据查询
+                logger.warning("LLM 意图分类器不可用，默认使用数据查询模式")
+                return self._handle_data_query(
                     user_query=user_query,
                     filter_datasource=filter_datasource,
                     use_cache=use_cache,
@@ -406,7 +401,7 @@ class ChatService:
                 )
 
             elif intent_result.intent == "simple_query":
-                return self._handle_simple_query(
+                return self._handle_data_query(
                     user_query=user_query,
                     filter_datasource=filter_datasource,
                     use_cache=use_cache,
@@ -417,19 +412,24 @@ class ChatService:
                 )
 
             elif intent_result.intent == "complex_research":
-                # ⚠️ 重要：LLM 识别为复杂研究，需要使用流式接口
-                logger.info("LLM 识别为复杂研究意图，引导前端使用流式接口")
-
-                return self._create_streaming_required_response(
-                    reasoning=intent_result.reasoning,
-                    confidence=intent_result.confidence,
+                # V5.0 架构：复杂研究也走 Task Graph
+                # Task Graph 可以处理 fetch + filter/transform 等复杂查询模式
+                logger.info("LLM 识别为复杂研究意图，使用 Task Graph 处理")
+                return self._handle_data_query(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=intent_result.confidence,
+                    layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
+                    user_id=user_id,
+                    is_complex=True,  # 标记为复杂查询
                 )
 
             else:
-                # 未知意图，降级为简单查询
-                logger.warning(f"未知意图类型: {intent_result.intent}，降级为简单查询")
-                return self._handle_simple_query(
+                # 未知意图，降级为数据查询
+                logger.warning(f"未知意图类型: {intent_result.intent}，降级为数据查询")
+                return self._handle_data_query(
                     user_query=user_query,
                     filter_datasource=filter_datasource,
                     use_cache=use_cache,
@@ -448,7 +448,7 @@ class ChatService:
                 metadata={"error": str(exc)},
             )
 
-    def _handle_simple_query(
+    def _handle_data_query(
         self,
         user_query: str,
         filter_datasource: Optional[str],
@@ -456,19 +456,44 @@ class ChatService:
         intent_confidence: float,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
         llm_logs: Optional[List[Dict[str, Any]]] = None,
-        user_id: Optional[int] = None,  # Phase 2: 用户 ID
+        user_id: Optional[int] = None,
+        is_complex: bool = False,  # V5.0：标记是否为复杂查询
     ) -> ChatResponse:
-        """处理简单查询意图（单次 RAG 调用）。"""
-        logger.debug("处理简单查询意图 (user_id=%s)", user_id)
+        """
+        统一处理数据查询意图（V5.0 Task Graph 架构）。
 
-        query_result = self.data_query_service.query(
-            user_query=user_query,
-            filter_datasource=filter_datasource,
-            use_cache=use_cache,
-            prefer_single_route=self._should_force_single_route(filter_datasource),
-            user_id=user_id,  # Phase 2: 传递 user_id
-        )
+        无论是 simple_query 还是 complex_research，都通过 Task Graph 规划和执行。
+        Task Graph 会自动处理：
+        - 简单查询：单节点 fetch_data
+        - 复杂查询：多节点 DAG（fetch + filter/transform/analysis）
+        """
+        logger.debug("处理数据查询意图 (user_id=%s, is_complex=%s)", user_id, is_complex)
+
+        plan: Optional[TaskGraphPlan] = None
+        graph_exec_result = None
+        query_result: Optional[DataQueryResult] = None
+
+        if self.task_graph_planner and self.graph_executor:
+            plan, graph_exec_result = self._execute_task_graph(
+                user_query=user_query,
+                filter_datasource=filter_datasource,
+                use_cache=use_cache,
+                user_id=user_id,
+            )
+            if graph_exec_result and isinstance(graph_exec_result.final_output, DataQueryResult):
+                query_result = graph_exec_result.final_output
+
+        if query_result is None:
+            query_result = self.data_query_service.query(
+                user_query=user_query,
+                filter_datasource=filter_datasource,
+                use_cache=use_cache,
+                prefer_single_route=self._should_force_single_route(filter_datasource),
+                user_id=user_id,  # Phase 2: 传递 user_id
+            )
+
         llm_debug = clone_llm_logs(llm_logs)
+        task_graph_debug = build_task_graph_metadata(plan, graph_exec_result)
 
         if query_result.status == "success":
             datasets = query_result.datasets or []
@@ -549,6 +574,9 @@ class ChatService:
             if warnings:
                 metadata["warnings"] = warnings
 
+            if task_graph_debug:
+                metadata["task_graph"] = task_graph_debug
+
             return ChatResponse(
                 success=True,
                 intent_type="data_query",
@@ -566,17 +594,20 @@ class ChatService:
                 llm_debug,
                 query_result.rag_trace or None,
             )
+            metadata = {
+                "status": "needs_clarification",
+                "reasoning": query_result.reasoning,
+                "intent_confidence": intent_confidence,
+                "retrieved_tools": formatted_tools,
+                "debug": debug_payload,
+            }
+            if task_graph_debug:
+                metadata["task_graph"] = task_graph_debug
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
                 message=query_result.clarification_question or "需要更多信息以继续处理。",
-                metadata={
-                    "status": "needs_clarification",
-                    "reasoning": query_result.reasoning,
-                    "intent_confidence": intent_confidence,
-                    "retrieved_tools": formatted_tools,
-                    "debug": debug_payload,
-                },
+                metadata=metadata,
             )
 
         if query_result.status == "not_found":
@@ -585,32 +616,56 @@ class ChatService:
                 llm_debug,
                 query_result.rag_trace or None,
             )
+            metadata = {
+                "status": "not_found",
+                "reasoning": query_result.reasoning,
+                "intent_confidence": intent_confidence,
+                "retrieved_tools": formatted_tools,
+                "debug": debug_payload,
+            }
+            if task_graph_debug:
+                metadata["task_graph"] = task_graph_debug
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
                 message=query_result.clarification_question or "抱歉，没有找到相关能力。",
-                metadata={
-                    "status": "not_found",
-                    "reasoning": query_result.reasoning,
-                    "intent_confidence": intent_confidence,
-                    "retrieved_tools": formatted_tools,
-                    "debug": debug_payload,
-                },
+                metadata=metadata,
             )
 
         debug_payload = compose_debug_payload(None, llm_debug, query_result.rag_trace or None)
+        metadata = {
+            "status": "error",
+            "reasoning": query_result.reasoning,
+            "intent_confidence": intent_confidence,
+            "generated_path": query_result.generated_path,
+            "retrieved_tools": formatted_tools,
+            "debug": debug_payload,
+        }
+        if task_graph_debug:
+            metadata["task_graph"] = task_graph_debug
         return ChatResponse(
             success=False,
             intent_type="data_query",
             message=f"查询失败：{query_result.reasoning}",
-            metadata={
-                "status": "error",
-                "reasoning": query_result.reasoning,
-                "intent_confidence": intent_confidence,
-                "generated_path": query_result.generated_path,
-                "retrieved_tools": formatted_tools,
-                "debug": debug_payload,
-            },
+            metadata=metadata,
+        )
+
+    def _execute_task_graph(
+        self,
+        user_query: str,
+        filter_datasource: Optional[str],
+        use_cache: bool,
+        user_id: Optional[int],
+    ) -> Tuple[Optional[TaskGraphPlan], Optional[GraphExecutionResult]]:
+        """执行 Task Graph，失败时返回 None。"""
+        return execute_task_graph(
+            planner=self.task_graph_planner,
+            executor=self.graph_executor,
+            user_query=user_query,
+            filter_datasource=filter_datasource,
+            use_cache=use_cache,
+            prefer_single_route=self._should_force_single_route(filter_datasource),
+            user_id=user_id,
         )
 
     def _create_streaming_required_response(
@@ -675,7 +730,7 @@ class ChatService:
             if keyword.lower() in user_query_lower:
                 debug_payload = compose_debug_payload(
                     None,
-                    self._clone_llm_logs(llm_logs),
+                    clone_llm_logs(llm_logs),
                     None,
                 )
                 metadata = {"intent_confidence": intent_confidence}
@@ -690,7 +745,7 @@ class ChatService:
 
         debug_payload = compose_debug_payload(
             None,
-            self._clone_llm_logs(llm_logs),
+            clone_llm_logs(llm_logs),
             None,
         )
         metadata = {"intent_confidence": intent_confidence}
@@ -703,421 +758,6 @@ class ChatService:
             message='我是RSS数据聚合助手。您可以问我关于各种平台数据的问题，比如"虎扑步行街最新帖子"、"B站热门视频"等。',
             metadata=metadata,
         )
-
-    def _handle_complex_research_streaming(
-        self,
-        task_id: str,
-        user_query: str,
-        filter_datasource: Optional[str] = None,
-        use_cache: bool = True,
-        intent_confidence: float = 0.95,
-        layout_snapshot: Optional[List[Dict[str, Any]]] = None,
-        user_id: Optional[int] = None,  # Phase 2: 用户 ID
-    ) -> Generator[Dict[str, Any], None, None]:
-        """
-        处理复杂研究意图（流式版本）。
-
-        通过 Generator 逐步 yield 研究进度消息，支持 WebSocket 实时推送。
-
-        流程：
-        1. LLM 查询规划 → yield ResearchStartMessage
-        2. 并行执行数据子查询 → 每个子查询 yield step/panel 消息
-        3. 执行分析子查询 → 每个分析 yield analysis 消息
-        4. 完成 → yield ResearchCompleteMessage
-
-        Args:
-            task_id: 研究任务 ID
-            user_query: 用户查询
-            filter_datasource: 过滤数据源（可选）
-            use_cache: 是否使用缓存
-            intent_confidence: 意图置信度
-            layout_snapshot: 布局快照（可选）
-
-        Yields:
-            Dict[str, Any]: 研究消息（ResearchStartMessage / ResearchStepMessage /
-                           ResearchPanelMessage / ResearchAnalysisMessage /
-                           ResearchCompleteMessage / ResearchErrorMessage）
-        """
-        stream_id = f"stream-{uuid4().hex[:16]}"
-        start_time = time.time()
-
-        logger.info("开始流式研究任务 (task_id=%s, stream_id=%s): %s", task_id, stream_id, user_query)
-
-        # P0 修复：检查 LLM 组件是否可用
-        if not self.query_planner:
-            logger.error("研究任务失败: query_planner 未初始化或不可用")
-            yield {
-                "type": "research_error",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "step_id": "initialization",
-                "error_code": "COMPONENT_UNAVAILABLE",
-                "error_message": "LLM 组件未初始化，无法执行复杂研究任务。请检查环境配置或稍后重试。",
-                "timestamp": datetime.now().isoformat(),
-            }
-            yield {
-                "type": "research_complete",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "success": False,
-                "message": "研究失败：LLM 组件不可用",
-                "total_time": time.time() - start_time,
-                "timestamp": datetime.now().isoformat(),
-            }
-            return
-
-        try:
-            # ========== 第一步：LLM 查询规划 ==========
-            yield {
-                "type": "research_step",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "step_id": "planning",
-                "step_type": "planning",
-                "action": "LLM 正在规划研究方案...",
-                "status": "processing",
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            query_plan: QueryPlan = self.query_planner.plan(user_query)
-
-            if not query_plan.sub_queries:
-                yield {
-                    "type": "research_error",
-                    "stream_id": stream_id,
-                    "task_id": task_id,
-                    "step_id": "planning",
-                    "error_code": "PLANNING_ERROR",
-                    "error_message": "查询规划未生成子查询，无法继续研究",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                yield {
-                    "type": "research_complete",
-                    "stream_id": stream_id,
-                    "task_id": task_id,
-                    "success": False,
-                    "message": "研究失败：查询规划未生成子查询",
-                    "total_time": time.time() - start_time,
-                    "timestamp": datetime.now().isoformat(),
-                }
-                return
-
-            # 分类子查询
-            data_sub_queries = [sq for sq in query_plan.sub_queries if sq.task_type == "data_fetch"]
-            analysis_sub_queries = [
-                sq for sq in query_plan.sub_queries if sq.task_type in {"analysis", "report"}
-            ]
-
-            if not data_sub_queries:
-                yield {
-                    "type": "research_error",
-                    "stream_id": stream_id,
-                    "task_id": task_id,
-                    "step_id": "planning",
-                    "error_code": "PLANNING_ERROR",
-                    "error_message": "查询规划未包含数据获取任务",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                yield {
-                    "type": "research_complete",
-                    "stream_id": stream_id,
-                    "task_id": task_id,
-                    "success": False,
-                    "message": "研究失败：查询规划未包含数据获取任务",
-                    "total_time": time.time() - start_time,
-                    "timestamp": datetime.now().isoformat(),
-                }
-                return
-
-            # 规划完成，推送开始消息
-            yield {
-                "type": "research_start",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "query": user_query,
-                "plan": {
-                    "reasoning": query_plan.reasoning,
-                    "sub_queries": [
-                        {
-                            "query": sq.query,
-                            "task_type": sq.task_type,
-                            "datasource": sq.datasource,
-                        }
-                        for sq in query_plan.sub_queries
-                    ],
-                    "estimated_time": query_plan.estimated_time,
-                },
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            yield {
-                "type": "research_step",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "step_id": "planning",
-                "step_type": "planning",
-                "action": f"规划完成：{len(data_sub_queries)} 个数据任务，{len(analysis_sub_queries)} 个分析任务",
-                "status": "success",
-                "details": {
-                    "data_task_count": len(data_sub_queries),
-                    "analysis_task_count": len(analysis_sub_queries),
-                },
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            # ========== 第二步：并行执行数据子查询 ==========
-            aggregated_datasets: List[QueryDataset] = []
-            success_count = 0
-
-            for idx, sub_query in enumerate(data_sub_queries):
-                step_id = f"data_fetch_{idx}"
-
-                # 开始执行
-                yield {
-                    "type": "research_step",
-                    "stream_id": stream_id,
-                    "task_id": task_id,
-                    "step_id": step_id,
-                    "step_type": "data_fetch",
-                    "action": f"正在获取数据：{sub_query.query}",
-                    "status": "processing",
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-                try:
-                    # 执行查询
-                    effective_datasource = filter_datasource or sub_query.datasource
-                    prefer_single_route = self._should_force_single_route(effective_datasource)
-                    query_result = self.data_query_service.query(
-                        user_query=sub_query.query,
-                        filter_datasource=effective_datasource,
-                        use_cache=use_cache,
-                        prefer_single_route=prefer_single_route,
-                        user_id=user_id,  # Phase 2: 传递 user_id
-                    )
-
-                    if query_result.status == "success":
-                        # 聚合数据集
-                        datasets = query_result.datasets or []
-                        if datasets:
-                            aggregated_datasets.extend(datasets)
-                        else:
-                            aggregated_datasets.append(dataset_from_result(query_result))
-
-                        # 生成面板
-                        panel_result = self._build_panel(
-                            query_result=query_result,
-                            datasets=datasets or [dataset_from_result(query_result)],
-                            intent_confidence=intent_confidence,
-                            user_query=sub_query.query,
-                            layout_snapshot=layout_snapshot,
-                        )
-
-                        # 推送面板消息
-                        yield {
-                            "type": "research_panel",
-                            "stream_id": stream_id,
-                            "task_id": task_id,
-                            "step_id": step_id,
-                            "step_index": idx + 1,
-                            "panel_payload": panel_result.payload.model_dump(),
-                            "panel_data_blocks": {
-                                key: block.model_dump()
-                                for key, block in (panel_result.data_blocks or {}).items()
-                            },
-                            "source_query": sub_query.query,
-                            "timestamp": datetime.now().isoformat(),
-                        }
-
-                        # 步骤成功
-                        yield {
-                            "type": "research_step",
-                            "stream_id": stream_id,
-                            "task_id": task_id,
-                            "step_id": step_id,
-                            "step_type": "data_fetch",
-                            "action": f"数据获取成功：{query_result.feed_title or '数据'}",
-                            "status": "success",
-                            "details": {
-                                "item_count": len(query_result.items or []),
-                                "feed_title": query_result.feed_title,
-                            },
-                            "timestamp": datetime.now().isoformat(),
-                        }
-
-                        success_count += 1
-
-                    else:
-                        # 查询失败
-                        yield {
-                            "type": "research_step",
-                            "stream_id": stream_id,
-                            "task_id": task_id,
-                            "step_id": step_id,
-                            "step_type": "data_fetch",
-                            "action": f"数据获取失败：{query_result.reasoning or '未知错误'}",
-                            "status": "error",
-                            "details": {
-                                "error": query_result.reasoning,
-                            },
-                            "timestamp": datetime.now().isoformat(),
-                        }
-
-                except Exception as exc:
-                    logger.error("数据子查询执行异常: %s - %s", sub_query.query, exc, exc_info=True)
-                    yield {
-                        "type": "research_step",
-                        "stream_id": stream_id,
-                        "task_id": task_id,
-                        "step_id": step_id,
-                        "step_type": "data_fetch",
-                        "action": f"数据获取异常：{exc}",
-                        "status": "error",
-                        "details": {
-                            "error": str(exc),
-                        },
-                        "timestamp": datetime.now().isoformat(),
-                    }
-
-            # 检查是否有成功的数据查询
-            if success_count == 0:
-                yield {
-                    "type": "research_error",
-                    "stream_id": stream_id,
-                    "task_id": task_id,
-                    "step_id": None,
-                    "error_code": "ALL_DATA_FETCH_FAILED",
-                    "error_message": "所有数据获取任务均失败",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                yield {
-                    "type": "research_complete",
-                    "stream_id": stream_id,
-                    "task_id": task_id,
-                    "success": False,
-                    "message": "研究失败：所有数据获取任务均失败",
-                    "total_time": time.time() - start_time,
-                    "timestamp": datetime.now().isoformat(),
-                }
-                return
-
-            # ========== 第三步：执行分析子查询 ==========
-            if analysis_sub_queries and aggregated_datasets and self._llm_client:
-                dataset_summary, total_items = build_dataset_preview(aggregated_datasets)
-
-                if dataset_summary and total_items > 0:
-                    for idx, sub_query in enumerate(analysis_sub_queries):
-                        step_id = f"analysis_{idx}"
-
-                        # 开始分析
-                        yield {
-                            "type": "research_step",
-                            "stream_id": stream_id,
-                            "task_id": task_id,
-                            "step_id": step_id,
-                            "step_type": "analysis",
-                            "action": f"正在分析：{sub_query.query}",
-                            "status": "processing",
-                            "timestamp": datetime.now().isoformat(),
-                        }
-
-                        try:
-                            prompt = build_analysis_prompt(sub_query.query, dataset_summary)
-                            response = self._llm_client.chat(
-                                messages=[
-                                    {"role": "system", "content": "你是一名资深的数据分析师，擅长归纳总结。"},
-                                    {"role": "user", "content": prompt},
-                                ],
-                                temperature=0.2,
-                            )
-
-                            # 空值检查
-                            if response is None or not response.strip():
-                                raise ValueError("LLM 返回空响应")
-
-                            # 推送分析结果
-                            yield {
-                                "type": "research_analysis",
-                                "stream_id": stream_id,
-                                "task_id": task_id,
-                                "step_id": step_id,
-                                "step_index": idx + 1,
-                                "analysis_text": response.strip(),
-                                "is_complete": True,
-                                "timestamp": datetime.now().isoformat(),
-                            }
-
-                            # 分析成功
-                            yield {
-                                "type": "research_step",
-                                "stream_id": stream_id,
-                                "task_id": task_id,
-                                "step_id": step_id,
-                                "step_type": "analysis",
-                                "action": "分析完成",
-                                "status": "success",
-                                "details": {
-                                    "item_count": total_items,
-                                },
-                                "timestamp": datetime.now().isoformat(),
-                            }
-
-                        except Exception as exc:
-                            logger.warning("分析子查询失败: %s - %s", sub_query.query, exc)
-                            yield {
-                                "type": "research_step",
-                                "stream_id": stream_id,
-                                "task_id": task_id,
-                                "step_id": step_id,
-                                "step_type": "analysis",
-                                "action": f"分析失败：{exc}",
-                                "status": "error",
-                                "details": {
-                                    "error": str(exc),
-                                },
-                                "timestamp": datetime.now().isoformat(),
-                            }
-
-            # ========== 第四步：研究完成 ==========
-            total_time = time.time() - start_time
-            yield {
-                "type": "research_complete",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "success": True,
-                "message": f"研究完成，共获取 {success_count} 组数据",
-                "total_time": total_time,
-                "summary": None,  # 可选：未来可以添加总结
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            logger.info(
-                "流式研究任务完成 (task_id=%s, success_count=%d, total_time=%.2fs)",
-                task_id,
-                success_count,
-                total_time
-            )
-
-        except Exception as exc:
-            logger.error("流式研究任务异常 (task_id=%s): %s", task_id, exc, exc_info=True)
-            yield {
-                "type": "research_error",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "step_id": None,
-                "error_code": "RESEARCH_ERROR",
-                "error_message": str(exc),
-                "timestamp": datetime.now().isoformat(),
-            }
-            yield {
-                "type": "research_complete",
-                "stream_id": stream_id,
-                "task_id": task_id,
-                "success": False,
-                "message": f"研究失败：{exc}",
-                "total_time": time.time() - start_time,
-                "timestamp": datetime.now().isoformat(),
-            }
 
     def _build_panel(
         self,
@@ -1232,58 +872,14 @@ class ChatService:
             return True
         return self._force_single_route
 
-    def _run_analysis_sub_queries(
+    def _build_dataset_preview(
         self,
-        analysis_sub_queries: List[SubQuery],
         datasets: List[QueryDataset],
-    ) -> List[Dict[str, Any]]:
-        """
-        执行分析类子查询，对已有数据进行LLM总结。
-
-        Args:
-            analysis_sub_queries: 分析类子查询列表
-            datasets: 数据集列表
-
-        Returns:
-            分析总结列表
-        """
-        if not analysis_sub_queries or not datasets or not self._llm_client:
-            return []
-
-        dataset_summary, total_items = build_dataset_preview(datasets)
-        if not dataset_summary or total_items == 0:
-            return []
-
-        summaries: List[Dict[str, Any]] = []
-        for sub_query in analysis_sub_queries:
-            prompt = build_analysis_prompt(sub_query.query, dataset_summary)
-            try:
-                response = self._llm_client.chat(
-                    messages=[
-                        {"role": "system", "content": "你是一名资深的数据分析师，擅长归纳总结。"},
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.2,
-                )
-
-                # 添加空值检查，确保LLM返回有效响应
-                if response is None or not response.strip():
-                    raise ValueError("LLM 返回空响应")
-
-                summaries.append({
-                    "query": sub_query.query,
-                    "summary": response.strip(),
-                    "item_count": total_items,
-                    "task_type": sub_query.task_type or "analysis",
-                })
-            except Exception as exc:
-                logger.warning("分析子查询失败: %s", exc)
-                summaries.append({
-                    "query": sub_query.query,
-                    "summary": f"分析失败：{exc}",
-                    "task_type": sub_query.task_type or "analysis",
-                })
-        return summaries
+        max_items: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """封装 build_dataset_preview，便于测试覆盖。"""
+        limit = max_items if max_items is not None else self.config.analysis_preview_max_items
+        return build_dataset_preview(datasets, max_items=limit)
 
     def _handle_langgraph_research(
         self,
@@ -1294,104 +890,22 @@ class ChatService:
     ) -> ChatResponse:
         """
         处理 LangGraph 研究工作流（多轮动态研究）。
-
-        Args:
-            user_query: 用户查询
-            filter_datasource: 过滤数据源（可选）
-            intent_confidence: 意图置信度
-            client_task_id: 客户端任务 ID（可选）
-
-        Returns:
-            ChatResponse 对象
+        具体实现已拆分到 services.chat.langgraph_handler 模块。
         """
-        logger.debug("处理 LangGraph 研究工作流")
-
-        if not self.research_service:
-            return ChatResponse(
-                success=False,
-                intent_type="error",
-                message="研究服务未启用，请使用简单查询模式",
-                metadata={"error": "research_service_not_available"},
-            )
-
-        task_id = client_task_id or f"task-{uuid4().hex}"
-
-        try:
-            # 调用 ResearchService 执行研究
-            research_result = self.research_service.research(
-                user_query=user_query,
-                filter_datasource=filter_datasource,
-                task_id=task_id,
-            )
-
-            if research_result.success:
-                # 格式化执行步骤
-                execution_steps = [
-                    {
-                        "step_id": step.step_id,
-                        "node": step.node_name,
-                        "action": step.action,
-                        "status": step.status,
-                        "timestamp": step.timestamp,
-                    }
-                    for step in research_result.execution_steps
-                ]
-
-                metadata = {
-                    "mode": "research",
-                    "intent_confidence": intent_confidence,
-                    "total_steps": len(research_result.execution_steps),
-                    "execution_steps": execution_steps,
-                    "data_stash_count": len(research_result.data_stash),
-                }
-                if research_result.metadata:
-                    metadata.update(research_result.metadata)
-                metadata.setdefault("task_id", task_id)
-
-                return ChatResponse(
-                    success=True,
-                    intent_type="research",
-                    message=research_result.final_report,
-                    metadata=metadata,
-                )
-            else:
-                return ChatResponse(
-                    success=False,
-                    intent_type="research",
-                    message=f"研究任务失败：{research_result.error}",
-                    metadata={
-                        "mode": "research",
-                        "error": research_result.error,
-                        "intent_confidence": intent_confidence,
-                        "task_id": task_id,
-                    },
-                )
-
-        except Exception as exc:
-            logger.error(f"研究任务执行失败: {exc}", exc_info=True)
-            return ChatResponse(
-                success=False,
-                intent_type="research",
-                message=f"研究任务执行失败：{exc}",
-                metadata={
-                    "mode": "research",
-                    "error": str(exc),
-                    "task_id": task_id,
-                },
-            )
+        return handle_langgraph_research(
+            research_service=self.research_service,
+            user_query=user_query,
+            filter_datasource=filter_datasource,
+            intent_confidence=intent_confidence,
+            client_task_id=client_task_id,
+            chat_response_class=ChatResponse,
+        )
 
     def close(self):
         """关闭服务并释放资源。"""
         if self._manage_data_service and self.data_query_service:
             self.data_query_service.close()
             logger.info("ChatService 已关闭（管理 DataQueryService 资源）")
-
-        if self.parallel_executor:
-            try:
-                self.parallel_executor.shutdown()
-                logger.info("ParallelQueryExecutor 已关闭")
-            except Exception as exc:  # pragma: no cover
-                logger.warning("ParallelQueryExecutor 关闭失败: %s", exc)
 
         if self.research_service and hasattr(self.research_service, "close"):
             try:

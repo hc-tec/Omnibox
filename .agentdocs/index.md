@@ -154,6 +154,13 @@
   - 5 个阶段详细 TODO 清单
   - 技术决策记录与风险应对
   - 进度跟踪与完成记录
+- `workflow/251127-agent-graph-rearchitecture.md` - **V5.0 Agent 重构：Task Graph 智能执行方案**（已完成基础设计）
+- `workflow/251127-unify-task-graph-architecture.md` - **V5.0 Task Graph 统一架构重构**（进行中）✨NEW
+  - **核心问题**：后端存在三套并行的复杂任务处理系统，V5.0 Task Graph 未被充分利用
+  - **目标**：将 Task Graph 作为统一的数据查询编排层，废弃冗余组件
+  - **Phase 1**: 统一所有数据查询到 Task Graph
+  - **Phase 2**: 重构流式接口
+  - **Phase 3**: 废弃 LLMQueryPlanner + ParallelQueryExecutor
 
 ## 最近完成任务文档
 - `workflow/done/251117-v5-phase5-data-flow-optimization.md` - **V5.0 Phase 5: 数据流优化（知识图谱 + 智能摘要）** [✅ 完成 2025-11-17]

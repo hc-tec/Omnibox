@@ -1,5 +1,6 @@
 import sys
 import types
+import json
 
 import pytest
 
@@ -20,10 +21,11 @@ if "rag_system.rag_pipeline" not in sys.modules:
 
 from api.schemas.panel import LayoutNode, LayoutTree, PanelPayload
 from services.chat_service import ChatService
-from services.data_query_service import DataQueryResult
-from services.llm_query_planner import QueryPlan, SubQuery
+from services.data_query_service import DataQueryResult, QueryDataset
 from services.panel.component_planner import PlannerDecision
 import services.chat_service as chat_service_module
+from services.agent_graph.planner import TaskGraphPlanner
+from services.agent_graph.executor import GraphExecutor
 
 
 @pytest.fixture(autouse=True)
@@ -231,8 +233,8 @@ def test_chat_service_exposes_retrieved_tools_on_clarification():
     assert tools[0]["description"] == "测试路由"
 
 
-def test_streaming_research_respects_filter_datasource():
-    """確保流式研究會應用客戶端提供的 filter_datasource。"""
+def test_research_mode_respects_filter_datasource():
+    """V5.0 架构：research 模式通过 Task Graph 处理，正确传递 filter_datasource。"""
 
     class _RecordingDataQueryService:
         def __init__(self):
@@ -244,24 +246,14 @@ def test_streaming_research_respects_filter_datasource():
 
     data_service = _RecordingDataQueryService()
     chat = ChatService(data_query_service=data_service, llm_client=None)
-
-    demo_plan = QueryPlan(
-        sub_queries=[
-            SubQuery(query="demo sub", datasource=None, task_type="data_fetch"),
-        ],
-        reasoning="demo",
-        estimated_time=5,
-    )
-    chat.query_planner = types.SimpleNamespace(plan=lambda *_args, **_kwargs: demo_plan)
     chat._build_panel = lambda *args, **kwargs: _empty_panel_result()
 
-    list(
-        chat._handle_complex_research_streaming(
-            task_id="task-stream",
-            user_query="demo request",
-            filter_datasource="github",
-            use_cache=False,
-        )
+    # mode="research" 现在走 Task Graph，应该正确传递 filter_datasource
+    response = chat.chat(
+        user_query="demo request",
+        filter_datasource="github",
+        use_cache=False,
+        mode="research",
     )
 
     assert data_service.calls, "数据查询应至少执行一次"
@@ -402,3 +394,89 @@ def test_quick_refresh_handles_fetch_error():
     assert response.intent_type == "data_query"
     assert "网络连接失败" in response.message
     assert response.metadata["status"] == "error"
+
+
+def test_chat_service_task_graph_filters_items():
+    dataset = QueryDataset(
+        route_id="demo.route",
+        provider="bilibili",
+        name="投稿",
+        generated_path="/demo",
+        items=[
+            {"title": "英雄联盟周报"},
+            {"title": "生活记录"},
+        ],
+        feed_title="投稿",
+        source="local",
+    )
+    query_result = DataQueryResult(
+        status="success",
+        items=list(dataset.items),
+        feed_title="投稿",
+        generated_path="/demo",
+        source="local",
+        datasets=[dataset],
+    )
+
+    class _GraphAwareDataService:
+        def __init__(self):
+            self.calls = 0
+
+        def query(self, *args, **kwargs):
+            self.calls += 1
+            return query_result
+
+    data_service = _GraphAwareDataService()
+    chat = ChatService(data_query_service=data_service)
+    chat.panel_generator = _RecordingPanelGenerator(_empty_panel_result())
+
+    llm_payload = {
+        "reasoning": "需要过滤关键词",
+        "nodes": [
+            {
+                "id": "fetch",
+                "type": "fetch_data",
+                "tool": "fetch_public_data",
+                "description": "获取投稿",
+                "params": {
+                    "query": 'B站影视飓风投稿视频中，标题包含"英雄联盟"的视频',
+                    "filter_datasource": None,
+                },
+                "input_refs": [],
+                "expected_output": "DataQueryResult",
+            },
+            {
+                "id": "filter",
+                "type": "transform",
+                "tool": "filter_data",
+                "description": "过滤标题",
+                "params": {
+                    "strategy": "keyword",
+                    "target_field": "title",
+                    "keywords": ["英雄联盟"],
+                },
+                "input_refs": ["fetch"],
+                "expected_output": "DataQueryResult",
+            },
+        ],
+        "metadata": {"output_node": "filter"},
+    }
+
+    class _StubLLMClient:
+        def chat(self, *args, **kwargs):
+            return json.dumps(llm_payload, ensure_ascii=False)
+
+    chat.task_graph_planner = TaskGraphPlanner(llm_client=_StubLLMClient())
+    chat.graph_executor = GraphExecutor(data_service)
+
+    response = chat.chat(
+        'B站影视飓风投稿视频中，标题包含"英雄联盟"的视频',
+        mode="simple",
+    )
+
+    assert data_service.calls == 1
+    dataset_summary = response.metadata["datasets"][0]
+    assert dataset_summary["item_count"] == 1
+    graph_meta = response.metadata["task_graph"]
+    assert graph_meta["node_count"] == 2
+    assert graph_meta["nodes"][-1]["summary"]["item_count"] == 1

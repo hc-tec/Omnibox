@@ -40,13 +40,7 @@ class LLMIntentClassifier:
    - 感谢/告别：谢谢、再见、拜拜
    - 无明确查询目标的对话
 
-2. **simple_query（简单查询）**
-   - 明确的单一数据源查询
-   - 特征：指定了平台/内容类型，查询目标单一
-   - 示例："B站热搜"、"虎扑步行街最新帖子"、"GitHub trending"
-   - 可以一次 RAG 调用完成
-
-3. **complex_research（复杂研究）**
+2. **complex_research（复杂研究）**
    - 需要多个数据源的对比/分析
    - 需要深度研究、趋势分析
    - 特征：包含"对比"、"分析"、"研究"等关键词，或需要多平台数据
@@ -56,7 +50,7 @@ class LLMIntentClassifier:
 必须返回严格的 JSON 格式，不要有任何额外文本：
 ```json
 {
-    "intent": "chitchat|simple_query|complex_research",
+    "intent": "chitchat|complex_research",
     "confidence": 0.0-1.0,
     "reasoning": "判断理由"
 }
@@ -64,7 +58,6 @@ class LLMIntentClassifier:
 
 **判断原则**：
 - 优先识别 chitchat（避免对寒暄触发数据查询）
-- simple_query 和 complex_research 的区分：是否需要多个数据源或深度分析
 - 置信度：明确匹配 0.9+，部分匹配 0.7-0.9，模糊匹配 0.5-0.7
 """
 

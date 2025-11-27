@@ -3,7 +3,7 @@ WebSocket流式消息Schema定义
 按阶段推送处理进度：intent → rag → fetch → summary
 """
 
-from typing import Optional, Literal, Any
+from typing import Optional, Literal, Any, Dict, List
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -14,7 +14,7 @@ class StreamMessage(BaseModel):
 
     所有流式消息的统一格式
     """
-    type: Literal["stage", "data", "error", "complete"] = Field(
+    type: Literal["stage", "data", "error", "complete", "graph_node"] = Field(
         ...,
         description="消息类型：stage=阶段更新, data=数据推送, error=错误, complete=完成"
     )
@@ -91,6 +91,39 @@ class DataMessage(StreamMessage):
                     "confidence": 0.95,
                     "reasoning": "包含数据源关键词"
                 }
+            }
+        }
+
+class GraphNodeMessage(StreamMessage):
+    """
+    Task Graph 节点状态消息
+
+    用于在流式推送中展示任务图节点的执行情况。
+    """
+
+    type: Literal["graph_node"] = "graph_node"
+    node_id: str = Field(..., description="节点ID")
+    node_type: str = Field(..., description="节点类型")
+    status: Literal["pending", "running", "success", "error", "skipped"] = Field(
+        ...,
+        description="节点执行状态",
+    )
+    description: Optional[str] = Field(None, description="节点描述")
+    input_refs: List[str] = Field(default_factory=list, description="依赖节点列表")
+    summary: Optional[Dict[str, Any]] = Field(None, description="节点执行摘要")
+    error: Optional[str] = Field(None, description="错误信息（可选）")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "type": "graph_node",
+                "stream_id": "stream-1234567890",
+                "timestamp": "2025-11-27T01:00:00.000000",
+                "node_id": "filter_by_keyword",
+                "node_type": "transform",
+                "status": "success",
+                "input_refs": ["fetch_primary"],
+                "summary": {"dataset_count": 1, "item_count": 3},
             }
         }
 

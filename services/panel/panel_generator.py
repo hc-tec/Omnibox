@@ -74,12 +74,11 @@ class PanelGenerator:
             if not plans:
                 # 情况1: 明确请求了组件但适配器未返回任何计划（提前返回）
                 if block_input.requested_components is not None:
-                    block_debug["using_fallback"] = True
-                    block_debug["fallback_reason"] = (
-                        "Adapter returned no block_plans for requested components"
-                    )
+                    block_debug["skipped"] = True
                     block_debug["requested_components"] = list(block_input.requested_components or [])
-                    plans = [self._build_fallback_plan(block_input, data_block)]
+                    block_debug["skip_reason"] = "Empty requested_components list"
+                    debug_info["blocks"].append(block_debug)
+                    continue
                 else:
                     # 情况2: 未指定 requested_components，使用兜底渲染
                     block_debug["using_fallback"] = True

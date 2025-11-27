@@ -118,36 +118,30 @@ class TestRealSchemaStructure:
 
 
 class TestIncompleteSchemaFallback:
-    """测试缺失元数据的回退逻辑"""
+    """测试缺失元数据的严格模式行为（禁止启发式推断）"""
 
     def test_should_resolve_param_without_parameter_type(
         self,
         incomplete_schema
     ):
-        """启发式兜底：缺少 parameter_type 时使用启发式判断"""
-        # 包含中文 → 需要解析
+        """严格模式：缺少 parameter_type 时直接跳过解析"""
+        # 严格模式下，无论参数内容如何，schema 缺失都直接跳过
         result = should_resolve_param(
             "owner", "langchain-ai", incomplete_schema
         )
-        assert result is True  # 默认保守策略
+        assert result is False  # 严格模式：schema 缺失直接跳过
 
-        # 全数字 → 无需解析
+        # 全数字同样跳过
         result = should_resolve_param(
             "owner", "12345", incomplete_schema
         )
         assert result is False
 
-    @patch('services.database.subscription_service.SubscriptionService')
     def test_resolve_entity_with_missing_platform(
         self,
-        mock_service_class,
         incomplete_schema
     ):
-        """P1 修复验证：缺少 platform 时从路径推断"""
-        mock_service = Mock()
-        mock_service.resolve_entity.return_value = {"owner": "langchain-ai", "repo": "langchain"}
-        mock_service_class.return_value = mock_service
-
+        """严格模式：缺少 platform 时直接返回 None（不推断）"""
         result = resolve_entity_from_schema(
             entity_name="langchain-ai",
             tool_schema=incomplete_schema,
@@ -155,15 +149,8 @@ class TestIncompleteSchemaFallback:
             target_params=["owner"]
         )
 
-        assert result == {"owner": "langchain-ai", "repo": "langchain"}
-
-        # 验证回退逻辑正确推断了 platform 和 entity_type
-        mock_service.resolve_entity.assert_called_once()
-        call_args = mock_service.resolve_entity.call_args[1]
-        assert call_args["platform"] == "github"  # ⚠️ 从路径推断
-        # ⚠️ 注意：回退逻辑将 "owner" 推断为 "repo" entity_type
-        # 这是启发式的局限性示例（"owner" 在 repo 相关参数列表中）
-        assert call_args["entity_type"] == "repo"
+        # 严格模式：禁止从路径推断 platform，直接返回 None
+        assert result is None
 
     def test_resolve_entity_fallback_complete_failure(self):
         """回退失败的情况"""
@@ -206,15 +193,15 @@ class TestEdgeCases:
         """空参数列表"""
         schema = {"parameters": []}
         result = should_resolve_param("uid", "123", schema)
-        # 启发式兜底：全数字，无需解析
+        # 严格模式：schema 缺失直接跳过
         assert result is False
 
     def test_missing_parameters_field(self):
         """完全缺少 parameters 字段"""
         schema = {"route_id": "test"}
         result = should_resolve_param("uid", "行业101", schema)
-        # 启发式兜底：包含中文，需要解析
-        assert result is True
+        # 严格模式：禁止启发式判断，schema 缺失直接跳过
+        assert result is False
 
     @patch('services.database.subscription_service.SubscriptionService')
     def test_resolve_with_multiple_entity_params(

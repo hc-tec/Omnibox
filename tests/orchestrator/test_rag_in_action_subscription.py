@@ -73,6 +73,35 @@ def mock_query_parser():
     return parser
 
 
+@pytest.fixture
+def mock_rag_pipeline_vsearch():
+    """Mock RAG Pipeline for bilibili vsearch route"""
+    pipeline = Mock()
+    pipeline.search.return_value = [
+        (
+            "bilibili_vsearch",
+            0.91,
+            {
+                "route_id": "bilibili_vsearch",
+                "name": "全站视频搜索",
+                "path_template": ["/vsearch/:kw"],
+                "datasource": "bilibili",
+                "parameters": [
+                    {
+                        "name": "kw",
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "required": True,
+                        "parameter_type": "literal",
+                    }
+                ],
+                "required_identifiers": [],
+            },
+        )
+    ]
+    return pipeline
+
+
 class TestRAGInActionSubscriptionIntegration:
     """测试 RAGInAction 中的订阅解析集成"""
 
@@ -91,10 +120,15 @@ class TestRAGInActionSubscriptionIntegration:
         mock_parser_class.return_value = mock_query_parser
 
         # Mock validate_and_resolve_params（订阅解析成功）
-        mock_validate_func.return_value = {
-            "uid": "1566847",  # ✅ 解析后的真实 ID
-            "embed": "true"
-        }
+        mock_validate_func.return_value = (
+            {
+                "uid": "1566847",  # ✅ 解析后的真实 ID
+                "embed": "true"
+            },
+            {
+                "uid": True
+            }
+        )
 
         # 创建 RAGInAction 实例
         rag_in_action = RAGInAction(
@@ -138,10 +172,15 @@ class TestRAGInActionSubscriptionIntegration:
         mock_parser_class.return_value = mock_query_parser
 
         # Mock validate_and_resolve_params（订阅解析失败，返回原值）
-        mock_validate_func.return_value = {
-            "uid": "行业101",  # ⚠️ 未找到订阅，返回原值
-            "embed": "true"
-        }
+        mock_validate_func.return_value = (
+            {
+                "uid": "行业101",  # ⚠️ 未找到订阅，返回原值
+                "embed": "true"
+            },
+            {
+                "uid": False
+            }
+        )
 
         # 创建 RAGInAction 实例
         rag_in_action = RAGInAction(
@@ -155,9 +194,10 @@ class TestRAGInActionSubscriptionIntegration:
             verbose=False
         )
 
-        # 验证结果
-        assert result["status"] == "success"
-        assert result["parameters_filled"]["uid"] == "行业101"  # 降级使用原值
+        # 验证结果：需要用户澄清 UID
+        assert result["status"] == "needs_clarification"
+        assert "uid" in (result["clarification_question"] or "").lower()
+        assert "缺少关键标识符" in result["reasoning"]
 
     @patch('orchestrator.rag_in_action.validate_and_resolve_params')
     @patch('orchestrator.rag_in_action.QueryParser')
@@ -222,10 +262,15 @@ class TestRAGInActionSubscriptionIntegration:
         mock_parser_class.return_value = parser
 
         # Mock validate_and_resolve_params（无需解析，直接返回）
-        mock_validate_func.return_value = {
-            "uid": "1566847",
-            "embed": "false"
-        }
+        mock_validate_func.return_value = (
+            {
+                "uid": "1566847",
+                "embed": "false"
+            },
+            {
+                "uid": True
+            }
+        )
 
         # 创建 RAGInAction 实例
         rag_in_action = RAGInAction(
@@ -245,6 +290,91 @@ class TestRAGInActionSubscriptionIntegration:
 
         # 验证 validate_and_resolve_params 被调用（即使不需要解析）
         mock_validate_func.assert_called_once()
+
+
+class TestRAGInActionSearchKeywordEnhancement:
+    """测试搜索路由的关键词增强逻辑"""
+
+    @patch('orchestrator.rag_in_action.validate_and_resolve_params')
+    @patch('orchestrator.rag_in_action.QueryParser')
+    def test_keyword_enriched_with_up_hint(
+        self,
+        mock_parser_class,
+        mock_validate_func,
+        mock_rag_pipeline_vsearch,
+        mock_llm_client
+    ):
+        parser = Mock()
+        parser.parse.return_value = {
+            "status": "success",
+            "selected_tool": {
+                "route_id": "bilibili_vsearch",
+                "name": "全站视频搜索"
+            },
+            "parameters_filled": {
+                "kw": "英雄联盟"
+            },
+            "reasoning": "关键词搜索"
+        }
+        mock_parser_class.return_value = parser
+        mock_validate_func.return_value = (
+            {"kw": "英雄联盟"},
+            {}
+        )
+
+        rag_in_action = RAGInAction(
+            rag_pipeline=mock_rag_pipeline_vsearch,
+            llm_client=mock_llm_client
+        )
+
+        result = rag_in_action.process(
+            user_query="B站影视飓风投稿视频中，标题包含英雄联盟的视频",
+            verbose=False
+        )
+
+        assert result["status"] == "success"
+        assert result["parameters_filled"]["kw"] == "影视飓风 英雄联盟"
+        assert result["generated_path"].endswith("影视飓风 英雄联盟")
+
+    @patch('orchestrator.rag_in_action.validate_and_resolve_params')
+    @patch('orchestrator.rag_in_action.QueryParser')
+    def test_keyword_enrichment_skipped_without_hint(
+        self,
+        mock_parser_class,
+        mock_validate_func,
+        mock_rag_pipeline_vsearch,
+        mock_llm_client
+    ):
+        parser = Mock()
+        parser.parse.return_value = {
+            "status": "success",
+            "selected_tool": {
+                "route_id": "bilibili_vsearch",
+                "name": "全站视频搜索"
+            },
+            "parameters_filled": {
+                "kw": "英雄联盟"
+            },
+            "reasoning": "关键词搜索"
+        }
+        mock_parser_class.return_value = parser
+        mock_validate_func.return_value = (
+            {"kw": "英雄联盟"},
+            {}
+        )
+
+        rag_in_action = RAGInAction(
+            rag_pipeline=mock_rag_pipeline_vsearch,
+            llm_client=mock_llm_client
+        )
+
+        result = rag_in_action.process(
+            user_query="想看看英雄联盟的热门视频",
+            verbose=False
+        )
+
+        assert result["status"] == "success"
+        assert result["parameters_filled"]["kw"] == "英雄联盟"
 
 
 class TestRAGInActionBackwardCompatibility:

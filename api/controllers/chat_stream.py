@@ -20,6 +20,7 @@ from api.schemas.stream_messages import (
     DataMessage,
     ErrorMessage,
     CompleteMessage,
+    GraphNodeMessage,
     StreamStage,
     STAGE_DESCRIPTIONS,
     STAGE_PROGRESS,
@@ -205,6 +206,23 @@ def stream_chat_processing(
             }
         ).model_dump()
 
+        if response.metadata:
+            task_graph_meta = response.metadata.get("task_graph")
+            if task_graph_meta:
+                plan_nodes = {node.get("id"): node for node in task_graph_meta.get("graph", [])}
+                for record in task_graph_meta.get("nodes", []):
+                    plan_info = plan_nodes.get(record.get("node_id"), {})
+                    yield GraphNodeMessage(
+                        stream_id=stream_id,
+                        node_id=record.get("node_id", ""),
+                        node_type=record.get("node_type", "fetch_data"),
+                        status=record.get("status", "success"),
+                        description=plan_info.get("description"),
+                        input_refs=plan_info.get("input_refs") or [],
+                        summary=record.get("summary"),
+                        error=record.get("error"),
+                    ).model_dump()
+
         # ========== 完成 ==========
         total_time = time.time() - start_time
         yield CompleteMessage(
@@ -239,11 +257,9 @@ async def chat_stream(
     chat_service: Any = Depends(get_chat_service)
 ):
     """
-    统一 WebSocket 流式对话接口
+    统一 WebSocket 流式对话接口（V5.0 Task Graph 架构）
 
-    支持两种模式：
-    1. 普通查询模式 (mode != "research"): 返回 stage/data/error/complete 消息
-    2. 研究模式 (mode == "research"): 返回 research_* 消息
+    所有数据查询统一通过 Task Graph 处理，按阶段推送进度。
 
     消息格式:
     - 客户端发送:
@@ -252,39 +268,29 @@ async def chat_stream(
         "filter_datasource": null,
         "use_cache": true,
         "mode": "auto" | "simple" | "research",
-        "task_id": "task-xxx" (可选，研究模式使用)
+        "layout_snapshot": [...] (可选)
       }
     - 服务端推送: 参见 api/schemas/stream_messages.py
+      - stage: 阶段进度
+      - data: 阶段数据
+      - graph_node: Task Graph 节点执行信息
+      - complete: 完成消息
 
     连接地址: ws://host:port/api/v1/chat/stream
-    查询参数: ?task_id=xxx (可选，研究模式使用)
 
-    Example (普通模式):
+    Example:
         ```python
         async def test():
             uri = "ws://localhost:8000/api/v1/chat/stream"
             async with websockets.connect(uri) as ws:
-                await ws.send(json.dumps({"query": "虎扑步行街最新帖子"}))
-                async for message in ws:
-                    data = json.loads(message)
-                    print(f"[{data['type']}] {data}")
-                    if data['type'] == 'complete':
-                        break
-        ```
-
-    Example (研究模式):
-        ```python
-        async def test():
-            uri = "ws://localhost:8000/api/v1/chat/stream?task_id=task-123"
-            async with websockets.connect(uri) as ws:
                 await ws.send(json.dumps({
-                    "query": "分析up主行业101的视频",
-                    "mode": "research"
+                    "query": "B站影视飓风投稿视频中，标题包含英雄联盟的视频",
+                    "mode": "research"  # Task Graph 会自动规划 fetch + filter
                 }))
                 async for message in ws:
                     data = json.loads(message)
                     print(f"[{data['type']}] {data}")
-                    if data['type'] == 'research_complete':
+                    if data['type'] == 'complete':
                         break
         ```
     """
@@ -310,74 +316,35 @@ async def chat_stream(
 
         # 验证查询
         if not user_query or not user_query.strip():
-            if mode == "research":
-                error_msg = {
-                    "type": "research_error",
-                    "stream_id": stream_id,
-                    "task_id": task_id or f"task-{uuid.uuid4().hex[:16]}",
-                    "step_id": None,
-                    "error_code": "VALIDATION_ERROR",
-                    "error_message": "查询不能为空",
-                    "timestamp": "",
-                }
-            else:
-                error_msg = ErrorMessage(
-                    stream_id=stream_id,
-                    error_code="VALIDATION_ERROR",
-                    error_message="查询不能为空",
-                    stage=None,
-                ).model_dump()
+            error_msg = ErrorMessage(
+                stream_id=stream_id,
+                error_code="VALIDATION_ERROR",
+                error_message="查询不能为空",
+                stage=None,
+            ).model_dump()
             await websocket.send_json(error_msg)
             await websocket.close()
             return
 
         import asyncio
 
-        # 根据模式选择不同的生成器
-        if mode == "research":
-            # 研究模式：调用 ChatService 的流式研究方法
-            if not hasattr(chat_service, '_handle_complex_research_streaming'):
-                error_msg = {
-                    "type": "research_error",
-                    "stream_id": stream_id,
-                    "task_id": task_id or f"task-{uuid.uuid4().hex[:16]}",
-                    "step_id": None,
-                    "error_code": "NOT_SUPPORTED",
-                    "error_message": "ChatService 不支持流式研究（缺少 _handle_complex_research_streaming 方法）",
-                    "timestamp": "",
-                }
-                await websocket.send_json(error_msg)
-                await websocket.close()
-                return
+        # V5.0 架构：所有模式统一使用 Task Graph
+        # mode 参数会传递给 chat_service.chat()，由其内部决定处理方式
+        # - "auto": 自动意图分类后路由
+        # - "simple": 强制简单查询
+        # - "research": 强制复杂查询（Task Graph 多节点规划）
+        logger.info(f"[{stream_id}] 启动流式查询 (mode={mode})")
 
-            # 确保有 task_id
-            if not task_id:
-                task_id = f"task-{uuid.uuid4().hex[:16]}"
-
-            logger.info(f"[{stream_id}] 启动研究模式 (task_id={task_id})")
-
-            # 创建研究模式生成器
-            message_generator = chat_service._handle_complex_research_streaming(
-                task_id=task_id,
-                user_query=user_query,
-                filter_datasource=filter_datasource,
-                use_cache=use_cache,
-                intent_confidence=0.95,  # 研究模式固定高置信度
-                layout_snapshot=layout_snapshot,
-            )
-        else:
-            # 普通模式：使用原有的流式处理
-            logger.info(f"[{stream_id}] 启动普通查询模式")
-
-            # 创建普通模式生成器
-            message_generator = stream_chat_processing(
-                chat_service=chat_service,
-                user_query=user_query,
-                stream_id=stream_id,
-                filter_datasource=filter_datasource,
-                use_cache=use_cache,
-                layout_snapshot=layout_snapshot,
-            )
+        # 统一使用 stream_chat_processing，它内部调用 chat_service.chat()
+        # chat_service.chat() 现在统一通过 Task Graph 处理所有数据查询
+        message_generator = stream_chat_processing(
+            chat_service=chat_service,
+            user_query=user_query,
+            stream_id=stream_id,
+            filter_datasource=filter_datasource,
+            use_cache=use_cache,
+            layout_snapshot=layout_snapshot,
+        )
 
         # 在线程池中逐个获取消息
         while True:

@@ -112,7 +112,9 @@ def bilibili_user_video_adapter(
     if isinstance(raw_items, dict):
         raw_items = [raw_items]
 
-    up_name = payload.get("title") or "UP主"
+    up_name = payload.get("author") or payload.get("title") or "UP主"
+    if isinstance(up_name, str) and up_name.endswith(" 的 bilibili 空间"):
+        up_name = up_name.replace(" 的 bilibili 空间", "")
     up_face = payload.get("image")
 
     stats = {
@@ -162,10 +164,15 @@ def bilibili_user_video_adapter(
             continue
 
         title = item.get("title") or ""
-        link = item.get("url") or ""
+        link = item.get("url") or item.get("link") or ""
         description = short_text(item.get("description"))
-        pub_date = item.get("date_published")
-        author = item.get("authors")[0]["name"] or up_name
+        pub_date = item.get("date_published") or item.get("pubDate")
+        authors = item.get("authors")
+        author = up_name
+        if isinstance(authors, list) and authors:
+            author = authors[0].get("name") or author
+        elif item.get("author"):
+            author = item.get("author")
         content_html = item.get("content_html")
         cover_url = None
         if content_html:

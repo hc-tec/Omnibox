@@ -46,23 +46,25 @@ class TestShouldResolveParam:
         result = should_resolve_param("category", "tech", tool_schema)
         assert result is False
 
-    def test_heuristic_fallback_digit(self):
-        """测试：schema 缺失，参数值全数字（启发式兜底）"""
+    def test_strict_mode_digit(self):
+        """测试：严格模式 - schema 缺失时跳过解析（全数字）"""
         tool_schema = {"parameters": {}}  # 缺少 parameter_type
         result = should_resolve_param("uid", "1566847", tool_schema)
-        assert result is False  # 全数字假设为有效ID
+        assert result is False  # 严格模式：schema 缺失直接跳过
 
-    def test_heuristic_fallback_chinese(self):
-        """测试：schema 缺失，参数值包含中文（启发式兜底）"""
+    def test_strict_mode_chinese(self):
+        """测试：严格模式 - schema 缺失时跳过解析（包含中文）"""
         tool_schema = {"parameters": {}}  # 缺少 parameter_type
         result = should_resolve_param("uid", "行业101", tool_schema)
-        assert result is True  # 包含中文假设为名字
+        # 严格模式：禁止启发式判断，schema 缺失直接跳过
+        assert result is False
 
-    def test_heuristic_fallback_default(self):
-        """测试：schema 缺失，无明显特征（启发式兜底）"""
+    def test_strict_mode_default(self):
+        """测试：严格模式 - schema 缺失时跳过解析（无特征）"""
         tool_schema = {"parameters": {}}  # 缺少 parameter_type
         result = should_resolve_param("owner", "langchain", tool_schema)
-        assert result is True  # 默认尝试解析（保守策略）
+        # 严格模式：禁止启发式判断，schema 缺失直接跳过
+        assert result is False
 
 
 class TestResolveEntityFromSchema:
