@@ -31,7 +31,7 @@ class LLMClient(ABC):
     def set_tracker(
         self,
         tracker: "LLMCallTracker",
-        role: str,
+        role: Optional[str] = None,
         step_id: Optional[int] = None,
     ):
         """
@@ -40,10 +40,12 @@ class LLMClient(ABC):
         Args:
             tracker: LLMCallTracker 实例
             role: LLM 角色（planner/reflector/synthesizer/entity_resolver/query_parser 等）
+                  注意：建议在 generate() 调用时通过参数传入 role，以支持多 Agent 共享同一 LLMClient
             step_id: 关联的执行步骤 ID（可选）
         """
         self.tracker = tracker
-        self.tracker_role = role
+        if role:
+            self.tracker_role = role
         self.tracker_step_id = step_id
 
     @abstractmethod
@@ -116,15 +118,17 @@ class OpenAIClient(LLMClient):
         """调用OpenAI聊天模型（已注入追踪）"""
         temperature = kwargs.get("temperature", None)
         max_tokens = kwargs.get("max_tokens", None)
+        # V5.0：支持在调用时传入 role（解决多 Agent 共享同一 LLMClient 的问题）
+        role = kwargs.get("role") or self.tracker_role
 
         # V5.0 可观测性：开始追踪
         call_id = f"llm-{uuid.uuid4().hex[:12]}"
         start_time = time.time()
 
-        if self.tracker and self.tracker_role:
+        if self.tracker and role:
             self.tracker.start_call(
                 call_id=call_id,
-                role=self.tracker_role,
+                role=role,
                 step_id=self.tracker_step_id,
                 model=self.model_name,
                 temperature=temperature,
@@ -156,7 +160,7 @@ class OpenAIClient(LLMClient):
 
             # V5.0 可观测性：完成追踪
             duration_ms = int((time.time() - start_time) * 1000)
-            if self.tracker and self.tracker_role:
+            if self.tracker and role:
                 # 提取 token 使用信息
                 prompt_tokens = None
                 completion_tokens = None
@@ -183,7 +187,7 @@ class OpenAIClient(LLMClient):
         except Exception as e:
             # V5.0 可观测性：失败追踪
             duration_ms = int((time.time() - start_time) * 1000)
-            if self.tracker and self.tracker_role:
+            if self.tracker and role:
                 self.tracker.fail_call(
                     call_id=call_id,
                     error_message=str(e),
@@ -291,15 +295,17 @@ class AnthropicClient(LLMClient):
         """调用Anthropic聊天模型（已注入追踪）"""
         temperature = kwargs.get("temperature", None)
         max_tokens = kwargs.get("max_tokens", None)
+        # V5.0：支持在调用时传入 role（解决多 Agent 共享同一 LLMClient 的问题）
+        role = kwargs.get("role") or self.tracker_role
 
         # V5.0 可观测性：开始追踪
         call_id = f"llm-{uuid.uuid4().hex[:12]}"
         start_time = time.time()
 
-        if self.tracker and self.tracker_role:
+        if self.tracker and role:
             self.tracker.start_call(
                 call_id=call_id,
-                role=self.tracker_role,
+                role=role,
                 step_id=self.tracker_step_id,
                 model=self.model_name,
                 temperature=temperature,
@@ -331,7 +337,7 @@ class AnthropicClient(LLMClient):
 
             # V5.0 可观测性：完成追踪
             duration_ms = int((time.time() - start_time) * 1000)
-            if self.tracker and self.tracker_role:
+            if self.tracker and role:
                 # 提取 token 使用信息
                 prompt_tokens = None
                 completion_tokens = None
@@ -359,7 +365,7 @@ class AnthropicClient(LLMClient):
         except Exception as e:
             # V5.0 可观测性：失败追踪
             duration_ms = int((time.time() - start_time) * 1000)
-            if self.tracker and self.tracker_role:
+            if self.tracker and role:
                 self.tracker.fail_call(
                     call_id=call_id,
                     error_message=str(e),
@@ -371,12 +377,12 @@ class AnthropicClient(LLMClient):
         lc_messages = []
         has_system = False
         for message in messages:
-            role = message.get("role", "user")
+            msg_role = message.get("role", "user")
             content = message.get("content", "")
-            if role == "system":
+            if msg_role == "system":
                 lc_messages.append(self._SystemMessage(content=content))
                 has_system = True
-            elif role == "assistant":
+            elif msg_role == "assistant":
                 lc_messages.append(self._AIMessage(content=content))
             else:
                 lc_messages.append(self._HumanMessage(content=content))
@@ -416,14 +422,17 @@ class CustomLLMClient(LLMClient):
 
     def generate(self, prompt: str, **kwargs) -> str:
         """调用自定义 LLM（已注入追踪）"""
+        # V5.0：支持在调用时传入 role（解决多 Agent 共享同一 LLMClient 的问题）
+        role = kwargs.get("role") or self.tracker_role
+
         # V5.0 可观测性：开始追踪
         call_id = f"llm-{uuid.uuid4().hex[:12]}"
         start_time = time.time()
 
-        if self.tracker and self.tracker_role:
+        if self.tracker and role:
             self.tracker.start_call(
                 call_id=call_id,
-                role=self.tracker_role,
+                role=role,
                 step_id=self.tracker_step_id,
                 model=self.model_name,
                 temperature=kwargs.get("temperature"),
@@ -435,7 +444,7 @@ class CustomLLMClient(LLMClient):
 
             # V5.0 可观测性：完成追踪
             duration_ms = int((time.time() - start_time) * 1000)
-            if self.tracker and self.tracker_role:
+            if self.tracker and role:
                 self.tracker.complete_call(
                     call_id=call_id,
                     prompt=prompt,
@@ -449,7 +458,7 @@ class CustomLLMClient(LLMClient):
         except Exception as e:
             # V5.0 可观测性：失败追踪
             duration_ms = int((time.time() - start_time) * 1000)
-            if self.tracker and self.tracker_role:
+            if self.tracker and role:
                 self.tracker.fail_call(
                     call_id=call_id,
                     error_message=str(e),

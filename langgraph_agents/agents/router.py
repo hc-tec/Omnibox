@@ -30,7 +30,7 @@ def create_router_node(runtime: LangGraphRuntime):
         # 使用重试装饰器包装 LLM 调用
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():
-            return runtime.router_llm.generate(prompt, temperature=0.0)
+            return runtime.router_llm.generate(prompt, temperature=0.0, role="router")
 
         try:
             response = call_llm()

@@ -57,12 +57,14 @@ class LangGraphRuntime:
         运行时初始化后，注入追踪器到所有 LLM Client。
 
         V5.0: 如果提供了 llm_tracker，则自动注入到各个 LLM Client。
+        注意：role 由各 Agent 在调用 generate() 时传入，以支持多 Agent 共享同一 LLMClient。
         """
         if self.llm_tracker:
-            self.router_llm.set_tracker(self.llm_tracker, "router")
-            self.planner_llm.set_tracker(self.llm_tracker, "planner")
-            self.reflector_llm.set_tracker(self.llm_tracker, "reflector")
-            self.synthesizer_llm.set_tracker(self.llm_tracker, "synthesizer")
+            # 只设置 tracker，不设置 role（role 在 generate 调用时传入）
+            self.router_llm.set_tracker(self.llm_tracker)
+            self.planner_llm.set_tracker(self.llm_tracker)
+            self.reflector_llm.set_tracker(self.llm_tracker)
+            self.synthesizer_llm.set_tracker(self.llm_tracker)
             if self.summarizer_llm:
-                self.summarizer_llm.set_tracker(self.llm_tracker, "data_stasher")
+                self.summarizer_llm.set_tracker(self.llm_tracker)
 

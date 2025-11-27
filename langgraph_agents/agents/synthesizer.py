@@ -50,7 +50,7 @@ def create_synthesizer_node(runtime: LangGraphRuntime):
         # 使用重试装饰器包装 LLM 调用
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():
-            return runtime.synthesizer_llm.generate(prompt, temperature=0.2)
+            return runtime.synthesizer_llm.generate(prompt, temperature=0.2, role="synthesizer")
 
         try:
             response = call_llm()

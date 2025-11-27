@@ -25,6 +25,27 @@ def _format_summaries(data_stash: List[DataReference]) -> str:
     return "\n".join(parts)
 
 
+def _format_working_memory(working_memory: Dict) -> str:
+    """格式化轻量工具结果（working_memory）。"""
+    if not working_memory:
+        return "暂无"
+    lines = []
+    for tool_id, result in working_memory.items():
+        status = result.get("status", "unknown")
+        description = result.get("description", "")
+        step_id = result.get("step_id", "?")
+        lines.append(f"[Step {step_id}] {tool_id} ({status}): {description}")
+    return "\n".join(lines)
+
+
+def _extract_executed_tools(data_stash: List[DataReference]) -> str:
+    """提取已执行的工具列表（帮助 Reflector 判断任务完成度）。"""
+    if not data_stash:
+        return "暂无"
+    tools = [ref.tool_name for ref in data_stash]
+    return ", ".join(tools)
+
+
 def create_reflector_node(runtime: LangGraphRuntime):
     system_prompt = load_prompt("reflector_system.txt")
 
@@ -33,6 +54,8 @@ def create_reflector_node(runtime: LangGraphRuntime):
         if not query:
             raise ValueError("ReflectorAgent: original_query 为空或缺失")
         data_stash = state.get("data_stash", [])
+        working_memory = state.get("working_memory", {})
+        last_reflection = state.get("reflection")
 
         # V5.0 P0: 检查最后一次工具执行状态
         last_tool_result = state.get("last_tool_result")
@@ -44,17 +67,31 @@ def create_reflector_node(runtime: LangGraphRuntime):
                 tool_status_note = "\n\n⚠️ 最后一步工具返回 'needs_user_input' 状态，需要用户澄清。"
                 logger.info("Reflector: 检测到 needs_user_input 状态")
 
-        prompt = (
-            f"{system_prompt}\n\n"
-            f"original_query:\n{query}\n\n"
-            f"collected_data:\n{_format_summaries(data_stash)}"
-            f"{tool_status_note}"
-        )
+        # 构建增强的 prompt
+        prompt_parts = [
+            system_prompt,
+            f"\noriginal_query:\n{query}",
+            f"\n已执行的工具:\n{_extract_executed_tools(data_stash)}",
+            f"\ncollected_data:\n{_format_summaries(data_stash)}",
+        ]
+
+        # 添加轻量工具结果
+        if working_memory:
+            prompt_parts.append(f"\nworking_memory (轻量工具结果):\n{_format_working_memory(working_memory)}")
+
+        # 添加上一轮反思结果（帮助理解执行历史）
+        if last_reflection:
+            prompt_parts.append(f"\nlast_reflection:\nDecision={last_reflection.decision}\nReasoning={last_reflection.reasoning}")
+
+        if tool_status_note:
+            prompt_parts.append(tool_status_note)
+
+        prompt = "\n".join(prompt_parts)
 
         # 使用重试装饰器包装 LLM 调用
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():
-            return runtime.reflector_llm.generate(prompt, temperature=0.1)
+            return runtime.reflector_llm.generate(prompt, temperature=0.1, role="reflector")
 
         try:
             response = call_llm()

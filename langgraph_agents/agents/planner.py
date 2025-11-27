@@ -99,7 +99,7 @@ def create_planner_node(runtime: LangGraphRuntime):
         # 使用重试装饰器包装 LLM 调用
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():
-            return runtime.planner_llm.generate(prompt, temperature=0.1)
+            return runtime.planner_llm.generate(prompt, temperature=0.1, role="planner")
 
         try:
             response = call_llm()
