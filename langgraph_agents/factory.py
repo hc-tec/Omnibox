@@ -3,7 +3,7 @@ from __future__ import annotations
 """运行时构建辅助函数。"""
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 
 from query_processor.llm_client import LLMClient
 from services.data_query_service import DataQueryService
@@ -13,6 +13,9 @@ from .storage import InMemoryResearchDataStore, ResearchDataStore
 from .tools.bootstrap import register_default_tools
 from .tools.private_notes import MarkdownNoteStore
 from .tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from api.schemas.llm_call_event import LLMCallTracker
 
 
 def _require_llm(llms: Dict[str, LLMClient], role: str) -> LLMClient:
@@ -30,6 +33,7 @@ def build_runtime(
     notes_path: Optional[Path] = None,
     data_store: Optional[ResearchDataStore] = None,
     summarizer_llm: Optional[LLMClient] = None,
+    llm_tracker: Optional["LLMCallTracker"] = None,  # V5.0 可观测性
 ) -> LangGraphRuntime:
     """
     构建 LangGraphRuntime。
@@ -40,6 +44,7 @@ def build_runtime(
         notes_path: 私有笔记目录（默认 docs/）
         data_store: 自定义数据存储
         summarizer_llm: DataStasher 可选摘要模型
+        llm_tracker: LLM 调用追踪器（V5.0 可观测性，可选）
     """
 
     registry = ToolRegistry()
@@ -71,6 +76,7 @@ def build_runtime(
         data_store=actual_data_store,
         tool_context=context,
         summarizer_llm=summarizer_llm,
+        llm_tracker=llm_tracker,  # V5.0 可观测性
     )
     return runtime
 

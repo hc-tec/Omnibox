@@ -12,6 +12,7 @@ from .storage import ResearchDataStore
 
 if TYPE_CHECKING:  # 避免循环引用
     from .tools.registry import ToolRegistry
+    from api.schemas.llm_call_event import LLMCallTracker
 
 
 class NoteSearchBackend(Protocol):
@@ -47,4 +48,21 @@ class LangGraphRuntime:
     tool_context: ToolExecutionContext
     summarizer_llm: Optional[LLMClient] = None
     cheap_summary_max_chars: int = 320
+
+    # V5.0 可观测性：LLM 调用追踪器（可选）
+    llm_tracker: Optional["LLMCallTracker"] = None
+
+    def __post_init__(self):
+        """
+        运行时初始化后，注入追踪器到所有 LLM Client。
+
+        V5.0: 如果提供了 llm_tracker，则自动注入到各个 LLM Client。
+        """
+        if self.llm_tracker:
+            self.router_llm.set_tracker(self.llm_tracker, "router")
+            self.planner_llm.set_tracker(self.llm_tracker, "planner")
+            self.reflector_llm.set_tracker(self.llm_tracker, "reflector")
+            self.synthesizer_llm.set_tracker(self.llm_tracker, "synthesizer")
+            if self.summarizer_llm:
+                self.summarizer_llm.set_tracker(self.llm_tracker, "data_stasher")
 

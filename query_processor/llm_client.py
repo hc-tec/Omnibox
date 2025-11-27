@@ -1,12 +1,19 @@
 """
 LLM客户端抽象层
 职责：使用成熟的LangChain聊天模型接口统一不同LLM提供商的调用方式
+
+V5.0 可观测性增强：支持 LLM 调用追踪，实时推送到前端
 """
 import logging
+import time
+import uuid
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 
 from .config import llm_settings
+
+if TYPE_CHECKING:
+    from api.schemas.llm_call_event import LLMCallTracker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,6 +21,30 @@ logger = logging.getLogger(__name__)
 
 class LLMClient(ABC):
     """LLM客户端抽象基类"""
+
+    def __init__(self):
+        # V5.0 可观测性：LLM 调用追踪器（由外部注入）
+        self.tracker: Optional["LLMCallTracker"] = None
+        self.tracker_role: Optional[str] = None
+        self.tracker_step_id: Optional[int] = None
+
+    def set_tracker(
+        self,
+        tracker: "LLMCallTracker",
+        role: str,
+        step_id: Optional[int] = None,
+    ):
+        """
+        设置 LLM 调用追踪器（外部注入）。
+
+        Args:
+            tracker: LLMCallTracker 实例
+            role: LLM 角色（planner/reflector/synthesizer/entity_resolver/query_parser 等）
+            step_id: 关联的执行步骤 ID（可选）
+        """
+        self.tracker = tracker
+        self.tracker_role = role
+        self.tracker_step_id = step_id
 
     @abstractmethod
     def generate(self, prompt: str, **kwargs) -> str:
@@ -44,6 +75,8 @@ class OpenAIClient(LLMClient):
         base_url: Optional[str] = None,
         system_prompt: Optional[str] = None,
     ):
+        super().__init__()  # V5.0: 初始化追踪器字段
+
         try:
             from langchain_openai import ChatOpenAI
             from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -80,31 +113,83 @@ class OpenAIClient(LLMClient):
         logger.info("✓ 使用 LangChain ChatOpenAI 初始化成功: %s", self.model_name)
 
     def generate(self, prompt: str, **kwargs) -> str:
-        """调用OpenAI聊天模型"""
+        """调用OpenAI聊天模型（已注入追踪）"""
         temperature = kwargs.get("temperature", None)
         max_tokens = kwargs.get("max_tokens", None)
 
-        messages = []
-        if self.system_prompt:
-            messages.append(self._SystemMessage(content=self.system_prompt))
-        messages.append(self._HumanMessage(content=prompt))
+        # V5.0 可观测性：开始追踪
+        call_id = f"llm-{uuid.uuid4().hex[:12]}"
+        start_time = time.time()
 
-        invoke_kwargs = {}
-        if temperature is not None:
-            invoke_kwargs["temperature"] = temperature
-        if max_tokens is not None:
-            invoke_kwargs["max_tokens"] = max_tokens
-
-        response = self.client.invoke(messages, **invoke_kwargs)
-
-        content = response.content
-        if isinstance(content, list):
-            content = "".join(
-                piece.get("text", "") if isinstance(piece, dict) else str(piece)
-                for piece in content
+        if self.tracker and self.tracker_role:
+            self.tracker.start_call(
+                call_id=call_id,
+                role=self.tracker_role,
+                step_id=self.tracker_step_id,
+                model=self.model_name,
+                temperature=temperature,
+                metadata={"max_tokens": max_tokens} if max_tokens else {},
             )
 
-        return str(content)
+        try:
+            messages = []
+            if self.system_prompt:
+                messages.append(self._SystemMessage(content=self.system_prompt))
+            messages.append(self._HumanMessage(content=prompt))
+
+            invoke_kwargs = {}
+            if temperature is not None:
+                invoke_kwargs["temperature"] = temperature
+            if max_tokens is not None:
+                invoke_kwargs["max_tokens"] = max_tokens
+
+            response = self.client.invoke(messages, **invoke_kwargs)
+
+            content = response.content
+            if isinstance(content, list):
+                content = "".join(
+                    piece.get("text", "") if isinstance(piece, dict) else str(piece)
+                    for piece in content
+                )
+
+            content_str = str(content)
+
+            # V5.0 可观测性：完成追踪
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self.tracker and self.tracker_role:
+                # 提取 token 使用信息
+                prompt_tokens = None
+                completion_tokens = None
+                total_tokens = None
+                if hasattr(response, "response_metadata"):
+                    usage = response.response_metadata.get("token_usage") or response.response_metadata.get("usage")
+                    if usage:
+                        prompt_tokens = usage.get("prompt_tokens")
+                        completion_tokens = usage.get("completion_tokens")
+                        total_tokens = usage.get("total_tokens")
+
+                self.tracker.complete_call(
+                    call_id=call_id,
+                    prompt=prompt,
+                    response=content_str,
+                    duration_ms=duration_ms,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                )
+
+            return content_str
+
+        except Exception as e:
+            # V5.0 可观测性：失败追踪
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self.tracker and self.tracker_role:
+                self.tracker.fail_call(
+                    call_id=call_id,
+                    error_message=str(e),
+                    duration_ms=duration_ms,
+                )
+            raise
 
     def chat(self, messages, **kwargs) -> str:
         lc_messages = []
@@ -162,6 +247,8 @@ class AnthropicClient(LLMClient):
             base_url: API Base URL（可选，用于代理或服务模拟器）
             system_prompt: 系统提示（可选）
         """
+        super().__init__()  # V5.0: 初始化追踪器字段
+
         try:
             from langchain_anthropic import ChatAnthropic
             from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -201,31 +288,84 @@ class AnthropicClient(LLMClient):
         logger.info("✓ 使用 LangChain ChatAnthropic 初始化成功: %s", self.model_name)
 
     def generate(self, prompt: str, **kwargs) -> str:
-        """调用Anthropic聊天模型"""
+        """调用Anthropic聊天模型（已注入追踪）"""
         temperature = kwargs.get("temperature", None)
         max_tokens = kwargs.get("max_tokens", None)
 
-        messages = []
-        if self.system_prompt:
-            messages.append(self._SystemMessage(content=self.system_prompt))
-        messages.append(self._HumanMessage(content=prompt))
+        # V5.0 可观测性：开始追踪
+        call_id = f"llm-{uuid.uuid4().hex[:12]}"
+        start_time = time.time()
 
-        invoke_kwargs = {}
-        if temperature is not None:
-            invoke_kwargs["temperature"] = temperature
-        if max_tokens is not None:
-            invoke_kwargs["max_tokens"] = max_tokens
-
-        response = self.client.invoke(messages, **invoke_kwargs)
-
-        content = response.content
-        if isinstance(content, list):
-            content = "".join(
-                piece.get("text", "") if isinstance(piece, dict) else str(piece)
-                for piece in content
+        if self.tracker and self.tracker_role:
+            self.tracker.start_call(
+                call_id=call_id,
+                role=self.tracker_role,
+                step_id=self.tracker_step_id,
+                model=self.model_name,
+                temperature=temperature,
+                metadata={"max_tokens": max_tokens} if max_tokens else {},
             )
 
-        return str(content)
+        try:
+            messages = []
+            if self.system_prompt:
+                messages.append(self._SystemMessage(content=self.system_prompt))
+            messages.append(self._HumanMessage(content=prompt))
+
+            invoke_kwargs = {}
+            if temperature is not None:
+                invoke_kwargs["temperature"] = temperature
+            if max_tokens is not None:
+                invoke_kwargs["max_tokens"] = max_tokens
+
+            response = self.client.invoke(messages, **invoke_kwargs)
+
+            content = response.content
+            if isinstance(content, list):
+                content = "".join(
+                    piece.get("text", "") if isinstance(piece, dict) else str(piece)
+                    for piece in content
+                )
+
+            content_str = str(content)
+
+            # V5.0 可观测性：完成追踪
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self.tracker and self.tracker_role:
+                # 提取 token 使用信息
+                prompt_tokens = None
+                completion_tokens = None
+                total_tokens = None
+                if hasattr(response, "response_metadata"):
+                    usage = response.response_metadata.get("token_usage") or response.response_metadata.get("usage")
+                    if usage:
+                        prompt_tokens = usage.get("input_tokens") or usage.get("prompt_tokens")
+                        completion_tokens = usage.get("output_tokens") or usage.get("completion_tokens")
+                        if prompt_tokens and completion_tokens:
+                            total_tokens = prompt_tokens + completion_tokens
+
+                self.tracker.complete_call(
+                    call_id=call_id,
+                    prompt=prompt,
+                    response=content_str,
+                    duration_ms=duration_ms,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                )
+
+            return content_str
+
+        except Exception as e:
+            # V5.0 可观测性：失败追踪
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self.tracker and self.tracker_role:
+                self.tracker.fail_call(
+                    call_id=call_id,
+                    error_message=str(e),
+                    duration_ms=duration_ms,
+                )
+            raise
 
     def chat(self, messages, **kwargs) -> str:
         lc_messages = []
@@ -268,13 +408,54 @@ class CustomLLMClient(LLMClient):
     """自定义LLM客户端（使用回调函数）"""
 
     def __init__(self, generate_func: Callable[[str], str], name: str = "Custom"):
+        super().__init__()  # V5.0: 初始化追踪器字段
         self.generate_func = generate_func
         self.name = name
+        self.model_name = name  # 用于追踪
         logger.info("✓ 初始化自定义LLM客户端: %s", name)
 
     def generate(self, prompt: str, **kwargs) -> str:
-        logger.debug("调用自定义LLM: %s", self.name)
-        return self.generate_func(prompt)
+        """调用自定义 LLM（已注入追踪）"""
+        # V5.0 可观测性：开始追踪
+        call_id = f"llm-{uuid.uuid4().hex[:12]}"
+        start_time = time.time()
+
+        if self.tracker and self.tracker_role:
+            self.tracker.start_call(
+                call_id=call_id,
+                role=self.tracker_role,
+                step_id=self.tracker_step_id,
+                model=self.model_name,
+                temperature=kwargs.get("temperature"),
+            )
+
+        try:
+            logger.debug("调用自定义LLM: %s", self.name)
+            response = self.generate_func(prompt)
+
+            # V5.0 可观测性：完成追踪
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self.tracker and self.tracker_role:
+                self.tracker.complete_call(
+                    call_id=call_id,
+                    prompt=prompt,
+                    response=response,
+                    duration_ms=duration_ms,
+                    # 自定义 LLM 无法获取 token 信息
+                )
+
+            return response
+
+        except Exception as e:
+            # V5.0 可观测性：失败追踪
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self.tracker and self.tracker_role:
+                self.tracker.fail_call(
+                    call_id=call_id,
+                    error_message=str(e),
+                    duration_ms=duration_ms,
+                )
+            raise
 
     def chat(self, messages, **kwargs) -> str:
         parts = []

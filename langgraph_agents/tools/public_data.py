@@ -15,11 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def _format_success_payload(result: DataQueryResult) -> Dict[str, Any]:
+    """格式化成功响应的 payload（纯粹的数据获取结果）。"""
     return {
         "type": "rss_public_data",
         "feed_title": result.feed_title,
         "generated_path": result.generated_path,
         "items": result.items,
+        "item_count": len(result.items),
         "source": result.source,
         "cache_hit": result.cache_hit,
         "reasoning": result.reasoning,
@@ -69,6 +71,23 @@ def register_public_data_tool(registry: ToolRegistry) -> None:
             payload = _format_success_payload(result)
             return ToolExecutionPayload(call=call, raw_output=payload, status="success")
 
+        # V5.0 修复：needs_clarification 应该触发用户澄清流程，而非返回 error
+        if result.status == "needs_clarification":
+            clarification_msg = result.clarification_question or result.reasoning or "需要更多信息"
+            logger.info("fetch_public_data 需要澄清: %s", clarification_msg)
+            return ToolExecutionPayload(
+                call=call,
+                raw_output={
+                    "type": "clarification_request",
+                    "question": clarification_msg,
+                    "original_query": query,
+                    "reasoning": result.reasoning,
+                },
+                status="needs_user_input",
+                error_message=None,
+            )
+
+        # 其他非成功状态（not_found, error 等）
         error_msg = result.reasoning or "DataQueryService 返回非 success"
         logger.warning("fetch_public_data 失败: %s", error_msg)
         return ToolExecutionPayload(

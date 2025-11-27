@@ -135,6 +135,31 @@ export interface PanelStreamSummaryPayload {
   metadata?: PanelResponse["metadata"];
 }
 
+/**
+ * V5.0 可观测性：LLM 调用事件
+ * 用于追踪后端各个 Agent 的 LLM 调用情况
+ */
+export interface LLMCallEvent {
+  call_id: string;
+  role: "planner" | "reflector" | "synthesizer" | "data_stasher" | "entity_resolver" | "query_parser" | "router" | "other";
+  status: "started" | "completed" | "failed";
+  step_id?: number | null;
+  stream_id?: string | null;
+  timestamp?: string | null;
+  duration_ms?: number | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  prompt_preview?: string | null;
+  response_preview?: string | null;
+  full_prompt?: string | null;
+  full_response?: string | null;
+  error_message?: string | null;
+  model?: string | null;
+  temperature?: number | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface PanelStreamFetchPayload {
   items_count: number;
   block_count: number;
@@ -200,6 +225,27 @@ export type StreamMessage =
       success: boolean;
       message: string;
       total_time?: number;
+    }
+  | {
+      type: "llm_call";
+      stream_id: string;
+      timestamp: string;
+      call_id: string;
+      role: LLMCallEvent["role"];
+      status: LLMCallEvent["status"];
+      step_id?: number | null;
+      duration_ms?: number | null;
+      prompt_tokens?: number | null;
+      completion_tokens?: number | null;
+      total_tokens?: number | null;
+      prompt_preview?: string | null;
+      response_preview?: string | null;
+      full_prompt?: string | null;
+      full_response?: string | null;
+      error_message?: string | null;
+      model?: string | null;
+      temperature?: number | null;
+      metadata?: Record<string, unknown>;
     };
 
 export type QueryMode = 'auto' | 'simple' | 'research';

@@ -312,20 +312,37 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
             )
 
         try:
-            # 3. 从 data_store 加载数据
+            # 3. 获取源数据
+            # 支持两种方式：
+            # - source_ref 是字符串（data_id）：从 data_store 加载
+            # - source_ref 是 dict/list（ExecutionEngine 解析后的数据）：直接使用
 
-            source_data = data_store.load(source_ref)
-
-            if source_data is None:
-                # 无效的数据引用
+            if isinstance(source_ref, str):
+                # data_id 引用，从 data_store 加载
+                source_data = data_store.load(source_ref)
+                if source_data is None:
+                    return ToolExecutionPayload(
+                        call=call,
+                        raw_output={
+                            "type": "data_filter",
+                            "error_code": "E105"
+                        },
+                        status="error",
+                        error_message=f"无效的数据引用: {source_ref}"
+                    )
+            elif isinstance(source_ref, (dict, list)):
+                # ExecutionEngine 已解析的数据对象，直接使用
+                source_data = source_ref
+                logger.debug("filter_data: 使用直接传入的数据对象")
+            else:
                 return ToolExecutionPayload(
                     call=call,
                     raw_output={
                         "type": "data_filter",
-                        "error_code": "E105"
+                        "error_code": "E102"
                     },
                     status="error",
-                    error_message=f"无效的数据引用: {source_ref}"
+                    error_message=f"source_ref 类型无效: {type(source_ref)}"
                 )
 
             # 4. 确保 source_data 是列表格式

@@ -15,23 +15,24 @@ from ..state import DataReference, GraphState
 logger = logging.getLogger(__name__)
 
 
-def _load_raw_records(
-    runtime: LangGraphRuntime,
-    references: List[DataReference],
-) -> List[Dict]:
-    records = []
+def _build_data_summaries(references: List[DataReference]) -> List[Dict]:
+    """
+    构建数据引用的摘要信息（仅用于 LLM 推理）。
+
+    重要：不加载完整原始数据，避免超过 LLM token 限制。
+    Synthesizer 应该基于数据摘要进行推理，而非原始数据。
+    """
+    summaries = []
     for ref in references:
-        raw = runtime.data_store.load(ref.data_id)
-        records.append(
+        summaries.append(
             {
                 "data_id": ref.data_id,
                 "tool": ref.tool_name,
                 "status": ref.status,
-                "summary": ref.summary,
-                "raw": raw,
+                "summary": ref.summary,  # 只使用摘要，不加载原始数据
             }
         )
-    return records
+    return summaries
 
 
 def create_synthesizer_node(runtime: LangGraphRuntime):
@@ -40,11 +41,11 @@ def create_synthesizer_node(runtime: LangGraphRuntime):
     def node(state: GraphState) -> Dict[str, str]:
         query = state.get("original_query", "")
         data_stash = state.get("data_stash", [])
-        records = _load_raw_records(runtime, data_stash)
+        summaries = _build_data_summaries(data_stash)
         prompt = (
             f"{system_prompt}\n\n"
             f"original_query:\n{query}\n\n"
-            f"data_references:\n{json.dumps(records, ensure_ascii=False)}"
+            f"data_references:\n{json.dumps(summaries, ensure_ascii=False)}"
         )
         # 使用重试装饰器包装 LLM 调用
         @retry_with_backoff(max_retries=3, initial_delay=1.0)

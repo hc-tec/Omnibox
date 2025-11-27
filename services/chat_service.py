@@ -9,23 +9,21 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field, asdict
 from uuid import uuid4
 
+from typing import TYPE_CHECKING
+
 from services.config import get_data_query_config
 from services.llm_intent_classifier import LLMIntentClassifier, IntentClassification
 from services.data_query_service import DataQueryService, DataQueryResult, QueryDataset
 from api.schemas.panel import PanelPayload, DataBlock, SourceInfo
-from services.agent_graph import (
-    TaskGraphPlanner,
-    GraphExecutor,
-    TaskGraphPlan,
-    GraphExecutionResult,
-)
-from langgraph_agents.tools.registry import ToolRegistry
-from langgraph_agents.tools.bootstrap import register_default_tools
-from services.chat.task_graph_handler import (
-    execute_task_graph,
-    build_task_graph_metadata,
+from langgraph_agents.sync_executor import (
+    SyncLangGraphExecutor,
+    LangGraphExecutionResult,
+    create_sync_executor,
 )
 from services.chat.langgraph_handler import handle_langgraph_research
+
+if TYPE_CHECKING:
+    from api.schemas.llm_call_event import LLMCallTracker
 from services.panel.panel_generator import (
     PanelGenerator,
     PanelBlockInput,
@@ -146,8 +144,7 @@ class ChatService:
 
         self._llm_client = llm_client
         self.intent_classifier = None
-        self.task_graph_planner = None
-        self.graph_executor = None
+        self.langgraph_executor = None  # V5.0 LangGraph 执行器
 
         # 初始化意图分类器
         if llm_client:
@@ -158,21 +155,20 @@ class ChatService:
                 logger.warning(f"意图分类器初始化失败: {exc}")
                 self.intent_classifier = None
 
-        # 初始化 Task Graph 组件（V5.0 核心）
-        # 创建 ToolRegistry 并注册默认工具，用于动态注入到 System Prompt
-        try:
-            tool_registry = ToolRegistry()
-            register_default_tools(tool_registry)
-            self.task_graph_planner = TaskGraphPlanner(
-                llm_client=llm_client,
-                tool_registry=tool_registry,
-            )
-            self.graph_executor = GraphExecutor(data_query_service=data_query_service)
-            logger.info("Task Graph 组件初始化完成（已注入 %d 个工具定义）", len(tool_registry.list_tools()))
-        except Exception as exc:
-            logger.warning("Task Graph 组件初始化失败: %s", exc)
-            self.task_graph_planner = None
-            self.graph_executor = None
+        # 初始化 V5.0 LangGraph 执行器（单步迭代规划）
+        if llm_client:
+            try:
+                self.langgraph_executor = create_sync_executor(
+                    llm_client=llm_client,
+                    data_query_service=data_query_service,
+                )
+                logger.info(
+                    "V5.0 LangGraph 执行器初始化完成（%d 个工具）",
+                    len(self.langgraph_executor.runtime.tool_registry.list_tools())
+                )
+            except Exception as exc:
+                logger.warning("V5.0 LangGraph 执行器初始化失败: %s", exc)
+                self.langgraph_executor = None
 
         # 初始化 LLM 组件规划器（作为规则引擎的备选方案）
         try:
@@ -292,6 +288,8 @@ class ChatService:
         mode: str = "auto",  # auto / simple / research / langgraph
         client_task_id: Optional[str] = None,
         user_id: Optional[int] = None,  # Phase 2: 用户 ID（游客模式可为 None）
+        force_execute: bool = False,  # 强制执行（流式接口使用）
+        llm_tracker: Optional["LLMCallTracker"] = None,  # V5.0 LLM 调用追踪器
     ) -> ChatResponse:
         """
         处理用户查询（三层智能路由）。
@@ -308,6 +306,8 @@ class ChatService:
                 - langgraph: 强制使用 LangGraph 工作流
             client_task_id: 客户端任务 ID（可选）
             user_id: 用户 ID（Phase 2，游客模式可为 None）
+            force_execute: 强制执行复杂查询（流式接口使用，跳过 requires_streaming 提示）
+            llm_tracker: LLM 调用追踪器（V5.0 可观测性，流式接口使用）
 
         Returns:
             ChatResponse 对象
@@ -333,6 +333,7 @@ class ChatService:
                     llm_logs=llm_logs,
                     user_id=user_id,
                     is_complex=True,
+                    llm_tracker=llm_tracker,
                 )
 
             # 情况2：LangGraph 模式（特殊的研究模式）
@@ -347,6 +348,7 @@ class ChatService:
                         layout_snapshot=layout_snapshot,
                         llm_logs=llm_logs,
                         user_id=user_id,
+                        llm_tracker=llm_tracker,
                     )
                 else:
                     return self._handle_langgraph_research(
@@ -366,6 +368,7 @@ class ChatService:
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
                     user_id=user_id,
+                    llm_tracker=llm_tracker,
                 )
 
             # 阶段1：LLM 意图分类（三层架构第一层）
@@ -380,6 +383,7 @@ class ChatService:
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
                     user_id=user_id,
+                    llm_tracker=llm_tracker,
                 )
 
             intent_result: IntentClassification = self.intent_classifier.classify(user_query)
@@ -409,22 +413,32 @@ class ChatService:
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
                     user_id=user_id,
+                    llm_tracker=llm_tracker,
                 )
 
             elif intent_result.intent == "complex_research":
-                # V5.0 架构：复杂研究也走 Task Graph
-                # Task Graph 可以处理 fetch + filter/transform 等复杂查询模式
-                logger.info("LLM 识别为复杂研究意图，使用 Task Graph 处理")
-                return self._handle_data_query(
-                    user_query=user_query,
-                    filter_datasource=filter_datasource,
-                    use_cache=use_cache,
-                    intent_confidence=intent_result.confidence,
-                    layout_snapshot=layout_snapshot,
-                    llm_logs=llm_logs,
-                    user_id=user_id,
-                    is_complex=True,  # 标记为复杂查询
-                )
+                if force_execute:
+                    # 流式接口：直接执行 Task Graph
+                    logger.info("LLM 识别为复杂研究意图，流式模式直接执行 Task Graph")
+                    return self._handle_data_query(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        use_cache=use_cache,
+                        intent_confidence=intent_result.confidence,
+                        layout_snapshot=layout_snapshot,
+                        llm_logs=llm_logs,
+                        user_id=user_id,
+                        is_complex=True,
+                        llm_tracker=llm_tracker,
+                    )
+                else:
+                    # 非流式接口：返回提示，让前端切换到 WebSocket 流式
+                    logger.info("LLM 识别为复杂研究意图，返回流式接口提示")
+                    return self._create_streaming_required_response(
+                        reasoning=intent_result.reasoning,
+                        confidence=intent_result.confidence,
+                        llm_logs=llm_logs,
+                    )
 
             else:
                 # 未知意图，降级为数据查询
@@ -437,6 +451,7 @@ class ChatService:
                     layout_snapshot=layout_snapshot,
                     llm_logs=llm_logs,
                     user_id=user_id,
+                    llm_tracker=llm_tracker,
                 )
 
         except Exception as exc:
@@ -458,42 +473,84 @@ class ChatService:
         llm_logs: Optional[List[Dict[str, Any]]] = None,
         user_id: Optional[int] = None,
         is_complex: bool = False,  # V5.0：标记是否为复杂查询
+        llm_tracker: Optional["LLMCallTracker"] = None,  # V5.0 LLM 调用追踪器
     ) -> ChatResponse:
         """
-        统一处理数据查询意图（V5.0 Task Graph 架构）。
+        统一处理数据查询意图（V5.0 LangGraph 架构）。
 
-        无论是 simple_query 还是 complex_research，都通过 Task Graph 规划和执行。
-        Task Graph 会自动处理：
-        - 简单查询：单节点 fetch_data
-        - 复杂查询：多节点 DAG（fetch + filter/transform/analysis）
+        V5.0 采用单步迭代规划（类似 Claude Code 的工作方式）：
+        - Router → 判断意图
+        - Planner → 规划下一步（有前序步骤的上下文）
+        - ToolExecutor → 执行工具
+        - Reflector → 决定是否继续
+        - 循环直到完成
+
+        这种设计确保每一步规划都有充足的上下文信息。
         """
         logger.debug("处理数据查询意图 (user_id=%s, is_complex=%s)", user_id, is_complex)
 
-        plan: Optional[TaskGraphPlan] = None
-        graph_exec_result = None
+        langgraph_result: Optional[LangGraphExecutionResult] = None
         query_result: Optional[DataQueryResult] = None
 
-        if self.task_graph_planner and self.graph_executor:
-            plan, graph_exec_result = self._execute_task_graph(
-                user_query=user_query,
-                filter_datasource=filter_datasource,
-                use_cache=use_cache,
-                user_id=user_id,
-            )
-            if graph_exec_result and isinstance(graph_exec_result.final_output, DataQueryResult):
-                query_result = graph_exec_result.final_output
+        # 优先使用 V5.0 LangGraph 执行器
+        if self.langgraph_executor or llm_tracker:
+            try:
+                # V5.0 可观测性：如果提供了 tracker，创建临时带追踪器的 executor
+                executor = self.langgraph_executor
+                if llm_tracker and self._llm_client:
+                    executor = create_sync_executor(
+                        llm_client=self._llm_client,
+                        data_query_service=self.data_query_service,
+                        llm_tracker=llm_tracker,
+                    )
+                    logger.debug("创建带 LLM 追踪器的临时执行器")
 
+                if executor:
+                    langgraph_result = executor.execute(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                    )
+
+                    # 提取最终数据（如果成功）
+                    if langgraph_result and langgraph_result.success:
+                        query_result = executor.get_final_data(langgraph_result)
+
+                # V5.0 修复：处理需要澄清的情况，不回退到直接查询
+                if langgraph_result and langgraph_result.needs_clarification:
+                    logger.info("LangGraph 需要用户澄清: %s", langgraph_result.clarification_question)
+                    llm_debug = clone_llm_logs(llm_logs)
+                    langgraph_debug = self._build_langgraph_metadata(langgraph_result)
+                    debug_payload = compose_debug_payload(None, llm_debug, None)
+                    metadata = {
+                        "status": "needs_clarification",
+                        "reasoning": langgraph_result.clarification_question,
+                        "intent_confidence": intent_confidence,
+                        "debug": debug_payload,
+                    }
+                    if langgraph_debug:
+                        metadata["langgraph"] = langgraph_debug
+                    return ChatResponse(
+                        success=False,
+                        intent_type="data_query",
+                        message=langgraph_result.clarification_question or "需要更多信息以继续处理。",
+                        metadata=metadata,
+                    )
+
+            except Exception as exc:
+                logger.warning("V5.0 LangGraph 执行失败，回退到直接查询: %s", exc)
+
+        # 降级：直接使用 DataQueryService（仅当 LangGraph 未成功且未请求澄清时）
         if query_result is None:
             query_result = self.data_query_service.query(
                 user_query=user_query,
                 filter_datasource=filter_datasource,
                 use_cache=use_cache,
                 prefer_single_route=self._should_force_single_route(filter_datasource),
-                user_id=user_id,  # Phase 2: 传递 user_id
+                user_id=user_id,
             )
 
         llm_debug = clone_llm_logs(llm_logs)
-        task_graph_debug = build_task_graph_metadata(plan, graph_exec_result)
+        langgraph_debug = self._build_langgraph_metadata(langgraph_result)
 
         if query_result.status == "success":
             datasets = query_result.datasets or []
@@ -546,6 +603,7 @@ class ChatService:
                 "datasets": summarize_datasets(datasets, query_result),
                 "retrieved_tools": format_retrieved_tools(query_result.retrieved_tools),
                 "refresh_metadata": refresh_metadata,  # Phase 2: 快速刷新元数据
+                "is_complex": is_complex,  # V5.0: 标记是否为复杂研究
             }
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
@@ -574,12 +632,15 @@ class ChatService:
             if warnings:
                 metadata["warnings"] = warnings
 
-            if task_graph_debug:
-                metadata["task_graph"] = task_graph_debug
+            if langgraph_debug:
+                metadata["langgraph"] = langgraph_debug
+
+            # 根据查询复杂度设置正确的 intent_type
+            result_intent_type = "complex_research" if is_complex else "data_query"
 
             return ChatResponse(
                 success=True,
-                intent_type="data_query",
+                intent_type=result_intent_type,
                 message=message,
                 data=panel_result.payload,
                 data_blocks=panel_result.data_blocks,
@@ -601,8 +662,8 @@ class ChatService:
                 "retrieved_tools": formatted_tools,
                 "debug": debug_payload,
             }
-            if task_graph_debug:
-                metadata["task_graph"] = task_graph_debug
+            if langgraph_debug:
+                metadata["langgraph"] = langgraph_debug
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
@@ -623,8 +684,8 @@ class ChatService:
                 "retrieved_tools": formatted_tools,
                 "debug": debug_payload,
             }
-            if task_graph_debug:
-                metadata["task_graph"] = task_graph_debug
+            if langgraph_debug:
+                metadata["langgraph"] = langgraph_debug
             return ChatResponse(
                 success=False,
                 intent_type="data_query",
@@ -641,8 +702,8 @@ class ChatService:
             "retrieved_tools": formatted_tools,
             "debug": debug_payload,
         }
-        if task_graph_debug:
-            metadata["task_graph"] = task_graph_debug
+        if langgraph_debug:
+            metadata["langgraph"] = langgraph_debug
         return ChatResponse(
             success=False,
             intent_type="data_query",
@@ -650,23 +711,29 @@ class ChatService:
             metadata=metadata,
         )
 
-    def _execute_task_graph(
+    def _build_langgraph_metadata(
         self,
-        user_query: str,
-        filter_datasource: Optional[str],
-        use_cache: bool,
-        user_id: Optional[int],
-    ) -> Tuple[Optional[TaskGraphPlan], Optional[GraphExecutionResult]]:
-        """执行 Task Graph，失败时返回 None。"""
-        return execute_task_graph(
-            planner=self.task_graph_planner,
-            executor=self.graph_executor,
-            user_query=user_query,
-            filter_datasource=filter_datasource,
-            use_cache=use_cache,
-            prefer_single_route=self._should_force_single_route(filter_datasource),
-            user_id=user_id,
-        )
+        result: Optional[LangGraphExecutionResult],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        构建 LangGraph 执行的调试元数据。
+
+        Args:
+            result: LangGraph 执行结果
+
+        Returns:
+            调试元数据字典，如果没有有效数据则返回 None
+        """
+        if not result:
+            return None
+
+        return {
+            "success": result.success,
+            "router_decision": result.router_decision,
+            "final_report": result.final_report,
+            "execution_steps": result.execution_steps,
+            "error": result.error,
+        }
 
     def _create_streaming_required_response(
         self,

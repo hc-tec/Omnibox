@@ -14,9 +14,9 @@ class StreamMessage(BaseModel):
 
     所有流式消息的统一格式
     """
-    type: Literal["stage", "data", "error", "complete", "graph_node"] = Field(
+    type: Literal["stage", "data", "error", "complete", "graph_node", "llm_call"] = Field(
         ...,
-        description="消息类型：stage=阶段更新, data=数据推送, error=错误, complete=完成"
+        description="消息类型：stage=阶段更新, data=数据推送, error=错误, complete=完成, llm_call=LLM调用事件"
     )
     stream_id: str = Field(..., description="流ID，用于关联日志和追踪")
     timestamp: str = Field(
@@ -452,3 +452,75 @@ class ResearchStepStatus:
     PROCESSING = "processing"      # 处理中
     SUCCESS = "success"            # 成功
     ERROR = "error"                # 失败
+
+
+class LLMCallMessage(StreamMessage):
+    """
+    LLM 调用事件消息（可观测性）
+
+    用于实时推送 LLM 调用信息到前端，支持：
+    - 调用时间线展示
+    - Token 使用统计
+    - 开发者模式查看详细 prompt/response
+    """
+    type: Literal["llm_call"] = "llm_call"
+    call_id: str = Field(..., description="调用唯一 ID")
+    role: Literal[
+        "planner",
+        "reflector",
+        "synthesizer",
+        "data_stasher",
+        "entity_resolver",
+        "query_parser",
+        "other",
+    ] = Field(..., description="LLM 角色")
+    status: Literal["started", "completed", "failed"] = Field(..., description="调用状态")
+
+    # 关联信息
+    step_id: Optional[int] = Field(None, description="关联的执行步骤")
+
+    # 时间信息
+    duration_ms: Optional[int] = Field(None, description="耗时（毫秒）")
+
+    # Token 统计
+    prompt_tokens: Optional[int] = Field(None, description="Prompt tokens")
+    completion_tokens: Optional[int] = Field(None, description="Completion tokens")
+    total_tokens: Optional[int] = Field(None, description="总 tokens")
+
+    # 调用内容（预览）
+    prompt_preview: Optional[str] = Field(None, description="Prompt 预览（前 200 字符）")
+    response_preview: Optional[str] = Field(None, description="Response 预览（前 200 字符）")
+
+    # 调用内容（完整，仅开发者模式）
+    full_prompt: Optional[str] = Field(None, description="完整 Prompt（开发者模式）")
+    full_response: Optional[str] = Field(None, description="完整 Response（开发者模式）")
+
+    # 错误信息
+    error_message: Optional[str] = Field(None, description="错误描述")
+
+    # 元信息
+    model: Optional[str] = Field(None, description="模型名称")
+    temperature: Optional[float] = Field(None, description="Temperature 参数")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="其他元信息")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "type": "llm_call",
+                "stream_id": "stream-1234567890",
+                "call_id": "llm-abc123",
+                "role": "planner",
+                "status": "completed",
+                "step_id": 2,
+                "duration_ms": 1234,
+                "prompt_tokens": 500,
+                "completion_tokens": 100,
+                "total_tokens": 600,
+                "prompt_preview": "你是 PlannerAgent。目标：根据 original_query、已获取的数据摘要...",
+                "response_preview": '{"plugin_id": "filter_data", "args": {...}}',
+                "model": "deepseek-chat",
+                "temperature": 0.2,
+                "timestamp": "2025-11-27T12:00:00.000000"
+            }
+        }
+

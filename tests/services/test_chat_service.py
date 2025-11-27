@@ -24,8 +24,8 @@ from services.chat_service import ChatService
 from services.data_query_service import DataQueryResult, QueryDataset
 from services.panel.component_planner import PlannerDecision
 import services.chat_service as chat_service_module
-from services.agent_graph.planner import TaskGraphPlanner
-from services.agent_graph.executor import GraphExecutor
+from langgraph_agents.sync_executor import SyncLangGraphExecutor, LangGraphExecutionResult
+from langgraph_agents.state import DataReference
 
 
 @pytest.fixture(autouse=True)
@@ -396,26 +396,25 @@ def test_quick_refresh_handles_fetch_error():
     assert response.metadata["status"] == "error"
 
 
-def test_chat_service_task_graph_filters_items():
-    dataset = QueryDataset(
+def test_chat_service_langgraph_integration():
+    """测试 ChatService 与 V5.0 LangGraph 的集成。"""
+    # 过滤后只保留1条记录的数据集
+    filtered_dataset = QueryDataset(
         route_id="demo.route",
         provider="bilibili",
         name="投稿",
         generated_path="/demo",
-        items=[
-            {"title": "英雄联盟周报"},
-            {"title": "生活记录"},
-        ],
+        items=[{"title": "英雄联盟周报"}],  # 只有1条
         feed_title="投稿",
         source="local",
     )
-    query_result = DataQueryResult(
+    filtered_query_result = DataQueryResult(
         status="success",
-        items=list(dataset.items),
+        items=list(filtered_dataset.items),
         feed_title="投稿",
         generated_path="/demo",
         source="local",
-        datasets=[dataset],
+        datasets=[filtered_dataset],
     )
 
     class _GraphAwareDataService:
@@ -424,59 +423,72 @@ def test_chat_service_task_graph_filters_items():
 
         def query(self, *args, **kwargs):
             self.calls += 1
-            return query_result
+            return filtered_query_result
 
     data_service = _GraphAwareDataService()
     chat = ChatService(data_query_service=data_service)
     chat.panel_generator = _RecordingPanelGenerator(_empty_panel_result())
 
-    llm_payload = {
-        "reasoning": "需要过滤关键词",
-        "nodes": [
-            {
-                "id": "fetch",
-                "type": "fetch_data",
-                "tool": "fetch_public_data",
-                "description": "获取投稿",
-                "params": {
-                    "query": 'B站影视飓风投稿视频中，标题包含"英雄联盟"的视频',
-                    "filter_datasource": None,
-                },
-                "input_refs": [],
-                "expected_output": "DataQueryResult",
-            },
-            {
-                "id": "filter",
-                "type": "transform",
-                "tool": "filter_data",
-                "description": "过滤标题",
-                "params": {
-                    "strategy": "keyword",
-                    "target_field": "title",
-                    "keywords": ["英雄联盟"],
-                },
-                "input_refs": ["fetch"],
-                "expected_output": "DataQueryResult",
-            },
-        ],
-        "metadata": {"output_node": "filter"},
-    }
+    # 创建 Mock LangGraph 执行器
+    class _MockLangGraphExecutor:
+        def __init__(self):
+            self.execute_calls = []
 
-    class _StubLLMClient:
-        def chat(self, *args, **kwargs):
-            return json.dumps(llm_payload, ensure_ascii=False)
+        def execute(self, user_query, filter_datasource=None):
+            self.execute_calls.append({
+                "user_query": user_query,
+                "filter_datasource": filter_datasource,
+            })
+            # 返回成功的执行结果（包含 filter 步骤）
+            return LangGraphExecutionResult(
+                success=True,
+                final_report="找到1条包含'英雄联盟'的视频",
+                data_stash=[
+                    DataReference(
+                        step_id=1,
+                        tool_name="fetch_public_data",
+                        data_id="data_001",
+                        status="success",
+                        summary="获取投稿视频2条",
+                    ),
+                    DataReference(
+                        step_id=2,
+                        tool_name="filter_data",
+                        data_id="data_002",
+                        status="success",
+                        summary="过滤后保留1条",
+                    ),
+                ],
+                router_decision="simple_tool_call",
+                execution_steps=[
+                    {"step_id": 1, "tool_name": "fetch_public_data", "status": "success"},
+                    {"step_id": 2, "tool_name": "filter_data", "status": "success"},
+                ],
+            )
 
-    chat.task_graph_planner = TaskGraphPlanner(llm_client=_StubLLMClient())
-    chat.graph_executor = GraphExecutor(data_service)
+        def get_final_data(self, result):
+            # 返回过滤后的结果
+            return filtered_query_result
+
+    mock_executor = _MockLangGraphExecutor()
+    chat.langgraph_executor = mock_executor
 
     response = chat.chat(
         'B站影视飓风投稿视频中，标题包含"英雄联盟"的视频',
         mode="simple",
     )
 
-    assert data_service.calls == 1
+    # 验证 LangGraph 执行器被调用
+    assert len(mock_executor.execute_calls) == 1
+    assert "英雄联盟" in mock_executor.execute_calls[0]["user_query"]
+
+    # 验证响应正确
+    assert response.success is True
     dataset_summary = response.metadata["datasets"][0]
     assert dataset_summary["item_count"] == 1
-    graph_meta = response.metadata["task_graph"]
-    assert graph_meta["node_count"] == 2
-    assert graph_meta["nodes"][-1]["summary"]["item_count"] == 1
+
+    # 验证 langgraph 元数据
+    langgraph_meta = response.metadata.get("langgraph")
+    assert langgraph_meta is not None
+    assert langgraph_meta["success"] is True
+    assert len(langgraph_meta["execution_steps"]) == 2

@@ -21,10 +21,12 @@ from api.schemas.stream_messages import (
     ErrorMessage,
     CompleteMessage,
     GraphNodeMessage,
+    LLMCallMessage,
     StreamStage,
     STAGE_DESCRIPTIONS,
     STAGE_PROGRESS,
 )
+from api.schemas.llm_call_event import LLMCallTracker, LLMCallEvent
 from api.controllers.chat_controller import get_chat_service
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,7 @@ def stream_chat_processing(
     2. rag阶段 - RAG检索（数据查询时）
     3. fetch阶段 - 数据获取
     4. summary阶段 - 结果总结
+    5. llm_call消息 - LLM 调用追踪事件（V5.0 可观测性）
 
     Args:
         chat_service: ChatService实例
@@ -71,6 +74,19 @@ def stream_chat_processing(
         流式消息字典
     """
     start_time = time.time()
+
+    # V5.0 可观测性：创建 LLM 调用追踪器
+    llm_events: list[LLMCallEvent] = []
+
+    def on_llm_event(event: LLMCallEvent) -> None:
+        """LLM 事件回调：收集事件供后续推送。"""
+        llm_events.append(event)
+
+    llm_tracker = LLMCallTracker(
+        stream_id=stream_id,
+        callback=on_llm_event,
+        dev_mode=False,  # 生产环境不暴露完整 prompt/response
+    )
 
     try:
         # ========== 阶段1: 意图识别 ==========
@@ -137,12 +153,14 @@ def stream_chat_processing(
             progress=STAGE_PROGRESS[StreamStage.FETCH],
         ).model_dump()
 
-        # 调用ChatService获取完整响应
+        # 调用ChatService获取完整响应（流式模式直接执行复杂查询）
         response = chat_service.chat(
             user_query=user_query,
             filter_datasource=filter_datasource,
             use_cache=use_cache,
             layout_snapshot=layout_snapshot,
+            force_execute=True,  # 流式模式直接执行，不返回 requires_streaming 提示
+            llm_tracker=llm_tracker,  # V5.0 可观测性：传递追踪器
         )
 
         # 推送数据
@@ -223,6 +241,28 @@ def stream_chat_processing(
                         error=record.get("error"),
                     ).model_dump()
 
+        # ========== V5.0 可观测性：推送 LLM 调用事件 ==========
+        for event in llm_events:
+            yield LLMCallMessage(
+                stream_id=stream_id,
+                call_id=event.call_id,
+                role=event.role,
+                status=event.status,
+                step_id=event.step_id,
+                duration_ms=event.duration_ms,
+                prompt_tokens=event.prompt_tokens,
+                completion_tokens=event.completion_tokens,
+                total_tokens=event.total_tokens,
+                prompt_preview=event.prompt_preview,
+                response_preview=event.response_preview,
+                full_prompt=event.full_prompt,
+                full_response=event.full_response,
+                error_message=event.error_message,
+                model=event.model,
+                temperature=event.temperature,
+                metadata=event.metadata,
+            ).model_dump()
+
         # ========== 完成 ==========
         total_time = time.time() - start_time
         yield CompleteMessage(
@@ -240,6 +280,28 @@ def stream_chat_processing(
             error_message=f"处理失败: {str(e)}",
             stage=None,
         ).model_dump()
+
+        # V5.0 可观测性：即使失败也推送已收集的 LLM 调用事件
+        for event in llm_events:
+            yield LLMCallMessage(
+                stream_id=stream_id,
+                call_id=event.call_id,
+                role=event.role,
+                status=event.status,
+                step_id=event.step_id,
+                duration_ms=event.duration_ms,
+                prompt_tokens=event.prompt_tokens,
+                completion_tokens=event.completion_tokens,
+                total_tokens=event.total_tokens,
+                prompt_preview=event.prompt_preview,
+                response_preview=event.response_preview,
+                full_prompt=event.full_prompt,
+                full_response=event.full_response,
+                error_message=event.error_message,
+                model=event.model,
+                temperature=event.temperature,
+                metadata=event.metadata,
+            ).model_dump()
 
         # 发送失败的完成消息
         total_time = time.time() - start_time

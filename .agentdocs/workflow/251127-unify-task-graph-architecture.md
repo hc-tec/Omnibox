@@ -86,3 +86,22 @@ complex_research → 返回"需要流式接口" → 流式接口用 LLMQueryPlan
   - `chat_service.py` 初始化时创建 ToolRegistry 并注册默认工具
   - 修正工具 ID：`data_compare` → `compare_data`，`data_aggregator` → `aggregate_data`
   - 工具定义（含 JSON Schema）自动注入到 System Prompt
+
+**问题5：filter 节点参数格式不匹配**
+- 症状：LLM 规划了 filter 节点，但执行时没有过滤效果
+- 原因：ToolRegistry 的 schema 使用 `conditions` 格式，但 executor 只支持 `keywords` 格式
+- 修复：
+  - 重写 `executor.py` 的 `_apply_filter` 方法
+  - 支持 `conditions` 格式：`{"title": {"$contains": "英雄联盟"}}`
+  - 保持 `keywords` 向后兼容
+  - 支持 10 种操作符：$eq, $ne, $gt, $gte, $lt, $lte, $contains, $in, $between, $regex
+
+**问题6：复杂任务未使用流式接口**
+- 症状：前端调用非流式接口，复杂任务执行期间无任何反馈
+- 原因：V5.0 重构后 `complex_research` 直接执行 Task Graph，没有返回流式提示
+- 修复：
+  - 后端 `chat_service.py` 添加 `force_execute` 参数
+  - 非流式接口：复杂任务返回 `requires_streaming=True`，让前端切换到 WebSocket
+  - 流式接口：设置 `force_execute=True`，直接执行 Task Graph 并按节点推送进度
+  - 前端 `panelStore.ts` 的 `fetchPanel()` 方法自动检测 `requires_streaming`
+  - 检测到复杂任务时，自动切换到 `connectStreamWithCallback()` 流式模式

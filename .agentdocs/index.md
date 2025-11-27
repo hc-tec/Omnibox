@@ -154,15 +154,14 @@
   - 5 个阶段详细 TODO 清单
   - 技术决策记录与风险应对
   - 进度跟踪与完成记录
-- `workflow/251127-agent-graph-rearchitecture.md` - **V5.0 Agent 重构：Task Graph 智能执行方案**（已完成基础设计）
-- `workflow/251127-unify-task-graph-architecture.md` - **V5.0 Task Graph 统一架构重构**（进行中）✨NEW
-  - **核心问题**：后端存在三套并行的复杂任务处理系统，V5.0 Task Graph 未被充分利用
-  - **目标**：将 Task Graph 作为统一的数据查询编排层，废弃冗余组件
-  - **Phase 1**: 统一所有数据查询到 Task Graph
-  - **Phase 2**: 重构流式接口
-  - **Phase 3**: 废弃 LLMQueryPlanner + ParallelQueryExecutor
 
 ## 最近完成任务文档
+- `workflow/done/251127-unify-v5-langgraph-architecture.md` - **V5.0 架构统一：废弃 services/agent_graph** [✅ 完成 2025-11-27]
+  - 核心问题：存在两套并行的任务执行系统（V5.0 单步迭代 vs Task Graph 多步一次性规划）
+  - 解决方案：统一使用 V5.0 完整 LangGraph 状态机（单步迭代规划，类似 Claude Code 工作方式）
+  - 新增：`langgraph_agents/sync_executor.py` 同步执行适配层
+  - 删除：`services/agent_graph/` 整个目录、`services/chat/task_graph_handler.py`
+  - 测试覆盖：190 个 LangGraph 测试 + 10 个 ChatService 测试全部通过
 - `workflow/done/251117-v5-phase5-data-flow-optimization.md` - **V5.0 Phase 5: 数据流优化（知识图谱 + 智能摘要）** [✅ 完成 2025-11-17]
   - 目标：引入知识图谱和智能摘要，提升数据组织能力和决策智能性
   - 核心功能：KnowledgeGraph（数据结构）、EnhancedDataReference（增强元数据）、MetadataExtractor（自动提取）、EnhancedDataStasher（图谱集成）、GraphHelper（决策支持）
@@ -220,6 +219,16 @@
 ## 技术使用指南
 - `service-layer-usage.md` - Service层完整使用指南，包含所有服务的创建、使用和扩展方法
 - `adapter-codegen-prompt.md` - 路由适配器代码生成提示词模板，用于根据RSSHub TypeScript路由文件自动生成Python adapter代码
+- `llm-call-tracking-integration-guide.md` - **LLM 调用追踪系统集成指南**（可观测性）✅ 完成
+  - **核心功能**：实时追踪所有 LLM 调用（Planner、Reflector、Synthesizer、订阅解析等）
+  - **前端可视化**：调用时间线、Token 统计、耗时分析
+  - **开发者模式**：查看完整 prompt/response，调试系统行为
+  - **架构设计**：LLMCallTracker + WebSocket 实时推送 + 前端时间线组件
+  - **使用场景**：调试查询规划、Token 使用优化、性能瓶颈定位
+  - **已完成**：后端全链路集成（LLM Client → Runtime → SyncExecutor → ChatService → chat_stream）、前端 Store 扩展（llmCalls + llmCallStats）、LLMCallTimeline 组件
+  - **文件清单**：
+    - 后端：`api/schemas/llm_call_event.py`、`api/schemas/stream_messages.py`（LLMCallMessage）、`query_processor/llm_client.py`、`langgraph_agents/runtime.py`、`langgraph_agents/factory.py`、`langgraph_agents/sync_executor.py`、`services/chat_service.py`、`api/controllers/chat_stream.py`
+    - 前端：`frontend/src/shared/types/panel.ts`（LLMCallEvent 类型）、`frontend/src/store/panelStore.ts`（llmCalls 状态）、`frontend/src/components/debug/LLMCallTimeline.vue`
 
 ## 全局重要记忆
 
@@ -248,6 +257,139 @@
    - ✅ 保持代码简单可预测（避免复杂条件判断）
 
 **违反上述原则的代码必须立即重构！**
+
+### ⚠️⚠️⚠️ 泛化性与鲁棒性原则 ⚠️⚠️⚠️
+
+**禁止"打补丁"式开发 - 必须追求泛化性**
+
+1. **什么是"打补丁"**
+   - ❌ 在提示词中添加针对特定查询的示例（如"B站影视飓风投稿视频中，标题包含英雄联盟"）
+   - ❌ 在代码中添加针对特定字符串模式的处理逻辑
+   - ❌ 为了解决一个 case 而添加 if-else 分支
+   - ❌ 通过增加示例/规则来"教会"系统处理特定场景
+   - ❌ 添加 filter_hint、post_search_suggestion 等"提示"字段来引导 LLM
+
+2. **为什么打补丁是错误的**
+   - 用户查询是多样的，不可能穷举所有模式
+   - 每个补丁都增加系统复杂度，降低可维护性
+   - 补丁之间可能产生冲突或意外交互
+   - 无法保证对新类型查询的泛化能力
+
+3. **正确的解决思路**
+   - ✅ 从**架构层面**解决问题，而非从**规则层面**
+   - ✅ 增强**工具能力**（让工具能处理更广泛的输入），而非教 LLM 如何绕过工具限制
+   - ✅ 使用**类型系统/Schema**来定义能力边界，而非用示例来暗示
+   - ✅ 如果 LLM 无法正确处理某类查询，问题很可能在**工具设计**或**数据流架构**
+
+4. **具体案例分析**
+
+   **问题**：查询 "B站影视飓风投稿视频中，标题包含英雄联盟的视频" 被 DataQueryService 返回 needs_clarification
+
+   **错误做法（打补丁）**：
+   - 在 Planner 提示词中添加"模式 B2"示例，教 LLM 分解这类查询
+   - 添加 query_analysis 字段强制 LLM 先分析再决策
+   - 使用正则表达式检测"标题包含"等关键词
+
+   **正确做法（泛化）**：
+   - 分析 DataQueryService 为什么无法处理复合查询
+   - 增强 DataQueryService 的能力，让它能理解"数据源+过滤条件"的组合
+   - 或者设计更合理的工具边界，让工具本身具备过滤能力
+
+5. **判断标准：一个解决方案是否是"打补丁"**
+   - 问自己：这个方案能处理所有**同类**问题吗？还是只能处理**这一个**问题？
+   - 问自己：如果用户换一种表达方式，方案还有效吗？
+   - 问自己：这个方案是在**增加系统能力**还是在**添加特例处理**？
+
+**记住：泛化性 > 特定 case 的正确性。宁可暂时不解决问题，也不要用补丁污染代码库！**
+
+### ⚠️⚠️⚠️ V5.0 工具纯粹性原则 ⚠️⚠️⚠️
+
+**工具必须保持职责单一 - 禁止跨工具耦合**
+
+1. **核心原则：工具应该做什么**
+   - ✅ 每个工具只负责**一件事情**
+   - ✅ `fetch_public_data` 只负责获取数据，不包含任何过滤提示、后置处理建议
+   - ✅ `filter_data` 只负责过滤数据，不依赖其他工具的输出格式
+   - ✅ 工具之间通过 `data_id` 引用，而非通过 hint/suggestion 字段
+
+2. **禁止的做法**
+   - ❌ 在工具输出中添加 `filter_hint` 字段引导 Planner 调用下一个工具
+   - ❌ 在工具输出中添加 `suggested_next_action` 字段
+   - ❌ 在 Planner 提示词中添加"模式 E: filter_hint 自动过滤"等特定场景处理
+   - ❌ 在数据流中传递 `post_filters` 等不属于工具结果的元信息
+
+3. **正确的架构模式**
+   - ✅ Planner 应该从工具的 **schema** 和 **过去执行历史** 中学习如何组合工具
+   - ✅ 数据获取与数据处理应该是两个独立的步骤，没有内在耦合
+   - ✅ 第一步：`fetch_public_data("B站影视飓风投稿视频")` → 返回 30 条数据
+   - ✅ 第二步：`filter_data(source_ref="lg-abc123", conditions={"title": {"$contains": "英雄联盟"}})` → 返回 1 条数据
+
+4. **Planner 应该如何学习**
+   - ✅ 从 `data_stash` 中看到过去的执行历史：fetch → filter 的成功案例
+   - ✅ 从工具 schema 中理解：filter_data 需要 source_ref 参数
+   - ✅ 从当前查询中识别：用户需要先获取数据，然后筛选
+   - ❌ 不应该依赖：特定的提示词模式、hint 字段、中间元信息
+
+5. **2025-11-27 架构清理记录**
+   - **问题根源**：为了支持 "B站影视飓风投稿视频中，标题包含英雄联盟的视频" 这类复合查询，错误地在工具之间添加了 filter_hint 机制
+   - **错误实现**：
+     - `public_data.py` 添加 `_convert_post_filters_to_conditions` 函数
+     - `_format_success_payload` 检查 `rag_trace.post_filters` 并生成 filter_hint
+     - `data_query_service.py` 的 `_build_rag_trace` 传递 post_filters
+     - `planner_system.txt` 添加"模式 E: filter_hint 自动过滤"和对应的决策优先级
+   - **正确做法**：完全移除所有 filter_hint 逻辑，让工具保持纯粹
+   - **测试结果**：409/411 测试通过（1 个失败与 MockChatService 参数无关）
+   - **核心教训**：工具设计不应该为了解决某个 case 而引入跨工具通信机制
+
+**记住：工具的纯粹性是架构健康的基石。任何形式的 hint/suggestion 都是架构退化的信号！**
+
+### ⚠️⚠️⚠️ LLM Token 限制防护原则 ⚠️⚠️⚠️
+
+**Agent 节点不应将原始数据发送给 LLM - 必须使用摘要**
+
+1. **问题根源**
+   - LLM 有严格的 token 限制（如 DeepSeek 为 131,072 tokens）
+   - 完整的原始数据可能包含数百条记录，每条记录包含多个字段
+   - 将原始数据序列化为 JSON 并发送给 LLM 会导致请求超过 token 限制
+
+2. **2025-11-27 Synthesizer Bug 修复**
+   - **问题现象**：`BadRequestError: maximum context length is 131072 tokens. However, you requested 5326231 tokens`
+   - **错误实现**：
+     ```python
+     raw = runtime.data_store.load(ref.data_id)  # 加载完整原始数据
+     records.append({"raw": raw})  # 将 5MB+ 数据放入 prompt
+     ```
+   - **正确实现**：
+     ```python
+     summaries.append({
+         "data_id": ref.data_id,
+         "tool": ref.tool_name,
+         "status": ref.status,
+         "summary": ref.summary,  # 只使用摘要（几百字符）
+     })
+     ```
+   - **修复文件**：`langgraph_agents/agents/synthesizer.py`
+   - **函数改名**：`_load_raw_records` → `_build_data_summaries`
+
+3. **架构规范**
+   - ✅ **Planner**: 只使用 `ref.summary`（已正确）
+   - ✅ **Reflector**: 只使用 `ref.summary`（已正确）
+   - ✅ **Synthesizer**: 只使用 `ref.summary`（已修复）
+   - ✅ **DataStasher**: 负责生成高质量的 summary（已实现）
+   - ❌ **禁止**：在任何 Agent 节点中调用 `runtime.data_store.load()` 获取完整数据
+
+4. **DataReference 设计理念**
+   - `data_id`: 数据引用标识符（用于前端或后续工具调用）
+   - `summary`: 数据摘要（用于 LLM 推理）
+   - `metadata`: 元信息（条数、来源、质量分数等）
+   - **原始数据**: 存储在 data_store 中，仅在需要时（如前端展示、工具处理）才加载
+
+5. **Token 使用量对比**
+   - 修复前：5,326,231 tokens（完整数据）
+   - 修复后：~5,000 tokens（仅摘要）
+   - **减少了 99.9% 的 token 使用**
+
+**记住：LLM 应该基于数据摘要进行推理，而不是处理完整的原始数据！**
 
 ---
 

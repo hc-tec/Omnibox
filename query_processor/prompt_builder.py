@@ -35,14 +35,24 @@ STANDARD_PROMPT_TEMPLATE = """你是一个智能API调用助手，负责将用�
   - 系统会自动将名称转换为对应的 ID
   - 不要因为值看起来不像 ID 就跳过提取
 
-**步骤3: 逻辑推理**
+**步骤3: 后置过滤条件识别（关键！）**
+- 用户请求中可能包含**无法通过API参数实现**的过滤条件
+- 常见的后置过滤条件包括：
+  - 标题/内容包含某关键词（如"标题包含英雄联盟"）
+  - 播放量/点赞数超过某阈值（如"播放量超过100万"）
+  - 时间范围限制（如"最近一周"、"2024年的"）
+  - 作者/来源限制（如"只看官方发布的"）
+- **这些条件不影响API调用**，但需要记录在 `post_filters` 字段中
+- **即使有后置过滤条件，只要数据源部分能匹配，就应返回 success**
+
+**步骤4: 逻辑推理**
 - 如果用户提到了一个值（如"最新发布"），在 `parameters.options` 中找到对应的 `value`（如 '1'）
 - 如果用户提到了一个实体（如"步行街"、"行业101"），尝试匹配到对应参数（如 `id`、`uid`）
   - **即使是人类友好名称也要提取**，系统会自动解析
 - 如果无法确定参数值，使用 `default_value`
 - 如果缺少必需参数或意图不明确，设置 `status` 为 `needs_clarification`
 
-**步骤4: 路径生成**
+**步骤5: 路径生成**
 - 根据 `path_template` 和提取的参数，生成完整的URL路径
 - 路径格式：`/{{provider}}/{{route_path}}`，其中参数用实际值替换
 
@@ -65,17 +75,34 @@ JSON结构如下：
   "parameters_filled": {{
     "参数名": "参数值"
   }},
+  "post_filters": [
+    {{
+      "field": "要过滤的字段名（如 title, view_count, pubDate）",
+      "operator": "过滤操作符（contains, gt, lt, gte, lte, eq, between）",
+      "value": "过滤值（字符串或数字）"
+    }}
+  ],
   "clarification_question": "如果需要澄清，在这里提问（否则为null）"
 }}
 
 **状态说明：**
-- `success`: 成功匹配并提取了所有必要参数
-- `needs_clarification`: 需要用户提供更多信息
+- `success`: 成功匹配并提取了所有必要参数（即使有后置过滤条件也返回 success）
+- `needs_clarification`: 缺少必需参数或数据源不明确
 - `not_found`: 提供的工具都不匹配用户需求
+
+**post_filters 字段说明：**
+- 如果用户请求中没有后置过滤条件，返回空数组 `[]`
+- 支持的 operator：
+  - `contains`: 字符串包含（不区分大小写）
+  - `gt`/`gte`: 大于/大于等于
+  - `lt`/`lte`: 小于/小于等于
+  - `eq`: 等于
+  - `between`: 范围内（value 为 [min, max] 数组）
+- 常用 field：title（标题）、description（描述）、view_count（播放量）、pubDate（发布时间）
 
 # 5. 示例
 
-**示例1：成功匹配**
+**示例1：成功匹配（无后置过滤）**
 用户输入："帮我看看虎扑步行街今天最新发布的帖子"
 
 输出：
@@ -93,6 +120,7 @@ JSON结构如下：
     "id": "#步行街主干道",
     "order": "1"
   }},
+  "post_filters": [],
   "clarification_question": null
 }}
 
@@ -114,10 +142,70 @@ JSON结构如下：
     "uid": "行业101",
     "embed": "开启内嵌视频"
   }},
+  "post_filters": [],
   "clarification_question": null
 }}
 
-**示例3：需要澄清**
+**示例3：包含后置过滤条件（关键示例！）**
+用户输入："B站影视飓风投稿视频中，标题包含英雄联盟的视频"
+
+输出：
+{{
+  "status": "success",
+  "reasoning": "用户请求B站UP主'影视飓风'的投稿视频，并要求标题包含'英雄联盟'。数据源部分匹配bilibili_video路由，'标题包含英雄联盟'是后置过滤条件（API不支持标题过滤参数）。",
+  "selected_tool": {{
+    "route_id": "bilibili_video",
+    "provider": "bilibili",
+    "name": "UP 主投稿"
+  }},
+  "path_template": "/user/video/:uid/:embed?",
+  "generated_path": "/bilibili/user/video/影视飓风",
+  "parameters_filled": {{
+    "uid": "影视飓风"
+  }},
+  "post_filters": [
+    {{
+      "field": "title",
+      "operator": "contains",
+      "value": "英雄联盟"
+    }}
+  ],
+  "clarification_question": null
+}}
+
+**示例4：多个后置过滤条件**
+用户输入："B站科技美学的视频，播放量超过100万，标题包含iPhone"
+
+输出：
+{{
+  "status": "success",
+  "reasoning": "用户请求B站UP主'科技美学'的视频，要求播放量超过100万且标题包含'iPhone'。这两个都是后置过滤条件。",
+  "selected_tool": {{
+    "route_id": "bilibili_video",
+    "provider": "bilibili",
+    "name": "UP 主投稿"
+  }},
+  "path_template": "/user/video/:uid/:embed?",
+  "generated_path": "/bilibili/user/video/科技美学",
+  "parameters_filled": {{
+    "uid": "科技美学"
+  }},
+  "post_filters": [
+    {{
+      "field": "view_count",
+      "operator": "gt",
+      "value": 1000000
+    }},
+    {{
+      "field": "title",
+      "operator": "contains",
+      "value": "iPhone"
+    }}
+  ],
+  "clarification_question": null
+}}
+
+**示例5：需要澄清（缺少必需参数）**
 用户输入："给我看看帖子"
 
 输出：
@@ -128,6 +216,7 @@ JSON结构如下：
   "path_template": null,
   "generated_path": null,
   "parameters_filled": {{}},
+  "post_filters": [],
   "clarification_question": "您想查看哪个平台的帖子？我找到了：虎扑社区、知乎、微博等。"
 }}
 

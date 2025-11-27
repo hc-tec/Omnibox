@@ -4,6 +4,7 @@ import type {
   DataBlock,
   LayoutNode,
   LayoutSnapshotItem,
+  LLMCallEvent,
   PanelPayload,
   PanelResponse,
   PanelStreamFetchPayload,
@@ -27,6 +28,7 @@ interface PanelState {
   fetchSnapshot: PanelStreamFetchPayload | null;
   layoutSnapshot: LayoutSnapshotItem[];
   sizePreset: PanelSizePreset;
+  llmCalls: LLMCallEvent[];  // V5.0 可观测性：LLM 调用追踪
 }
 
 const streamClient = new PanelStreamClient();
@@ -65,6 +67,7 @@ export const usePanelStore = defineStore("panel", () => {
     fetchSnapshot: null,
     layoutSnapshot: [],
     sizePreset: "balanced",
+    llmCalls: [],  // V5.0 可观测性
   });
 
   function applySizePresetStyles(preset: PanelSizePreset) {
@@ -104,6 +107,23 @@ export const usePanelStore = defineStore("panel", () => {
         mode: mode as any,
         client_task_id: clientTaskId ?? null,
       });
+
+      // 检测复杂任务：后端返回 requires_streaming=true 时自动切换到流式
+      if (response.metadata?.requires_streaming) {
+        console.log("[PanelStore] 检测到复杂任务，自动切换到流式接口");
+        state.value.loading = false;
+        // 返回一个 Promise，在流式完成时 resolve
+        return new Promise((resolve) => {
+          connectStreamWithCallback(
+            query,
+            filterDatasource,
+            layoutSnapshot ?? state.value.layoutSnapshot ?? null,
+            mode,
+            (finalResponse) => resolve(finalResponse)
+          );
+        });
+      }
+
       if (response.success && response.data) {
         applyPanelPayload(response);
       }
@@ -113,6 +133,102 @@ export const usePanelStore = defineStore("panel", () => {
     } finally {
       state.value.loading = false;
     }
+  }
+
+  // 带回调的流式连接（用于自动切换场景）
+  function connectStreamWithCallback(
+    query: string,
+    filterDatasource?: string | null,
+    layoutSnapshot?: LayoutSnapshotItem[] | null,
+    mode?: string,
+    onComplete?: (response: PanelResponse) => void
+  ) {
+    state.value.streamLoading = true;
+    state.value.streamLog = [];
+    state.value.fetchSnapshot = null;
+    state.value.llmCalls = [];  // V5.0：清空 LLM 调用记录
+
+    streamClient.connect(
+      {
+        query,
+        filter_datasource: filterDatasource ?? null,
+        use_cache: true,
+        layout_snapshot: layoutSnapshot ?? state.value.layoutSnapshot ?? null,
+        mode: mode as any,
+      },
+      (message) => {
+        state.value.streamLog.push(message);
+        if (message.type === "data" && message.stage === "fetch") {
+          state.value.fetchSnapshot = message.data as PanelStreamFetchPayload;
+        }
+        if (message.type === "data" && message.stage === "summary") {
+          const summary = message.data as PanelStreamSummaryPayload;
+          if (summary.success && summary.data) {
+            applyPanelPayload({
+              success: summary.success,
+              message: summary.message,
+              data: summary.data,
+              data_blocks: summary.data_blocks,
+              metadata: summary.metadata,
+            });
+          }
+          state.value.message = summary.message;
+          state.value.metadata = summary.metadata;
+        }
+        // V5.0 可观测性：处理 LLM 调用事件
+        if (message.type === "llm_call") {
+          state.value.llmCalls.push({
+            call_id: message.call_id,
+            role: message.role,
+            status: message.status,
+            step_id: message.step_id,
+            stream_id: message.stream_id,
+            timestamp: message.timestamp,
+            duration_ms: message.duration_ms,
+            prompt_tokens: message.prompt_tokens,
+            completion_tokens: message.completion_tokens,
+            total_tokens: message.total_tokens,
+            prompt_preview: message.prompt_preview,
+            response_preview: message.response_preview,
+            full_prompt: message.full_prompt,
+            full_response: message.full_response,
+            error_message: message.error_message,
+            model: message.model,
+            temperature: message.temperature,
+            metadata: message.metadata,
+          });
+        }
+        if (message.type === "complete" || message.type === "error") {
+          state.value.streamLoading = false;
+          // 调用回调返回最终响应
+          if (onComplete) {
+            onComplete({
+              success: message.type === "complete" && (message as any).success !== false,
+              message: state.value.message,
+              data: state.value.layout ? {
+                mode: state.value.layout.mode,
+                layout: state.value.layout,
+                blocks: state.value.blocks,
+              } : null,
+              data_blocks: state.value.dataBlocks,
+              metadata: state.value.metadata,
+            });
+          }
+        }
+      },
+      () => {
+        state.value.streamLoading = false;
+        if (onComplete) {
+          onComplete({
+            success: false,
+            message: "流式连接错误",
+            data: null,
+            data_blocks: {},
+            metadata: {},
+          });
+        }
+      }
+    );
   }
 
   function applyPanelPayload(response: PanelResponse) {
@@ -154,6 +270,7 @@ export const usePanelStore = defineStore("panel", () => {
     state.value.streamLoading = true;
     state.value.streamLog = [];
     state.value.fetchSnapshot = null;
+    state.value.llmCalls = [];  // V5.0：清空 LLM 调用记录
 
     streamClient.connect(
       {
@@ -182,6 +299,29 @@ export const usePanelStore = defineStore("panel", () => {
           state.value.message = summary.message;
           state.value.metadata = summary.metadata;
         }
+        // V5.0 可观测性：处理 LLM 调用事件
+        if (message.type === "llm_call") {
+          state.value.llmCalls.push({
+            call_id: message.call_id,
+            role: message.role,
+            status: message.status,
+            step_id: message.step_id,
+            stream_id: message.stream_id,
+            timestamp: message.timestamp,
+            duration_ms: message.duration_ms,
+            prompt_tokens: message.prompt_tokens,
+            completion_tokens: message.completion_tokens,
+            total_tokens: message.total_tokens,
+            prompt_preview: message.prompt_preview,
+            response_preview: message.response_preview,
+            full_prompt: message.full_prompt,
+            full_response: message.full_response,
+            error_message: message.error_message,
+            model: message.model,
+            temperature: message.temperature,
+            metadata: message.metadata,
+          });
+        }
         if (message.type === "complete" || message.type === "error") {
           state.value.streamLoading = false;
         }
@@ -204,6 +344,7 @@ export const usePanelStore = defineStore("panel", () => {
     state.value.metadata = {};
     state.value.message = "";
     state.value.layoutSnapshot = [];
+    state.value.llmCalls = [];  // V5.0 可观测性
   }
 
   function getLayoutNodes(): LayoutNode[] {
@@ -224,6 +365,27 @@ export const usePanelStore = defineStore("panel", () => {
     }
   }
 
+  // V5.0 可观测性：LLM 调用统计
+  const llmCallStats = computed(() => {
+    const calls = state.value.llmCalls;
+    const completed = calls.filter(c => c.status === "completed");
+    const failed = calls.filter(c => c.status === "failed");
+    const totalTokens = completed.reduce((sum, c) => sum + (c.total_tokens ?? 0), 0);
+    const totalDuration = completed.reduce((sum, c) => sum + (c.duration_ms ?? 0), 0);
+    return {
+      total: calls.length,
+      completed: completed.length,
+      failed: failed.length,
+      totalTokens,
+      totalDuration,
+    };
+  });
+
+  // V5.0 可观测性：清除 LLM 调用记录
+  function clearLLMCalls() {
+    state.value.llmCalls = [];
+  }
+
   return {
     state,
     hasPanel,
@@ -235,5 +397,7 @@ export const usePanelStore = defineStore("panel", () => {
     setLayoutSnapshot,
     getLayoutSnapshot,
     setSizePreset,
+    llmCallStats,  // V5.0 可观测性
+    clearLLMCalls,  // V5.0 可观测性
   };
 });

@@ -74,6 +74,40 @@
             :auto-initialize="false"
             @inspect-component="handleInspectComponent"
           />
+
+          <!-- V5.0 可观测性：LLM 调用追踪面板（仅开发模式显示） -->
+          <div
+            v-if="devModeEnabled && panelStore.state.llmCalls.length > 0"
+            class="llm-debug-panel mt-6 rounded-2xl border border-border/40 bg-[var(--shell-surface)]/60 backdrop-blur overflow-hidden"
+          >
+            <button
+              class="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 transition"
+              @click="llmPanelExpanded = !llmPanelExpanded"
+            >
+              <span class="flex items-center gap-2">
+                <span class="text-primary">🔧</span>
+                LLM 调用追踪
+                <span class="text-xs text-muted-foreground font-mono">
+                  ({{ panelStore.llmCallStats.completed }}/{{ panelStore.llmCallStats.total }})
+                </span>
+              </span>
+              <ChevronDown
+                class="h-4 w-4 text-muted-foreground transition-transform duration-200"
+                :class="{ 'rotate-180': llmPanelExpanded }"
+              />
+            </button>
+            <div
+              v-show="llmPanelExpanded"
+              class="px-4 pb-4"
+            >
+              <LLMCallTimeline
+                :calls="panelStore.state.llmCalls"
+                :stats="panelStore.llmCallStats"
+                @clear="panelStore.clearLLMCalls"
+              />
+            </div>
+          </div>
+
           <div class="hud mt-10 flex flex-wrap items-center justify-center gap-4 text-[11px] uppercase tracking-[0.35em] text-muted-foreground/80">
             <span class="rounded-full border border-border/60 px-4 py-1">{{ version ? `Desktop v${version}` : "Waiting for Desktop..." }}</span>
             <span>Ctrl/Cmd + Space → Focus</span>
@@ -116,6 +150,8 @@ import ComponentInspector from "@/features/panel/components/ComponentInspector.v
 import WindowControls from "@/components/system/WindowControls.vue";
 import ActionInbox from "@/features/research/components/ActionInbox.vue";
 import QueryCard from "@/components/workspace/QueryCard.vue";
+import { LLMCallTimeline } from "@/components/debug";
+import { ChevronDown } from "lucide-vue-next";
 import { usePanelActions } from "@/features/panel/usePanelActions";
 import { usePanelStore } from "@/store/panelStore";
 import { useResearchStore } from "@/features/research/stores/researchStore";
@@ -134,6 +170,7 @@ const router = useRouter();
 
 const version = ref<string | null>(null);
 const componentInspectorOpen = ref(false);
+const llmPanelExpanded = ref(true);  // V5.0 可观测性：LLM 调试面板展开状态
 const inspectedComponent = ref<{ block: UIBlock; dataBlock: DataBlock | null } | null>(null);
 const appearance = ref<"dark" | "light">("light"); // 默认浅色主题
 const isLight = computed(() => appearance.value === "light");
