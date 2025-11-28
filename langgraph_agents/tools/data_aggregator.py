@@ -3,15 +3,17 @@ from __future__ import annotations
 """aggregate_data 工具实现：对数据进行聚合统计（计数、求和、平均、分组）。
 
 V5.0 Phase 3 (P1) 工具。
+V6.0 Phase 2: 支持统一的数据引用格式。
 """
 
 import logging
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Union
 from uuid import uuid4
 
 from ..state import ToolCall, ToolExecutionPayload
 from ..runtime import ToolExecutionContext
 from .registry import ToolRegistry, tool
+from .data_ref_resolver import create_resolver_from_context
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +30,9 @@ def register_data_aggregator_tool(registry: ToolRegistry) -> None:
             "type": "object",
             "properties": {
                 "source_ref": {
-                    "type": "string",
-                    "description": "数据源引用（必填）",
-                    "minLength": 1
+                    "type": ["string", "integer"],
+                    "description": "数据引用（必填），支持: data_id字符串、步骤编号、步骤引用($step.N)",
+                    "examples": ["lg-abc123", "$step.1", 1]
                 },
                 "group_by": {
                     "type": "array",
@@ -129,7 +131,10 @@ def register_data_aggregator_tool(registry: ToolRegistry) -> None:
             )
 
         # 2. 从 data_store 加载数据
+        # V6.0 Phase 2: 使用统一的 DataRefResolver
+        resolver = create_resolver_from_context(context)
         data_store = context.extras.get("data_store")
+
         if not data_store:
             return ToolExecutionPayload(
                 call=call,
@@ -142,7 +147,28 @@ def register_data_aggregator_tool(registry: ToolRegistry) -> None:
             )
 
         try:
-            data_package = data_store.load(source_ref)
+            if resolver:
+                # 使用解析器解析引用
+                resolved = resolver.resolve(source_ref)
+                data_package = resolved.data
+                logger.debug(
+                    "aggregate_data: 解析引用 %s -> data_id=%s",
+                    source_ref, resolved.source_data_id
+                )
+            else:
+                # 回退: 直接从 data_store 加载
+                data_package = data_store.load(source_ref)
+        except ValueError as e:
+            # 解析器引发的明确错误
+            return ToolExecutionPayload(
+                call=call,
+                raw_output={
+                    "type": "aggregation",
+                    "error_code": "E301"
+                },
+                status="error",
+                error_message=str(e)
+            )
         except Exception as e:
             logger.error(f"aggregate_data: 加载数据失败 - {e}")
             return ToolExecutionPayload(

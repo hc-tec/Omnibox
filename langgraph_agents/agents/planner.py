@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-"""PlannerAgent 节点实现。"""
+"""
+PlannerAgent 节点实现。
+
+⚠️ V6.0 废弃警告 ⚠️
+此模块已被 ResearchAgent 取代。
+ResearchAgent 融合了 Planner + Reflector + Synthesizer 的功能。
+保留此代码仅用于向后兼容和测试，新功能请使用 research_agent.py。
+"""
 
 import logging
 from typing import Dict, List

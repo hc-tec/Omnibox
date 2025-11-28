@@ -1,11 +1,11 @@
 """
-V5.0 Phase 2 修复：端到端测试验证轻量模式真实流程。
+V6.0 轻量模式端到端测试。
 
 关键测试点：
-1. search_data_sources 跳过 DataStasher，直接返回 Planner
+1. search_data_sources 跳过 DataStasher，直接返回 ResearchAgent
 2. working_memory 被正确写入
-3. Planner 能读取 working_memory
-4. ask_user_clarification 走完整流程以触发 Reflector
+3. ResearchAgent 能读取 working_memory
+4. ask_user_clarification 走完整流程
 """
 import sys
 import types
@@ -49,22 +49,27 @@ def test_lightweight_tool_skips_data_stasher():
     """
     端到端测试：验证 search_data_sources 跳过 DataStasher。
 
-    流程：
-    1. 用户查询触发 search_data_sources（轻量工具）
-    2. tool_executor 执行工具
-    3. 路由判断：应该走 lightweight_handler 而不是 data_stasher
-    4. working_memory 被写入
-    5. data_stash 保持为空（未经过 DataStasher）
+    流程（V6.0 架构）：
+    1. 用户查询触发 ResearchAgent
+    2. ResearchAgent 决定调用 search_data_sources（轻量工具）
+    3. tool_executor 执行工具
+    4. 路由判断：应该走 lightweight_handler 而不是 data_stasher
+    5. working_memory 被写入
+    6. data_stash 保持为空（未经过 DataStasher）
 
     注意：此测试只验证第一次轻量工具调用，不运行完整流程
     """
-    # 创建 mock LLM（Planner 需要）
-    planner_llm = MagicMock()
-    planner_llm.generate.return_value = """```json
+    # V6.0: ResearchAgent 融合了 Planner + Reflector + Synthesizer
+    research_agent_llm = MagicMock()
+    research_agent_llm.generate.return_value = """```json
 {
-  "plugin_id": "search_data_sources",
-  "args": {"query": "AI Agent"},
-  "description": "探索数据源"
+  "decision": "CONTINUE",
+  "reasoning": "需要先探索可用数据源",
+  "tool_call": {
+    "plugin_id": "search_data_sources",
+    "args": {"query": "AI Agent"},
+    "description": "探索数据源"
+  }
 }
 ```"""
 
@@ -82,10 +87,10 @@ def test_lightweight_tool_skips_data_stasher():
         }
     ])
 
-    # 创建 runtime
+    # V6.0: 使用统一的 LLM 配置（ResearchAgent 使用 planner_llm）
     runtime = build_runtime(
         llms={
-            "planner": planner_llm,
+            "planner": research_agent_llm,  # ResearchAgent 使用 planner_llm
             "reflector": MagicMock(),
             "synthesizer": MagicMock(),
             "router": MagicMock(),
@@ -125,8 +130,8 @@ def test_lightweight_tool_skips_data_stasher():
         if len(states_seen) >= 5:
             break
 
-    # 验证经过了关键节点
-    assert "planner" in node_names_seen, "应该经过 planner 节点"
+    # V6.0: 验证经过了关键节点（research_agent 替代 planner）
+    assert "research_agent" in node_names_seen, "应该经过 research_agent 节点"
     assert "tool_executor" in node_names_seen, "应该经过 tool_executor 节点"
     assert "lightweight_handler" in node_names_seen, "应该经过 lightweight_handler 节点"
     assert "data_stasher" not in node_names_seen, "轻量模式不应该经过 data_stasher 节点"

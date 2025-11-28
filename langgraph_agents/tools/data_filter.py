@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 import random
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ..state import ToolCall, ToolExecutionPayload
 from ..runtime import ToolExecutionContext
 from .registry import ToolRegistry, tool
+from .data_ref_resolver import DataRefResolver, create_resolver_from_context
 
 logger = logging.getLogger(__name__)
 
@@ -191,9 +192,9 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
             "type": "object",
             "properties": {
                 "source_ref": {
-                    "type": "string",
-                    "description": "数据引用 ID（data_id，必填）",
-                    "examples": ["lg-abc123", "lg-def456"]
+                    "type": ["string", "integer"],
+                    "description": "数据引用（必填），支持多种格式: data_id字符串(如lg-abc123)、步骤编号(如1,2)、步骤引用(如$step.1)",
+                    "examples": ["lg-abc123", "$step.1", 1]
                 },
                 "conditions": {
                     "type": "object",
@@ -298,8 +299,11 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                 error_message="参数 offset 必须是非负整数"
             )
 
-        # 2. 检查依赖
+        # 2. 检查依赖并创建解析器
+        # V6.0 Phase 2: 使用统一的 DataRefResolver
+        resolver = create_resolver_from_context(context)
         data_store = context.extras.get("data_store")
+
         if data_store is None:
             return ToolExecutionPayload(
                 call=call,
@@ -313,12 +317,37 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
 
         try:
             # 3. 获取源数据
-            # 支持两种方式：
-            # - source_ref 是字符串（data_id）：从 data_store 加载
-            # - source_ref 是 dict/list（ExecutionEngine 解析后的数据）：直接使用
+            # V6.0 Phase 2: 支持多种引用格式
+            # - 字符串 data_id (如 "lg-abc123")
+            # - 整数 step_id (如 1)
+            # - 字符串 step 引用 (如 "$step.1")
+            # - dict/list（直接传入的数据对象）
 
-            if isinstance(source_ref, str):
-                # data_id 引用，从 data_store 加载
+            if isinstance(source_ref, (dict, list)):
+                # ExecutionEngine 已解析的数据对象，直接使用
+                source_data = source_ref
+                logger.debug("filter_data: 使用直接传入的数据对象")
+            elif resolver:
+                # 使用解析器解析引用
+                try:
+                    resolved = resolver.resolve(source_ref)
+                    source_data = resolved.data
+                    logger.debug(
+                        "filter_data: 解析引用 %s -> data_id=%s (类型=%s)",
+                        source_ref, resolved.source_data_id, resolved.source_type
+                    )
+                except ValueError as e:
+                    return ToolExecutionPayload(
+                        call=call,
+                        raw_output={
+                            "type": "data_filter",
+                            "error_code": "E105"
+                        },
+                        status="error",
+                        error_message=str(e)
+                    )
+            elif isinstance(source_ref, str):
+                # 回退: 直接从 data_store 加载（兼容旧版本）
                 source_data = data_store.load(source_ref)
                 if source_data is None:
                     return ToolExecutionPayload(
@@ -330,10 +359,6 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                         status="error",
                         error_message=f"无效的数据引用: {source_ref}"
                     )
-            elif isinstance(source_ref, (dict, list)):
-                # ExecutionEngine 已解析的数据对象，直接使用
-                source_data = source_ref
-                logger.debug("filter_data: 使用直接传入的数据对象")
             else:
                 return ToolExecutionPayload(
                     call=call,

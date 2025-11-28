@@ -100,8 +100,8 @@ def test_lightweight_tool_workflow():
     edge_fn = _create_after_tool_execution_edge(runtime)
     result = edge_fn(state)
 
-    # 验证轻量工具路由到 lightweight_handler
-    assert result == "to_planner_lightweight"
+    # V6.0: 轻量工具路由到 lightweight_handler（然后回到 research_agent）
+    assert result == "to_research_lightweight"
 
 
 def test_working_memory_format():

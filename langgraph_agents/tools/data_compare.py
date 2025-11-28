@@ -1,41 +1,63 @@
 from __future__ import annotations
 
-"""compare_data 工具实现：对比分析多个数据源。"""
+"""compare_data 工具实现：对比分析多个数据源。
+
+V6.0 Phase 2: 支持统一的数据引用格式。
+"""
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from ..state import ToolCall, ToolExecutionPayload
 from ..runtime import ToolExecutionContext
 from .registry import ToolRegistry, tool
+from .data_ref_resolver import DataRefResolver, create_resolver_from_context
 
 logger = logging.getLogger(__name__)
 
 
 def _load_source_data(
-    source_refs: List[str],
+    source_refs: List[Union[str, int]],
     context: ToolExecutionContext
 ) -> tuple[bool, List[Dict[str, Any]], str]:
     """
     加载多个数据源。
 
+    V6.0 Phase 2: 支持多种引用格式。
+
     Args:
-        source_refs: 数据引用 ID 列表
+        source_refs: 数据引用列表（支持 data_id、step_id、$step.N 格式）
         context: 工具执行上下文
 
     Returns:
         (success, loaded_data, error_message) 元组
     """
+    # V6.0 Phase 2: 使用统一的 DataRefResolver
+    resolver = create_resolver_from_context(context)
     data_store = context.extras.get("data_store")
+
     if data_store is None:
         return False, [], "data_store 不可用"
 
     loaded_data = []
     for ref in source_refs:
-        data = data_store.load(ref)
-        if data is None:
-            return False, [], f"无效的数据引用: {ref}"
+        try:
+            if resolver:
+                # 使用解析器解析引用
+                resolved = resolver.resolve(ref)
+                data = resolved.data
+                ref_str = f"{ref} (data_id={resolved.source_data_id})"
+            else:
+                # 回退: 直接从 data_store 加载
+                data = data_store.load(ref)
+                ref_str = str(ref)
+
+            if data is None:
+                return False, [], f"无效的数据引用: {ref}"
+
+        except ValueError as e:
+            return False, [], str(e)
 
         # 提取 items
         if isinstance(data, dict):
@@ -46,7 +68,7 @@ def _load_source_data(
             return False, [], f"数据格式异常: {type(data)}"
 
         loaded_data.append({
-            "ref": ref,
+            "ref": ref_str,
             "items": items,
             "count": len(items)
         })
@@ -222,12 +244,14 @@ def register_data_compare_tool(registry: ToolRegistry) -> None:
             "properties": {
                 "source_refs": {
                     "type": "array",
-                    "description": "数据引用 ID 列表（必填，2-5 个）",
-                    "items": {"type": "string"},
+                    "description": "数据引用列表（必填，2-5个），每项支持: data_id字符串、步骤编号、步骤引用($step.N)",
+                    "items": {"type": ["string", "integer"]},
                     "minItems": 2,
                     "maxItems": 5,
                     "examples": [
-                        ["lg-abc123", "lg-def456"]
+                        ["lg-abc123", "lg-def456"],
+                        ["$step.1", "$step.2"],
+                        [1, 2]
                     ]
                 },
                 "comparison_type": {

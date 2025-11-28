@@ -156,6 +156,14 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/done/251128-single-agent-architecture-proposal.md` - **V6.0 单Agent架构重构** [✅ 完成 2025-11-28]
+  - **核心改进**：融合 Planner + Reflector + Synthesizer 为单一 ResearchAgent
+  - **保留 Router**：作为前置分流，减少简单查询的开销
+  - **新架构工作流**：router → research_agent → tool_executor → data_stasher → research_agent (循环)
+  - **测试覆盖**：278 个测试通过
+  - **关键文件**：`langgraph_agents/agents/research_agent.py`、`langgraph_agents/prompts/research_agent_system.txt`
+  - **Phase 2 工具层增强**：智能摘要（`_smart_default_summary`）、统一数据引用（`data_ref_resolver.py`）、执行保护（`execution_wrapper.py`）
+  - **Phase 3 上下文管理**：分层记忆系统（`context_manager.py`）、历史压缩、使用监控
 - `workflow/done/251127-unify-v5-langgraph-architecture.md` - **V5.0 架构统一：废弃 services/agent_graph** [✅ 完成 2025-11-27]
   - 核心问题：存在两套并行的任务执行系统（V5.0 单步迭代 vs Task Graph 多步一次性规划）
   - 解决方案：统一使用 V5.0 完整 LangGraph 状态机（单步迭代规划，类似 Claude Code 工作方式）

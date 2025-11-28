@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-"""工具注册中心，负责将 LangGraph ToolCall 映射到具体实现。"""
+"""工具注册中心，负责将 LangGraph ToolCall 映射到具体实现。
+
+V6.0 Phase 2.3: 集成工具执行保护（超时、重试）。
+"""
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
@@ -12,6 +15,17 @@ from ..runtime import ToolExecutionContext
 logger = logging.getLogger(__name__)
 
 ToolHandler = Callable[[ToolCall, ToolExecutionContext], ToolExecutionPayload]
+
+# V6.0 Phase 2.3: 延迟导入执行包装器，避免循环引用
+_execution_wrapper = None
+
+def _get_execution_wrapper():
+    """延迟获取执行包装器。"""
+    global _execution_wrapper
+    if _execution_wrapper is None:
+        from .execution_wrapper import ToolExecutionWrapper
+        _execution_wrapper = ToolExecutionWrapper()
+    return _execution_wrapper
 
 
 @dataclass
@@ -78,9 +92,29 @@ class ToolRegistry:
         self,
         call: ToolCall,
         context: ToolExecutionContext,
+        use_protection: bool = True,
     ) -> ToolExecutionPayload:
+        """
+        执行工具。
+
+        V6.0 Phase 2.3: 支持执行保护（超时、重试）。
+
+        Args:
+            call: 工具调用
+            context: 执行上下文
+            use_protection: 是否启用执行保护（超时/重试）
+
+        Returns:
+            ToolExecutionPayload
+        """
         spec = self.get(call.plugin_id)
-        return spec.handler(call, context)
+
+        if use_protection:
+            wrapper = _get_execution_wrapper()
+            return wrapper.execute(spec.handler, call, context)
+        else:
+            # 直接执行（用于测试或已有保护的场景）
+            return spec.handler(call, context)
 
 
 def tool(

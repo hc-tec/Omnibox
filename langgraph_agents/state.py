@@ -221,4 +221,7 @@ class GraphState(TypedDict, total=False):
     execution_plan: Optional[ExecutionPlan]  # V5.0 Phase 4: 多步执行计划
     completed_step_ids: List[int]  # V5.0 Phase 4: 已完成的步骤 ID
     knowledge_graph: Optional[Any]  # V5.0 Phase 5: 知识图谱（Any 避免循环引用）
+    # V6.0 单Agent架构新增
+    agent_decision: Optional[Literal["CONTINUE", "FINISH", "REQUEST_CLARIFICATION"]]
+    agent_reasoning: Optional[str]
 

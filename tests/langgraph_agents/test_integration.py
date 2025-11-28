@@ -24,12 +24,15 @@ class MockLLMClient:
         self.responses = responses or {}
         self.call_count = 0
 
-    def generate(self, prompt, temperature=0.0):
-        """模拟生成响应"""
+    def generate(self, prompt, temperature=0.0, role=None):
+        """模拟生成响应（支持 V6.0 role 参数）"""
         self.call_count += 1
         # 根据 prompt 中的关键词返回不同响应
         if "RouterAgent" in prompt or "historic_messages" in prompt:
             return '{"route": "complex_research", "reasoning": "需要多步研究"}'
+        # V6.0: ResearchAgent 融合了 Planner + Reflector + Synthesizer
+        elif "ResearchAgent" in prompt or "智能研究助手" in prompt:
+            return '{"decision": "FINISH", "reasoning": "数据已充分", "final_report": {"summary": "测试总结", "evidence": [], "next_actions": []}}'
         elif "PlannerAgent" in prompt or "可用工具列表" in prompt:
             return '{"plugin_id": "fetch_public_data", "args": {"query": "测试查询"}, "description": "测试工具调用"}'
         elif "ReflectorAgent" in prompt or "collected_data" in prompt:

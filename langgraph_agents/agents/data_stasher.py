@@ -20,9 +20,72 @@ def _ensure_serializable(payload) -> str:
         return json.dumps(str(payload), ensure_ascii=False)
 
 
-def _default_summary(payload, max_chars: int) -> str:
+def _smart_default_summary(payload, max_chars: int) -> str:
+    """
+    生成智能默认摘要（无LLM时使用）。
+
+    根据数据类型提取关键信息，而不是简单截断。
+    """
+    if not isinstance(payload, dict):
+        text = _ensure_serializable(payload)
+        return (text[: max_chars - 3] + "...") if len(text) > max_chars else text
+
+    data_type = payload.get("type", "unknown")
+
+    # 数据获取类
+    if data_type == "rss_public_data":
+        items = payload.get("items", [])
+        count = len(items)
+        feed_title = payload.get("feed_title", "未知来源")
+
+        if items and isinstance(items[0], dict):
+            first_title = items[0].get("title", "")[:30]
+            return f"{feed_title}获取{count}条数据。最新: {first_title}..."
+        return f"{feed_title}获取{count}条数据"
+
+    # 数据过滤类
+    if data_type == "data_filter":
+        total_before = payload.get("total_before_filter", 0)
+        total_after = payload.get("total_after_filter", 0)
+        returned = payload.get("returned", 0)
+        return f"从{total_before}条中筛选出{total_after}条，返回{returned}条"
+
+    # 数据聚合类
+    if data_type == "data_aggregation":
+        groups = payload.get("groups", [])
+        total = payload.get("total_groups", len(groups))
+        return f"聚合统计完成，共{total}个分组"
+
+    # 数据对比类
+    if data_type == "data_comparison":
+        common = len(payload.get("common_themes", []))
+        diff = len(payload.get("differences", []))
+        return f"对比完成，发现{common}个共同主题，{diff}个差异点"
+
+    # 洞察提取类
+    if data_type == "insight_extraction":
+        insights = payload.get("insights", [])
+        return f"提取{len(insights)}个核心洞察"
+
+    # 数据源发现类
+    if data_type == "source_discovery":
+        public = len(payload.get("public_sources", []))
+        private = len(payload.get("private_sources", []))
+        return f"发现{public}个公开数据源，{private}个私有数据源"
+
+    # 用户澄清类
+    if data_type == "user_clarification":
+        question = payload.get("question", "未知问题")
+        return f"等待用户澄清: {question[:50]}"
+
+    # 默认：截断
     text = _ensure_serializable(payload)
     return (text[: max_chars - 3] + "...") if len(text) > max_chars else text
+
+
+def _default_summary(payload, max_chars: int) -> str:
+    """向后兼容的默认摘要函数。"""
+    return _smart_default_summary(payload, max_chars)
 
 
 def create_data_stasher_node(runtime: LangGraphRuntime):
