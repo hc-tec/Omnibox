@@ -119,6 +119,7 @@ const LLM_ROLE_META: Record<string, { stepType: ResearchStepType; label: string 
   reflector: { stepType: "analysis", label: "Reflector 反思" },
   synthesizer: { stepType: "analysis", label: "Synthesizer 总结" },
   research_agent: { stepType: "analysis", label: "Research Agent 推理" },
+  schema_coder: { stepType: "analysis", label: "Schema Coder 代码生成" },
   tool_executor: { stepType: "data_fetch", label: "Tool Executor 调度" },
   data_stasher: { stepType: "data_fetch", label: "DataStasher 摘要" },
   entity_resolver: { stepType: "planning", label: "实体解析" },
@@ -283,7 +284,7 @@ const wsBaseUrl = ref(
       viewStore.handleResearchPanel({
         step_id: `summary-${Date.now()}`,
         step_index: undefined,
-        source_query: summaryData.metadata?.query || store.state.query || "研究结果",
+        source_query: summaryData.metadata?.query || viewStore.state.query || "研究结果",
         panel_payload: payload,
         data_blocks: summaryData.data_blocks ?? {},
         timestamp: message.timestamp,
@@ -691,7 +692,7 @@ const wsBaseUrl = ref(
       researchTaskStore.appendPreview(taskIdentifier, {
         previews: [
           {
-            title: message.data.metadata?.query || store.state.query || "研究结果",
+            title: message.data.metadata?.query || viewStore.state.query || "研究结果",
             items: buildPreviewItems(message.data.data),
             generated_path: message.data.data?.layout?.mode,
             source: message.data.metadata?.source,

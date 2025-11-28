@@ -9,6 +9,7 @@ from typing import Dict, List
 from ..prompt_loader import load_prompt
 from ..runtime import LangGraphRuntime
 from ..state import DataReference, GraphState, ToolExecutionPayload
+from ..utils.raw_schema_profiler import summarize_payload
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,14 @@ def create_data_stasher_node(runtime: LangGraphRuntime):
                 pending.call.plugin_id,
                 data_id,
             )
+            if isinstance(raw_output, dict):
+                schema_info = summarize_payload(raw_output)
+                runtime.schema_registry.register(
+                    data_id,
+                    raw_schema=schema_info.get("schema", {}),
+                    samples=schema_info.get("samples", []),
+                    metadata=schema_info.get("metadata") or {"sample_count": schema_info.get("sample_count", 0)},
+                )
 
         data_ref = DataReference(
             step_id=pending.call.step_id,
@@ -156,4 +165,3 @@ def create_data_stasher_node(runtime: LangGraphRuntime):
         }
 
     return node
-

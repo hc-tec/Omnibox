@@ -6599,3 +6599,15 @@ V5.0 建立在 V4.4 的执行基础设施之上：
 > - ResearchAgent 优先调用 `data_operator`，通过 schema + 样例 + Python transform 实现过滤/聚合/对比。
 > - 旧工具的契约可视为 legacy 参考，不再新增逻辑特性。
 > - 所有新测试 & Planner 提示词都应围绕 data_operator 来编写。
+> - **2025-11-30 扩展**：data_operator 依赖 `RawSchemaProfiler` + `SchemaRegistry` 注入的元数据，自动继承原 `generated_path` / `feed_title`，生成结果与 DataQueryResult 完全兼容，可直接复用既有 Adapter。
+> - `fetch_public_data` 工具默认为 raw_mode，直接返回 RSSHub 原始 payload + items，ResearchAgent 必须先调用 data_operator 对这些原始记录进行转换/筛选，再决定是否进入面板适配阶段。
+
+#### RawSchemaProfiler + SchemaRegistry（2025-11-30）
+- DataStasher 保存工具输出时统一调用 `summarize_payload()`：
+  - 生成经过 `__preview__`/`__truncated__` 标记的样本，控制 token 长度；
+  - 缓存原始路由、标题、datasource、item_count、cache_hit 等上下文。
+- SchemaRegistry 以 data_id 为 key 缓存 schema/samples/metadata，data_operator 优先读取；若缺失则退回实时 `build_raw_schema()`。
+- data_operator 的执行结果会标准化为
+  `{"type": "data_operator_result", "items": [...], "generated_path": "...", "feed_title": "...", "metadata": {...}}`：
+  - SyncLangGraphExecutor 可以直接把 data_operator 输出视作 DataQueryResult，解决“处理后的数据结构前端不认识”的一致性问题；
+  - PanelGenerator 根据 `generated_path` 继续命中原 Adapter（含嵌套组件），stats/metadata 中保留 `source_data_id`、`instruction` 便于追踪。

@@ -125,6 +125,7 @@ class DataQueryService:
         use_cache: bool = True,
         prefer_single_route: Optional[bool] = None,
         user_id: Optional[int] = None,  # Phase 2: 用户ID（游客模式可为 None）
+        raw_mode: bool = False,
     ) -> DataQueryResult:
         logger.info("开始数据查询: %s (user_id=%s)", user_query, user_id)
 
@@ -181,6 +182,7 @@ class DataQueryService:
                 cache_hint=rag_cache_hit,
                 use_cache=use_cache,
                 prefer_single_route=self._resolve_single_route_mode(prefer_single_route, filter_datasource),
+                raw_mode=raw_mode,
             )
 
             if datasets:
@@ -335,12 +337,13 @@ class DataQueryService:
         cache_hint: str,
         use_cache: bool,
         prefer_single_route: bool,
+        raw_mode: bool,
     ) -> Tuple[List[QueryDataset], List[str]]:
         datasets: List[QueryDataset] = []
         failures: List[str] = []
 
         for task in self._plan_tasks(user_query, rag_result, cache_hint, prefer_single_route):
-            dataset = self._fetch_dataset(task, use_cache)
+            dataset = self._fetch_dataset(task, use_cache, raw_mode=raw_mode)
             if dataset:
                 datasets.append(dataset)
             else:
@@ -477,7 +480,7 @@ class DataQueryService:
 
         return tasks[: self.MULTI_ROUTE_LIMIT]
 
-    def _fetch_dataset(self, task: Dict[str, Any], use_cache: bool) -> Optional[QueryDataset]:
+    def _fetch_dataset(self, task: Dict[str, Any], use_cache: bool, raw_mode: bool = False) -> Optional[QueryDataset]:
         generated_path = task.get("generated_path")
         if not generated_path:
             logger.warning("数据集任务缺少 generated_path: %s", task.get("name", "unknown"))
@@ -498,11 +501,23 @@ class DataQueryService:
             )
             return None
 
-        manifest = self._resolve_manifest_for_task(task.get("route_id"), generated_path)
-        schema_descriptor = manifest.schema if manifest and manifest.schema else None
-        schema_meta = schema_descriptor.to_metadata() if schema_descriptor else None
-        profile = self._build_dataset_profile(fetch_result.payload, schema_descriptor)
-        normalized_items = self._normalize_dataset_items(task, fetch_result, generated_path)
+        manifest = None
+        schema_descriptor = None
+        schema_meta = None
+        profile = None
+        available_components: List[Dict[str, Any]] = []
+
+        if raw_mode:
+            normalized_items = self._extract_payload_records(fetch_result.payload)
+            if not normalized_items:
+                normalized_items = list(fetch_result.items or [])
+        else:
+            manifest = self._resolve_manifest_for_task(task.get("route_id"), generated_path)
+            schema_descriptor = manifest.schema if manifest and manifest.schema else None
+            schema_meta = schema_descriptor.to_metadata() if schema_descriptor else None
+            profile = self._build_dataset_profile(fetch_result.payload, schema_descriptor)
+            normalized_items = self._normalize_dataset_items(task, fetch_result, generated_path)
+            available_components = self._manifest_components_metadata(manifest)
 
         dataset = QueryDataset(
             route_id=task.get("route_id"),
@@ -515,7 +530,7 @@ class DataQueryService:
             cache_hit=cache_state,
             reasoning=task.get("reasoning", "成功获取数据"),
             payload=fetch_result.payload,
-            available_components=self._manifest_components_metadata(manifest),
+            available_components=available_components,
             schema_id=schema_descriptor.schema_id if schema_descriptor else None,
             schema=schema_meta,
             profile=profile,

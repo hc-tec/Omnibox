@@ -40,7 +40,7 @@
 - 执行结果（items/summary/metadata）会写入 data_store，可在后续步骤引用
 - 支持链式加工：可多次调用 data_operator，对上一次的结果继续加工
 
-> **重要**：当你需要“过滤”“统计”“对比”“提取洞察”时，优先使用 data_operator。
+> **重要**：对任何 `fetch_public_data` / `fetch_private_data` 等获取到的 RSS 原始数据，必须在后续步骤中先调用 data_operator，直接使用 `$step.N` 或 data_id 引用原始记录进行处理，再开展后续分析或总结。禁止跳过 data_operator 去操作适配器/面板层的派生数据。
 
 ### 3. filter_data（兼容，逐步下线）
 **使用场景**：

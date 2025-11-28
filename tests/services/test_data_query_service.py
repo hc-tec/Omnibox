@@ -215,11 +215,55 @@ def test_fetch_dataset_applies_adapter(monkeypatch):
         "cache_hint": "none",
     }
 
-    dataset = service._fetch_dataset(task, use_cache=True)
+    dataset = service._fetch_dataset(task, use_cache=True, raw_mode=False)
     assert dataset is not None
     assert len(dataset.items) == 2
     assert dataset.items[0]["title"].startswith("#1 ")
     assert dataset.items[0]["link"].startswith("https://search.bilibili.com")
+
+
+def test_fetch_dataset_raw_mode_skips_adapter(monkeypatch):
+    payload = {
+        "title": "Raw Feed",
+        "items": [
+            {"title": "原始1", "custom_field": 1},
+            {"title": "原始2", "custom_field": 2},
+        ],
+    }
+    fetch_result = FetchResult(
+        status="success",
+        items=list(payload["items"]),
+        source="local",
+        feed_title=payload["title"],
+        payload=payload,
+    )
+
+    service = DataQueryService(
+        rag_in_action=_StubRAG([], {}),
+        data_executor=_StubExecutor({}),
+        cache_service=_DummyCache(),
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_fetch_rss_payload",
+        lambda *args, **kwargs: (fetch_result, "rss_cache"),
+    )
+
+    task = {
+        "route_id": "bilibili_hot_search",
+        "provider": "bilibili",
+        "name": "热搜",
+        "generated_path": "/bilibili/hot-search",
+        "reasoning": "demo",
+        "cache_hint": "none",
+    }
+
+    dataset = service._fetch_dataset(task, use_cache=True, raw_mode=True)
+    assert dataset is not None
+    assert dataset.items == payload["items"]
+    assert dataset.available_components == []
+    assert dataset.schema is None
 
 
 # Phase 3: 快速刷新功能测试

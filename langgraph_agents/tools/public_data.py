@@ -71,6 +71,7 @@ def register_public_data_tool(registry: ToolRegistry) -> None:
             user_query=query,
             filter_datasource=filter_ds,
             use_cache=True,
+            raw_mode=True,
         )
 
         if result.status == "success":

@@ -102,6 +102,12 @@ class ResearchService:
             data_query_service=data_query_service,
             note_backend=None,  # 暂不支持笔记搜索
         )
+        tool_context.extras.update(
+            {
+                "data_store": self.data_store,
+                "planner_llm": planner_llm,
+            }
+        )
 
         # 初始化 LangGraph 运行时
         self.runtime = LangGraphRuntime(
@@ -113,6 +119,8 @@ class ResearchService:
             data_store=self.data_store,
             tool_context=tool_context,
         )
+        # SchemaRegistry 需要注入到工具上下文，便于 data_operator 复用
+        self.runtime.tool_context.extras["schema_registry"] = self.runtime.schema_registry
 
         # 创建 LangGraph 应用
         self.app = create_langgraph_app(self.runtime)

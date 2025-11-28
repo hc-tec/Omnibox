@@ -60,6 +60,25 @@ def _extract_executed_tools(data_stash: List[DataReference]) -> str:
     return " → ".join(tools)
 
 
+def _format_raw_fetch_refs(data_stash: List[DataReference]) -> str:
+    """列出所有 fetch 类工具产生的原始数据引用，提醒必须先用 data_operator 处理。"""
+    raw_refs = [
+        ref
+        for ref in data_stash
+        if ref.tool_name in {"fetch_public_data", "fetch_private_data"} and ref.status == "success"
+    ]
+    if not raw_refs:
+        return "暂无原始数据"
+    lines: List[str] = []
+    for ref in raw_refs:
+        data_id = ref.data_id or "无 data_id"
+        lines.append(
+            f"- Step {ref.step_id}: data_id={data_id}，描述：{ref.summary}。"
+            f" 调用 data_operator 时使用 \"$step.{ref.step_id}\" 或 \"{data_id}\" 引用。"
+        )
+    return "\n".join(lines)
+
+
 def create_research_agent_node(runtime: LangGraphRuntime):
     """
     创建单Agent研究节点。
@@ -103,11 +122,16 @@ def create_research_agent_node(runtime: LangGraphRuntime):
         # 构建 prompt
         prompt_parts = [
             system_prompt,
+            "\n## 数据处理约束\n- 对 fetch_public_data / fetch_private_data 获取的原始 RSS 数据，必须先调用 data_operator（source_ref 使用 \"$step.N\" 或 data_id）进行过滤/清洗，再进入后续分析或总结。\n- 禁止直接基于适配器 / 面板层数据编写逻辑。",
             f"\n## 可用工具列表\n{available_tools}",
             f"\n## 用户查询\n{query}",
             f"\n## 已执行的工具链\n{_extract_executed_tools(data_stash)}",
             f"\n## 已获取的数据（data_stash）\n{_format_data_stash(data_stash)}",
         ]
+
+        prompt_parts.append(
+            f"\n## 原始 RSS 数据引用（必须先用 data_operator 处理）\n{_format_raw_fetch_refs(data_stash)}"
+        )
 
         if working_memory:
             prompt_parts.append(f"\n## 工作记忆（轻量工具结果）\n{_format_working_memory(working_memory)}")

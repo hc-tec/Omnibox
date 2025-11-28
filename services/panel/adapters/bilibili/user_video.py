@@ -82,6 +82,9 @@ USER_VIDEO_MANIFEST = RouteAdapterManifest(
                 {"field": "cover_url", "description": "视频封面"},
                 {"field": "title", "description": "视频标题"},
                 {"field": "link", "description": "视频链接"},
+                {"field": "player_url", "description": "外部播放器链接"},
+                {"field": "view_count", "description": "播放量"},
+                {"field": "duration", "description": "视频时长"},
             ],
         ),
         ComponentManifestEntry(
@@ -97,7 +100,7 @@ USER_VIDEO_MANIFEST = RouteAdapterManifest(
             ],
         ),
     ],
-    notes="展示 B 站 UP 主的视频投稿数据。基于 RSSHub JSONFeed (/bilibili/user/video/:uid)，补齐封面、播放器链接、字幕信息等结构化字段，支持列表、卡片和画廊多种呈现方式。",
+    notes="展示 B 站 UP 主的视频投稿数据。基于 RSSHub JSONFeed (/bilibili/user/video/:uid)，解析 content_html/attachments 中的封面、播放器链接、字幕信息等结构化字段，支持列表、卡片和画廊多种呈现方式。",
     schema=USER_VIDEO_SCHEMA,
 )
 
@@ -153,7 +156,7 @@ def _extract_cover_image(item: Dict[str, Any], content_html: Optional[str]) -> O
     return None
 
 
-def _extract_media_metadata(item: Dict[str, Any]) -> tuple[Optional[str], Optional[int], list[str]]:
+def _extract_media_metadata(item: Dict[str, Any], content_html: Optional[str]) -> tuple[Optional[str], Optional[int], list[str]]:
     attachments = item.get("attachments") or []
     if isinstance(attachments, dict):
         attachments = [attachments]
@@ -187,6 +190,11 @@ def _extract_media_metadata(item: Dict[str, Any]) -> tuple[Optional[str], Option
             label = title or language
             if label:
                 subtitle_labels.append(str(label))
+
+    if not player_url and content_html:
+        iframe_match = re.search(r'<iframe[^>]+src="([^"]+)"', str(content_html))
+        if iframe_match:
+            player_url = iframe_match.group(1)
 
     return player_url, duration_seconds, subtitle_labels
 
@@ -288,7 +296,7 @@ def bilibili_user_video_adapter(
         author = first_author(item.get("authors")) or item.get("author") or up_name
         content_html = item.get("content_html")
         cover_url = _extract_cover_image(item, content_html)
-        player_url, duration_seconds, subtitle_labels = _extract_media_metadata(item)
+        player_url, duration_seconds, subtitle_labels = _extract_media_metadata(item, content_html)
 
         if duration_seconds:
             total_duration_seconds += duration_seconds

@@ -23,6 +23,8 @@ def create_tool_executor_node(runtime: LangGraphRuntime):
         enhanced_extras = dict(runtime.tool_context.extras)
         enhanced_extras["data_stash"] = state.get("data_stash", [])
         enhanced_extras["working_memory"] = state.get("working_memory", {})
+        enhanced_extras["data_store"] = runtime.data_store
+        enhanced_extras["schema_registry"] = runtime.schema_registry
 
         enhanced_context = ToolExecutionContext(
             data_query_service=runtime.tool_context.data_query_service,
@@ -47,4 +49,3 @@ def create_tool_executor_node(runtime: LangGraphRuntime):
         }
 
     return node
-

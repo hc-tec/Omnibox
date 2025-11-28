@@ -9,6 +9,7 @@ from query_processor.llm_client import LLMClient
 from services.data_query_service import DataQueryService
 
 from .storage import ResearchDataStore
+from .schema_registry import SchemaRegistry
 
 if TYPE_CHECKING:  # 避免循环引用
     from .tools.registry import ToolRegistry
@@ -48,6 +49,7 @@ class LangGraphRuntime:
     tool_context: ToolExecutionContext
     summarizer_llm: Optional[LLMClient] = None
     cheap_summary_max_chars: int = 320
+    schema_registry: SchemaRegistry = field(default_factory=SchemaRegistry)
 
     # V5.0 可观测性：LLM 调用追踪器（可选）
     llm_tracker: Optional["LLMCallTracker"] = None
@@ -67,4 +69,3 @@ class LangGraphRuntime:
             self.synthesizer_llm.set_tracker(self.llm_tracker)
             if self.summarizer_llm:
                 self.summarizer_llm.set_tracker(self.llm_tracker)
-

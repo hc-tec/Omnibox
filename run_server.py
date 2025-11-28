@@ -23,8 +23,8 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=8004,
-        help="监听端口（默认：8004）"
+        default=8002,
+        help="监听端口（默认：8002）"
     )
     parser.add_argument(
         "--prod",

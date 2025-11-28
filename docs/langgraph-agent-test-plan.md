@@ -39,7 +39,7 @@
 ### 4.2 组合/过滤/分析
 | ID | 查询 | 测试目标 | 验证要点 |
 | --- | --- | --- | --- |
-| 2.1 | `B站影视飓风投稿视频中，标题包含"英雄联盟"` | fetch → data_operator 自动链路 | Planner 生成 data_operator 指令；无 filter_hint 字段；过滤结果面板仅剩匹配项；Synthesizer 引用过滤条件。 |
+| 2.1 | `B站影视飓风投稿视频中，标题包含"英雄联盟"` | fetch → data_operator 自动链路 | Planner 生成 data_operator 指令；无 filter_hint 字段；过滤结果面板仅剩匹配项；Synthesizer 引用过滤条件；**验证 data_operator 输出的 `generated_path` 仍为 `/bilibili/user/video`，Panel 复用原 Adapter。** |
 | 2.2 | `把影视飓风最近10条视频和知乎讨论Sora的问题做对比` | data_operator 合并多源 | DataStasher 记录两个 data_id；Synthesizer 输出对比；UI 可用表格 + FallbackRichText。 |
 | 2.3 | `统计B站热搜前20条里科技、游戏的比例` | data_operator 聚合 + 可视化 | 指令描述 bucket 逻辑；面板为柱状图/统计卡；Synthesizer 给出比例。 |
 | 2.4 | `列出B站和微博热搜都出现的关键词` | 多源交集 + data_operator | Planner 生成交叉指令；Synthesizer 列出交集列表；UI 以列表/表格呈现。 |

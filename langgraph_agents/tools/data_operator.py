@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import statistics
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..json_utils import parse_json_payload
@@ -13,6 +14,7 @@ from ..llm_retry import retry_with_backoff
 from ..prompt_loader import load_prompt
 from ..state import ToolCall, ToolExecutionPayload
 from ..runtime import ToolExecutionContext
+from ..utils.raw_schema_profiler import build_raw_schema, build_sample_records
 from .registry import ToolRegistry, tool
 from .data_ref_resolver import create_resolver_from_context
 
@@ -31,6 +33,15 @@ SAFE_BUILTINS = {
     "round": round,
     "enumerate": enumerate,
 }
+
+
+@dataclass
+class SourceContext:
+    records: List[Dict[str, Any]]
+    payload: Any
+    metadata: Dict[str, Any]
+    source_data_id: Optional[str] = None
+    source_step_id: Optional[int] = None
 
 
 def register_data_operator_tool(registry: ToolRegistry) -> None:
@@ -104,8 +115,8 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
             max_samples = 20
         max_samples = max(1, min(max_samples, 100))
 
-        records = _resolve_records(source_ref, context, data_store)
-        if not records:
+        source_context = _resolve_records(source_ref, context, data_store)
+        if not source_context or not source_context.records:
             return ToolExecutionPayload(
                 call=call,
                 status="error",
@@ -113,10 +124,8 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
                 raw_output={"type": "data_operator", "error": "records_not_available"},
             )
 
-        sample = records[:max_samples]
-        schema_hint = _infer_schema(sample)
-
-        prompt = _build_prompt(instruction, sample, schema_hint, coder_prompt)
+        schema_context = _build_schema_context(source_context, extras, max_samples)
+        prompt = _build_prompt(instruction, schema_context, coder_prompt)
 
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():
@@ -146,7 +155,7 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
             )
 
         try:
-            result = _execute_transform(code, records)
+            result = _execute_transform(code, source_context.records)
         except Exception as exc:
             logger.exception("data_operator: 代码执行失败")
             return ToolExecutionPayload(
@@ -161,15 +170,21 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
                 },
             )
 
-        trimmed_result = _trim_result(result)
+        normalized_result = _normalize_transform_result(result, source_context, instruction, explanation)
+        trimmed_result = _trim_result(normalized_result)
         raw_output = {
             "type": "data_operator",
             "instruction": instruction,
             "code": code,
             "explanation": explanation,
-            "sample_size": len(sample),
+            "sample_size": schema_context.get("sample_count"),
             "result": trimmed_result,
         }
+        for key in ("items", "metadata", "summary", "feed_title", "generated_path", "source", "cache_hit", "reasoning"):
+            if isinstance(trimmed_result, dict) and key in trimmed_result:
+                raw_output[key] = trimmed_result[key]
+        if isinstance(trimmed_result, dict) and trimmed_result.get("type"):
+            raw_output["result_type"] = trimmed_result.get("type")
         return ToolExecutionPayload(
             call=call,
             status="success",
@@ -177,24 +192,49 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
         )
 
 
-def _resolve_records(source_ref: Any, context: ToolExecutionContext, data_store) -> List[Dict[str, Any]]:
+def _resolve_records(source_ref: Any, context: ToolExecutionContext, data_store) -> Optional[SourceContext]:
     resolver = create_resolver_from_context(context)
-    if isinstance(source_ref, (list, dict)):
-        return _extract_records(source_ref)
+
+    if isinstance(source_ref, list):
+        payload = {"items": source_ref}
+        return SourceContext(
+            records=_extract_records(payload),
+            payload=payload,
+            metadata=_build_source_metadata(payload, None, None),
+        )
+
+    if isinstance(source_ref, dict):
+        return SourceContext(
+            records=_extract_records(source_ref),
+            payload=source_ref,
+            metadata=_build_source_metadata(source_ref, None, None),
+        )
 
     if resolver:
         try:
             resolved = resolver.resolve(source_ref, require_success=False)
-            return _extract_records(resolved.data)
+            metadata = _build_source_metadata(resolved.data, resolved.source_data_id, resolved.source_step_id)
+            return SourceContext(
+                records=_extract_records(resolved.data),
+                payload=resolved.data,
+                metadata=metadata,
+                source_data_id=resolved.source_data_id,
+                source_step_id=resolved.source_step_id,
+            )
         except ValueError as exc:
             logger.warning("data_operator: 数据引用解析失败: %s", exc)
-            return []
+            return None
 
     if isinstance(source_ref, str):
         data = data_store.load(source_ref)
-        return _extract_records(data)
+        return SourceContext(
+            records=_extract_records(data),
+            payload=data,
+            metadata=_build_source_metadata(data, source_ref, None),
+            source_data_id=source_ref,
+        )
 
-    return []
+    return None
 
 
 def _extract_records(payload: Any) -> List[Dict[str, Any]]:
@@ -210,36 +250,98 @@ def _extract_records(payload: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def _infer_schema(records: List[Dict[str, Any]]) -> Dict[str, Any]:
-    schema: Dict[str, Any] = {}
-    for record in records:
-        for key, value in record.items():
-            field = schema.setdefault(key, {"types": set(), "examples": []})
-            field["types"].add(type(value).__name__)
-            if len(field["examples"]) < 3 and value not in field["examples"]:
-                field["examples"].append(value)
-    readable: Dict[str, Any] = {}
-    for key, value in schema.items():
-        readable[key] = {
-            "types": sorted(value["types"]),
-            "examples": value["examples"],
-        }
-    return readable
+def _build_source_metadata(payload: Any, source_data_id: Optional[str], source_step_id: Optional[int]) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {}
+    if source_data_id:
+        metadata["source_data_id"] = source_data_id
+    if source_step_id is not None:
+        metadata["source_step_id"] = source_step_id
+    if isinstance(payload, dict):
+        metadata.update(
+            {
+                "generated_path": payload.get("generated_path") or payload.get("route"),
+                "feed_title": payload.get("feed_title") or payload.get("title"),
+                "datasource": payload.get("datasource") or payload.get("source"),
+                "source": payload.get("source"),
+                "cache_hit": payload.get("cache_hit"),
+                "item_count": len(_extract_records(payload)),
+            }
+        )
+    return {key: value for key, value in metadata.items() if value is not None}
+
+
+def _build_schema_context(
+    source_context: SourceContext,
+    extras: Dict[str, Any],
+    max_samples: int,
+) -> Dict[str, Any]:
+    schema = {}
+    samples: List[Dict[str, Any]] = []
+    metadata: Dict[str, Any] = dict(source_context.metadata or {})
+
+    registry = extras.get("schema_registry")
+    if registry and source_context.source_data_id:
+        record = registry.get(source_context.source_data_id)
+        if record:
+            schema = record.raw_schema or {}
+            samples = record.samples[:max_samples] if record.samples else []
+            registry_metadata = record.metadata or {}
+            metadata.update({k: v for k, v in registry_metadata.items() if v is not None})
+
+    if not schema:
+        schema = build_raw_schema(source_context.payload or source_context.records)
+    if not samples:
+        samples = build_sample_records(source_context.payload or source_context.records, max_samples=max_samples)
+
+    sample_count = metadata.get("sample_count", len(samples))
+    metadata["sample_count"] = sample_count
+
+    return {
+        "schema": schema,
+        "samples": samples,
+        "metadata": metadata,
+        "sample_count": sample_count,
+    }
 
 
 def _build_prompt(
     instruction: str,
-    samples: List[Dict[str, Any]],
-    schema_hint: Dict[str, Any],
+    schema_context: Dict[str, Any],
     base_prompt: str,
 ) -> str:
+    samples = schema_context.get("samples") or []
+    raw_schema = schema_context.get("schema") or {}
+    sample_count = schema_context.get("sample_count", len(samples))
+    schema_json = json.dumps(raw_schema, ensure_ascii=False, indent=2)
     samples_json = json.dumps(samples, ensure_ascii=False, indent=2)
-    schema_json = json.dumps(schema_hint, ensure_ascii=False, indent=2)
+    sample_note = (
+        f"（共 {sample_count} 条样本，字段可能包含 __truncated__/__preview__ 标记）"
+    )
+    metadata = schema_context.get("metadata") or {}
+    source_notes: List[str] = []
+    if metadata.get("generated_path"):
+        source_notes.append(f"- 数据路由: {metadata['generated_path']}")
+    if metadata.get("feed_title"):
+        source_notes.append(f"- 数据标题: {metadata['feed_title']}")
+    if metadata.get("datasource"):
+        source_notes.append(f"- 数据来源: {metadata['datasource']}")
+    if metadata.get("item_count"):
+        source_notes.append(f"- 总记录数: {metadata['item_count']}")
+    source_section = ""
+    if source_notes:
+        source_section = "## 数据上下文\n" + "\n".join(source_notes) + "\n\n"
+
     return (
         f"{base_prompt}\n\n"
+        f"{source_section}"
         f"## 转换指令\n{instruction}\n\n"
-        f"## 数据 Schema 提示\n{schema_json}\n\n"
-        f"## 数据样例\n{samples_json}\n"
+        f"## 数据 Schema (原始 RSS 推断)\n{schema_json}\n\n"
+        f"## 数据样例 {sample_note}\n{samples_json}\n\n"
+        "注意：\n"
+        "- 样本仅用于理解结构，真实执行将在完整 records 上进行。\n"
+        "- 如果样本字段被 __truncated__/__omitted__ 标记，请在代码中直接访问记录原字段。\n"
+        "- transform(records) 必须返回 dict，如 {\"items\": [...], \"metadata\": {...}}。\n"
+        "- 禁止打印、网络请求或文件操作。\n"
     )
 
 
@@ -262,6 +364,58 @@ def _execute_transform(code: str, records: List[Dict[str, Any]]) -> Any:
     return result
 
 
+def _normalize_transform_result(
+    result: Any,
+    source_context: SourceContext,
+    instruction: str,
+    explanation: Optional[str],
+) -> Dict[str, Any]:
+    """
+    将用户生成的结果标准化为 DataQueryResult 兼容结构，确保后续适配器可复用。
+    """
+    normalized: Dict[str, Any]
+    if isinstance(result, dict):
+        normalized = dict(result)
+    else:
+        normalized = {"items": result}
+
+    raw_items = normalized.get("items")
+    if isinstance(raw_items, list):
+        items = raw_items
+    elif raw_items is None:
+        items = []
+    else:
+        items = [raw_items]
+    normalized["items"] = items
+
+    metadata = dict(normalized.get("metadata") or {})
+    metadata.setdefault("instruction", instruction)
+    if explanation:
+        metadata.setdefault("transformation_reason", explanation)
+    source_meta = source_context.metadata or {}
+    metadata.setdefault("source_data_id", source_meta.get("source_data_id"))
+    metadata.setdefault("source_route", source_meta.get("generated_path"))
+    metadata.setdefault("source_datasource", source_meta.get("datasource"))
+    metadata.setdefault("source_feed_title", source_meta.get("feed_title"))
+    metadata.setdefault("item_count", len(items))
+    normalized["metadata"] = metadata
+
+    generated_path = normalized.get("generated_path") or source_meta.get("generated_path")
+    if generated_path:
+        normalized["generated_path"] = generated_path
+
+    feed_title = normalized.get("feed_title") or source_meta.get("feed_title")
+    if instruction:
+        feed_title = f"{feed_title} · {instruction}" if feed_title else f"数据算子结果：{instruction}"
+    normalized["feed_title"] = feed_title
+
+    normalized["source"] = normalized.get("source") or source_meta.get("datasource") or "data_operator"
+    normalized["cache_hit"] = False
+    normalized["reasoning"] = explanation or instruction
+    normalized["type"] = normalized.get("type") or "data_operator_result"
+    return normalized
+
+
 def _trim_result(result: Any) -> Any:
     if isinstance(result, dict):
         trimmed = dict(result)
@@ -273,4 +427,3 @@ def _trim_result(result: Any) -> Any:
     if isinstance(result, list) and len(result) > 200:
         return result[:200]
     return result
-
