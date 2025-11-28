@@ -323,7 +323,15 @@ class ChatService:
 
             # 情况1：用户显式选择研究模式 → 使用 Task Graph
             if mode == "research":
-                logger.info("用户显式选择研究模式，使用 Task Graph 处理")
+                if self.research_service:
+                    logger.info("用户显式选择研究模式，使用 ResearchService 推进多轮研究流程")
+                    return self._handle_langgraph_research(
+                        user_query=user_query,
+                        filter_datasource=filter_datasource,
+                        intent_confidence=1.0,
+                        client_task_id=client_task_id,
+                    )
+                logger.warning("研究模式被请求但 ResearchService 未初始化，回退到 Task Graph")
                 return self._handle_data_query(
                     user_query=user_query,
                     filter_datasource=filter_datasource,

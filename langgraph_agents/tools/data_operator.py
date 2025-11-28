@@ -17,6 +17,11 @@ from ..runtime import ToolExecutionContext
 from ..utils.raw_schema_profiler import build_raw_schema, build_sample_records
 from .registry import ToolRegistry, tool
 from .data_ref_resolver import create_resolver_from_context
+from .data_payload_utils import (
+    unwrap_payload,
+    extract_records,
+    build_source_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -197,26 +202,29 @@ def _resolve_records(source_ref: Any, context: ToolExecutionContext, data_store)
 
     if isinstance(source_ref, list):
         payload = {"items": source_ref}
+        metadata = build_source_metadata(payload, None, None)
         return SourceContext(
-            records=_extract_records(payload),
+            records=extract_records(payload),
             payload=payload,
-            metadata=_build_source_metadata(payload, None, None),
+            metadata=metadata,
         )
 
     if isinstance(source_ref, dict):
+        metadata = build_source_metadata(source_ref, None, None)
         return SourceContext(
-            records=_extract_records(source_ref),
+            records=extract_records(source_ref),
             payload=source_ref,
-            metadata=_build_source_metadata(source_ref, None, None),
+            metadata=metadata,
         )
 
     if resolver:
         try:
             resolved = resolver.resolve(source_ref, require_success=False)
-            metadata = _build_source_metadata(resolved.data, resolved.source_data_id, resolved.source_step_id)
+            payload, payload_ref = unwrap_payload(resolved.data, data_store)
+            metadata = build_source_metadata(payload, resolved.source_data_id, resolved.source_step_id, payload_ref)
             return SourceContext(
-                records=_extract_records(resolved.data),
-                payload=resolved.data,
+                records=extract_records(payload),
+                payload=payload,
                 metadata=metadata,
                 source_data_id=resolved.source_data_id,
                 source_step_id=resolved.source_step_id,
@@ -227,47 +235,16 @@ def _resolve_records(source_ref: Any, context: ToolExecutionContext, data_store)
 
     if isinstance(source_ref, str):
         data = data_store.load(source_ref)
+        payload, payload_ref = unwrap_payload(data, data_store)
+        metadata = build_source_metadata(payload, source_ref, None, payload_ref)
         return SourceContext(
-            records=_extract_records(data),
-            payload=data,
-            metadata=_build_source_metadata(data, source_ref, None),
+            records=extract_records(payload),
+            payload=payload,
+            metadata=metadata,
             source_data_id=source_ref,
         )
 
     return None
-
-
-def _extract_records(payload: Any) -> List[Dict[str, Any]]:
-    if payload is None:
-        return []
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
-    if isinstance(payload, dict):
-        for key in ("items", "records", "data", "results"):
-            items = payload.get(key)
-            if isinstance(items, list):
-                return [item for item in items if isinstance(item, dict)]
-    return []
-
-
-def _build_source_metadata(payload: Any, source_data_id: Optional[str], source_step_id: Optional[int]) -> Dict[str, Any]:
-    metadata: Dict[str, Any] = {}
-    if source_data_id:
-        metadata["source_data_id"] = source_data_id
-    if source_step_id is not None:
-        metadata["source_step_id"] = source_step_id
-    if isinstance(payload, dict):
-        metadata.update(
-            {
-                "generated_path": payload.get("generated_path") or payload.get("route"),
-                "feed_title": payload.get("feed_title") or payload.get("title"),
-                "datasource": payload.get("datasource") or payload.get("source"),
-                "source": payload.get("source"),
-                "cache_hit": payload.get("cache_hit"),
-                "item_count": len(_extract_records(payload)),
-            }
-        )
-    return {key: value for key, value in metadata.items() if value is not None}
 
 
 def _build_schema_context(
@@ -403,11 +380,14 @@ def _normalize_transform_result(
     generated_path = normalized.get("generated_path") or source_meta.get("generated_path")
     if generated_path:
         normalized["generated_path"] = generated_path
+        normalized.setdefault("route", generated_path)
 
     feed_title = normalized.get("feed_title") or source_meta.get("feed_title")
     if instruction:
         feed_title = f"{feed_title} · {instruction}" if feed_title else f"数据算子结果：{instruction}"
     normalized["feed_title"] = feed_title
+    if feed_title:
+        normalized.setdefault("title", feed_title)
 
     normalized["source"] = normalized.get("source") or source_meta.get("datasource") or "data_operator"
     normalized["cache_hit"] = False

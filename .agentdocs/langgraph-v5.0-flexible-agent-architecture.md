@@ -6601,6 +6601,7 @@ V5.0 建立在 V4.4 的执行基础设施之上：
 > - 所有新测试 & Planner 提示词都应围绕 data_operator 来编写。
 > - **2025-11-30 扩展**：data_operator 依赖 `RawSchemaProfiler` + `SchemaRegistry` 注入的元数据，自动继承原 `generated_path` / `feed_title`，生成结果与 DataQueryResult 完全兼容，可直接复用既有 Adapter。
 > - `fetch_public_data` 工具默认为 raw_mode，直接返回 RSSHub 原始 payload + items，ResearchAgent 必须先调用 data_operator 对这些原始记录进行转换/筛选，再决定是否进入面板适配阶段。
+> - **2025-12-01 附加**：`fetch_public_data` 仅返回 `payload_ref`（不直接携带大 JSON），data_operator / `emit_panel_preview` 在解析 `source_ref` 时会自动根据引用从 `data_store` 取回 payload，再执行 Schema 采样与 Adapter 渲染，彻底避免“把整个 RSS payload 塞进 prompt”或“跳过适配器直接造规则引擎”的老问题。
 
 #### RawSchemaProfiler + SchemaRegistry（2025-11-30）
 - DataStasher 保存工具输出时统一调用 `summarize_payload()`：

@@ -14,13 +14,25 @@ from .registry import ToolRegistry, tool
 logger = logging.getLogger(__name__)
 
 
-def _format_success_payload(result: DataQueryResult) -> Dict[str, Any]:
+def _format_success_payload(
+    result: DataQueryResult,
+    *,
+    payload_ref: Optional[str] = None,
+    inline_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """格式化成功响应的 payload（纯粹的数据获取结果）。"""
     datasets_meta = [
         dataset.to_metadata()
         for dataset in (result.datasets or [])
         if hasattr(dataset, "to_metadata")
     ]
+    payload_section: Dict[str, Any] = {}
+    if payload_ref:
+        payload_section["payload_ref"] = payload_ref
+    elif inline_payload:
+        payload_section["payload"] = inline_payload
+    elif result.payload:
+        payload_section["payload"] = result.payload
     return {
         "type": "rss_public_data",
         "feed_title": result.feed_title,
@@ -31,6 +43,7 @@ def _format_success_payload(result: DataQueryResult) -> Dict[str, Any]:
         "cache_hit": result.cache_hit,
         "reasoning": result.reasoning,
         "datasets": datasets_meta,
+        **payload_section,
     }
 
 
@@ -58,6 +71,8 @@ def register_public_data_tool(registry: ToolRegistry) -> None:
         context: ToolExecutionContext,
     ) -> ToolExecutionPayload:
         dq = context.data_query_service
+        extras = context.extras or {}
+        data_store = extras.get("data_store")
         if dq is None:
             raise RuntimeError("DataQueryService 未注入，无法调用 fetch_public_data")
 
@@ -75,7 +90,14 @@ def register_public_data_tool(registry: ToolRegistry) -> None:
         )
 
         if result.status == "success":
-            payload = _format_success_payload(result)
+            payload_ref: Optional[str] = None
+            inline_payload: Optional[Dict[str, Any]] = None
+            if result.payload:
+                if data_store is not None:
+                    payload_ref = data_store.save(result.payload)
+                else:
+                    inline_payload = result.payload
+            payload = _format_success_payload(result, payload_ref=payload_ref, inline_payload=inline_payload)
             return ToolExecutionPayload(call=call, raw_output=payload, status="success")
 
         # V5.0 修复：needs_clarification 应该触发用户澄清流程，而非返回 error
