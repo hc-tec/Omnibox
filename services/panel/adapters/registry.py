@@ -14,6 +14,7 @@ from functools import wraps
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
+from services.panel.dataset_schema import DatasetSchemaDescriptor
 
 
 @dataclass
@@ -111,6 +112,7 @@ class RouteAdapterManifest:
     """
     components: List[ComponentManifestEntry]  # 支持的组件列表
     notes: Optional[str] = None  # 适配器说明
+    schema: Optional[DatasetSchemaDescriptor] = None  # 数据字段契约
 
 
 def _default_adapter(

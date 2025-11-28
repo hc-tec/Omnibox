@@ -395,6 +395,13 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                 limit,
                 offset
             )
+            if items:
+                preview = items[: min(len(items), 3)]
+                logger.info(
+                    "filter_data: 数据样例 (前%s条): %s",
+                    len(preview),
+                    preview,
+                )
 
             # 5. 应用过滤
             filtered_items, total, sampled, sampling_rate = _filter_items(

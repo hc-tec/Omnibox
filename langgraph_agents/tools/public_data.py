@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 def _format_success_payload(result: DataQueryResult) -> Dict[str, Any]:
     """格式化成功响应的 payload（纯粹的数据获取结果）。"""
+    datasets_meta = [
+        dataset.to_metadata()
+        for dataset in (result.datasets or [])
+        if hasattr(dataset, "to_metadata")
+    ]
     return {
         "type": "rss_public_data",
         "feed_title": result.feed_title,
@@ -25,6 +30,7 @@ def _format_success_payload(result: DataQueryResult) -> Dict[str, Any]:
         "source": result.source,
         "cache_hit": result.cache_hit,
         "reasoning": result.reasoning,
+        "datasets": datasets_meta,
     }
 
 
@@ -101,4 +107,3 @@ def register_public_data_tool(registry: ToolRegistry) -> None:
             status="error",
             error_message=error_msg,
         )
-

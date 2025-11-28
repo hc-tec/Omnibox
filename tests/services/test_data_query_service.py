@@ -170,6 +170,58 @@ def test_data_query_service_propagates_retrieved_tools_on_failure():
     assert result.retrieved_tools == retrieved_tools
 
 
+def test_fetch_dataset_applies_adapter(monkeypatch):
+    payload = {
+        "title": "B站热搜",
+        "item": [
+            {
+                "title": "火灾新闻",
+                "content_html": '<img src="https://img.example/fire.jpg">火灾相关新闻',
+                "url": "https://search.bilibili.com/all?keyword=%E7%81%AB%E7%81%BE",
+            },
+            {
+                "title": "其他热点",
+                "content_html": "其他事件",
+                "url": "https://search.bilibili.com/all?keyword=%E7%83%AD%E7%82%B9",
+            },
+        ],
+    }
+    fetch_result = FetchResult(
+        status="success",
+        items=list(payload["item"]),
+        source="local",
+        feed_title=payload["title"],
+        payload=payload,
+    )
+
+    service = DataQueryService(
+        rag_in_action=_StubRAG([], {}),
+        data_executor=_StubExecutor({}),
+        cache_service=_DummyCache(),
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_fetch_rss_payload",
+        lambda *args, **kwargs: (fetch_result, "rss_cache"),
+    )
+
+    task = {
+        "route_id": "bilibili_hot_search",
+        "provider": "bilibili",
+        "name": "热搜",
+        "generated_path": "/bilibili/hot-search",
+        "reasoning": "demo",
+        "cache_hint": "none",
+    }
+
+    dataset = service._fetch_dataset(task, use_cache=True)
+    assert dataset is not None
+    assert len(dataset.items) == 2
+    assert dataset.items[0]["title"].startswith("#1 ")
+    assert dataset.items[0]["link"].startswith("https://search.bilibili.com")
+
+
 # Phase 3: 快速刷新功能测试
 
 

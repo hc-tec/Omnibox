@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import html
+import re
 from typing import Any, Dict, Optional, Sequence
 
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
+from ...dataset_schema import DatasetSchemaDescriptor, DatasetSchemaField
 from ..registry import (
     AdapterBlockPlan,
     AdapterExecutionContext,
@@ -15,6 +18,51 @@ from ..registry import (
 )
 from ..utils import short_text, early_return_if_no_match
 from ..config_presets import list_panel_size_preset
+
+
+HOT_SEARCH_SCHEMA = DatasetSchemaDescriptor(
+    schema_id="bilibili.hot_search.v1",
+    display_name="B站热搜榜",
+    description="标准化后的热搜条目字段",
+    primary_key="id",
+    fields=[
+        DatasetSchemaField(
+            name="id",
+            type="string",
+            description="内部唯一 ID",
+            required=True,
+            sortable=True,
+        ),
+        DatasetSchemaField(
+            name="title",
+            type="string",
+            description="热搜关键词",
+            required=True,
+            filterable=True,
+        ),
+        DatasetSchemaField(
+            name="link",
+            type="string",
+            description="跳转链接",
+        ),
+        DatasetSchemaField(
+            name="summary",
+            type="string",
+            description="热搜关键词摘要/说明",
+        ),
+        DatasetSchemaField(
+            name="published_at",
+            type="datetime",
+            description="发布时间（热搜无时间时为空）",
+        ),
+        DatasetSchemaField(
+            name="image_url",
+            type="string",
+            description="热搜卡片配图",
+        ),
+    ],
+    tags=["hot_search", "bilibili"],
+)
 
 
 HOT_SEARCH_MANIFEST = RouteAdapterManifest(
@@ -33,6 +81,7 @@ HOT_SEARCH_MANIFEST = RouteAdapterManifest(
         )
     ],
     notes="展示 B 站实时热搜榜单，数据来自 /bilibili/hot-search 接口。",
+    schema=HOT_SEARCH_SCHEMA,
 )
 
 
@@ -75,7 +124,8 @@ def bilibili_hot_search_adapter(
 
         keyword = item.get("title") or ""
         link = item.get("url") or ""
-        description = short_text(item.get("description"))
+        summary_text, image_url = _parse_content_html(item.get("content_html"))
+        description = short_text(summary_text or keyword)
 
         normalized.append(
             {
@@ -84,6 +134,7 @@ def bilibili_hot_search_adapter(
                 "link": link,
                 "summary": description or keyword,
                 "published_at": None,  # 热搜没有发布时间
+                "image_url": image_url,
             }
         )
 
@@ -119,3 +170,23 @@ def bilibili_hot_search_adapter(
     stats["total_items"] = len(validated)
 
     return RouteAdapterResult(records=validated, block_plans=[block_plan], stats=stats)
+
+
+def _parse_content_html(content_html: Optional[str]) -> tuple[str, Optional[str]]:
+    """
+    从 content_html 中提取纯文本描述与配图链接。
+    """
+    if not content_html:
+        return "", None
+
+    image_url: Optional[str] = None
+    match = re.search(r'<img[^>]+src="([^"]+)"', content_html)
+    if match:
+        image_url = match.group(1)
+
+    text = content_html.replace("<br/>", " ").replace("<br>", " ")
+    text = re.sub(r"<img[^>]*>", " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = " ".join(text.split())
+    return text, image_url

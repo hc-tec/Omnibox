@@ -302,6 +302,24 @@ export const useResearchViewStore = defineStore("researchView", () => {
     state.value.total_time = null;
   }
 
+  /**
+   * 在缺少研究计划时创建占位计划（用于 Task Graph 阶段消息）
+   */
+  function ensurePlan(reasoning: string) {
+    if (!reasoning) {
+      return;
+    }
+    if (!state.value.plan) {
+      state.value.plan = {
+        reasoning,
+        sub_queries: [],
+        estimated_time: null,
+      };
+    } else {
+      state.value.plan.reasoning = reasoning;
+    }
+  }
+
   return {
     state,
     isActive,
@@ -319,6 +337,7 @@ export const useResearchViewStore = defineStore("researchView", () => {
     handleResearchAnalysis,
     handleResearchComplete,
     handleResearchError,
+    ensurePlan,
     reset,
   };
 });

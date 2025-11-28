@@ -11,6 +11,8 @@ import type {
   ResearchAnalysis,
   ResearchPanel,
   ResearchStep,
+  ResearchStepType,
+  ResearchStepStatus,
 } from "@/store/researchViewStore";
 
 interface ResearchWebSocketOptions {
@@ -27,6 +29,118 @@ interface ResearchWebSocketOptions {
 }
 
 const API_BASE = resolveHttpBase(import.meta.env.VITE_API_BASE, "/api/v1");
+type StreamStageType = "intent" | "rag" | "fetch" | "summary";
+
+interface StageStreamMessage {
+  type: "stage";
+  stage: StreamStageType;
+  message: string;
+  progress?: number;
+  timestamp: string;
+}
+
+interface DataStreamMessage {
+  type: "data";
+  stage?: string;
+  data?: Record<string, any>;
+  timestamp: string;
+}
+
+interface GraphNodeStreamMessage {
+  type: "graph_node";
+  node_id: string;
+  node_type: string;
+  status: "pending" | "running" | "success" | "error" | "skipped";
+  description?: string;
+  input_refs?: string[];
+  summary?: Record<string, any>;
+  error?: string;
+  timestamp: string;
+  stream_id: string;
+}
+
+interface CompleteStreamMessage {
+  type: "complete";
+  success: boolean;
+  message: string;
+  total_time?: number;
+  timestamp: string;
+  stream_id: string;
+}
+
+interface ErrorStreamMessage {
+  type: "error";
+  error_code: string;
+  error_message: string;
+  timestamp: string;
+  stream_id: string;
+}
+
+interface LLMCallStreamMessage {
+  type: "llm_call";
+  call_id: string;
+  role: string;
+  status: "started" | "completed" | "failed";
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_preview?: string;
+  response_preview?: string;
+  model?: string;
+  timestamp: string;
+}
+
+const STAGE_STEP_META: Record<StreamStageType, { stepType: ResearchStepType; label: string }> = {
+  intent: { stepType: "planning", label: "识别查询意图" },
+  rag: { stepType: "data_fetch", label: "检索候选数据源" },
+  fetch: { stepType: "data_fetch", label: "获取数据并执行工具" },
+  summary: { stepType: "analysis", label: "生成总结与洞察" },
+};
+
+const STAGE_PROGRESS_HINT: Record<StreamStageType, number> = {
+  intent: 15,
+  rag: 35,
+  fetch: 65,
+  summary: 90,
+};
+
+const NODE_TYPE_META: Record<string, { stepType: ResearchStepType; label: string }> = {
+  router: { stepType: "planning", label: "路由判定" },
+  research_agent: { stepType: "analysis", label: "Research Agent 推理" },
+  simple_chat: { stepType: "analysis", label: "简单回答" },
+  tool_executor: { stepType: "data_fetch", label: "执行工具" },
+  data_stasher: { stepType: "data_fetch", label: "数据暂存与摘要" },
+  wait_for_human: { stepType: "analysis", label: "等待人工输入" },
+};
+
+const LLM_ROLE_META: Record<string, { stepType: ResearchStepType; label: string }> = {
+  router: { stepType: "planning", label: "Router 决策" },
+  planner: { stepType: "planning", label: "Planner 规划" },
+  reflector: { stepType: "analysis", label: "Reflector 反思" },
+  synthesizer: { stepType: "analysis", label: "Synthesizer 总结" },
+  research_agent: { stepType: "analysis", label: "Research Agent 推理" },
+  tool_executor: { stepType: "data_fetch", label: "Tool Executor 调度" },
+  data_stasher: { stepType: "data_fetch", label: "DataStasher 摘要" },
+  entity_resolver: { stepType: "planning", label: "实体解析" },
+  query_parser: { stepType: "planning", label: "查询解析" },
+  other: { stepType: "analysis", label: "LLM 调用" },
+};
+
+const GRAPH_STATUS_MAP: Record<string, ResearchStepStatus> = {
+  pending: "pending",
+  running: "processing",
+  success: "success",
+  error: "error",
+  skipped: "success",
+};
+
+function isKnownStage(stage: unknown): stage is StreamStageType {
+  return stage === "intent" || stage === "rag" || stage === "fetch" || stage === "summary";
+}
+
+function mapGraphNodeStatus(status: string): ResearchStepStatus {
+  return GRAPH_STATUS_MAP[status] ?? "processing";
+}
 
 export function useResearchWebSocket(options: ResearchWebSocketOptions) {
 const {
@@ -53,6 +167,234 @@ const wsBaseUrl = ref(
   resolveWsBase(url ?? envWsBase, "/api/v1/chat/stream", API_BASE)
 );
   let reconnectTimer: number | null = null;
+  let activeStageStep: ResearchStep | null = null;
+
+  function finalizeActiveStage(status: ResearchStepStatus, timestamp: string) {
+    if (!activeStageStep) return;
+    const updatedStep: ResearchStep = {
+      ...activeStageStep,
+      status,
+      timestamp,
+    };
+    viewStore.handleResearchStep(updatedStep);
+    if (status !== "processing") {
+      activeStageStep = null;
+    } else {
+      activeStageStep = updatedStep;
+    }
+  }
+
+  function beginStageStep(message: StageStreamMessage) {
+    const meta = STAGE_STEP_META[message.stage];
+    const newStep: ResearchStep = {
+      step_id: `stage-${message.stage}`,
+      step_type: meta.stepType,
+      action: message.message || meta.label,
+      status: "processing",
+      details: {
+        stage: message.stage,
+        progress: message.progress ?? null,
+      },
+      timestamp: message.timestamp,
+    };
+    activeStageStep = newStep;
+    viewStore.handleResearchStep(newStep);
+    viewStore.ensurePlan(meta.label);
+  }
+
+  function handleStageStreamMessage(message: StageStreamMessage) {
+    if (!isKnownStage(message.stage)) {
+      return;
+    }
+
+    const stageId = `stage-${message.stage}`;
+    if (activeStageStep && activeStageStep.step_id !== stageId) {
+      finalizeActiveStage("success", message.timestamp);
+    }
+
+    if (activeStageStep && activeStageStep.step_id === stageId) {
+      activeStageStep = {
+        ...activeStageStep,
+        action: message.message || activeStageStep.action,
+        details: {
+          ...(activeStageStep.details || {}),
+          stage: message.stage,
+          progress: message.progress ?? activeStageStep.details?.progress,
+        },
+        status: "processing",
+        timestamp: message.timestamp,
+      };
+      viewStore.handleResearchStep(activeStageStep);
+      return;
+    }
+
+    beginStageStep(message);
+  }
+
+  function updateStageDetails(stage: StreamStageType, details: Record<string, any>, timestamp: string) {
+    const stageId = `stage-${stage}`;
+    if (activeStageStep && activeStageStep.step_id === stageId) {
+      activeStageStep = {
+        ...activeStageStep,
+        details: {
+          ...(activeStageStep.details || {}),
+          ...details,
+        },
+        timestamp,
+      };
+      viewStore.handleResearchStep(activeStageStep);
+      return;
+    }
+
+    const meta = STAGE_STEP_META[stage];
+    const newStep: ResearchStep = {
+      step_id: stageId,
+      step_type: meta.stepType,
+      action: meta.label,
+      status: "processing",
+      details,
+      timestamp,
+    };
+    activeStageStep = newStep;
+    viewStore.handleResearchStep(newStep);
+    viewStore.ensurePlan(meta.label);
+  }
+
+  function handleGraphNodeEvent(message: GraphNodeStreamMessage) {
+    const meta = NODE_TYPE_META[message.node_type] ?? { stepType: "analysis" as ResearchStepType, label: message.node_type };
+    const nodeStep: ResearchStep = {
+      step_id: `node-${message.node_id}`,
+      step_type: meta.stepType,
+      action: message.description || meta.label,
+      status: mapGraphNodeStatus(message.status),
+      details: {
+        summary: message.summary,
+        error: message.error,
+      },
+      timestamp: message.timestamp,
+    };
+    viewStore.handleResearchStep(nodeStep);
+  }
+
+  function pushSummaryArtifacts(message: DataStreamMessage) {
+    const summaryData = message.data || {};
+    const payload = summaryData.data;
+    if (payload) {
+      viewStore.handleResearchPanel({
+        step_id: `summary-${Date.now()}`,
+        step_index: undefined,
+        source_query: summaryData.metadata?.query || store.state.query || "研究结果",
+        panel_payload: payload,
+        data_blocks: summaryData.data_blocks ?? {},
+        timestamp: message.timestamp,
+      } as ResearchPanel);
+    }
+
+    const summaryText = summaryData.summary || summaryData.message || summaryData.metadata?.summary;
+    if (summaryText) {
+      viewStore.handleResearchAnalysis({
+        step_id: `summary-analysis-${Date.now()}`,
+        analysis_text: summaryText,
+        is_complete: true,
+        timestamp: message.timestamp,
+      } as ResearchAnalysis);
+    }
+  }
+
+  function handleTaskGraphData(message: DataStreamMessage) {
+    if (message.stage && isKnownStage(message.stage)) {
+      if (message.stage === "summary") {
+        const summaryDetails = {
+          success: message.data?.success,
+          message: message.data?.message,
+          block_count: Array.isArray(message.data?.data?.blocks)
+            ? message.data.data.blocks.length
+            : undefined,
+        };
+        updateStageDetails("summary", summaryDetails, message.timestamp);
+        pushSummaryArtifacts(message);
+      } else {
+        updateStageDetails(message.stage, message.data || {}, message.timestamp);
+      }
+      return;
+    }
+
+    if (message.stage === "summary") {
+      pushSummaryArtifacts(message);
+    }
+  }
+
+  function handleLLMCallEvent(message: LLMCallStreamMessage) {
+    const meta = LLM_ROLE_META[message.role] ?? LLM_ROLE_META.other;
+    const statusMap: Record<string, ResearchStepStatus> = {
+      started: "processing",
+      completed: "success",
+      failed: "error",
+    };
+    const llmStep: ResearchStep = {
+      step_id: `llm-${message.call_id}`,
+      step_type: meta.stepType,
+      action: meta.label,
+      status: statusMap[message.status] ?? "processing",
+      details: {
+        role: message.role,
+        prompt_tokens: message.prompt_tokens,
+        completion_tokens: message.completion_tokens,
+        total_tokens: message.total_tokens,
+        prompt_preview: message.prompt_preview,
+        response_preview: message.response_preview,
+        model: message.model,
+      },
+      timestamp: message.timestamp,
+    };
+    viewStore.handleResearchStep(llmStep);
+  }
+
+  function handleCompleteMessage(message: CompleteStreamMessage) {
+    finalizeActiveStage(message.success ? "success" : "error", message.timestamp);
+    viewStore.handleResearchComplete({
+      success: message.success,
+      total_time: message.total_time ?? 0,
+      message: message.message,
+      summary: message.message,
+    });
+
+    const taskIdentifier = currentTaskId.value;
+    if (taskIdentifier) {
+      const workspaceCard = workspaceStore.getCard(taskIdentifier);
+      if (workspaceCard && workspaceCard.mode === "research") {
+        if (message.success) {
+          workspaceStore.updateCardStatus(taskIdentifier, "completed", {
+            current_step: "研究完成",
+            progress: 100,
+          });
+        } else {
+          workspaceStore.updateCardStatus(taskIdentifier, "error", {
+            error_message: message.message,
+          });
+        }
+      }
+    }
+  }
+
+  function handleErrorMessage(message: ErrorStreamMessage) {
+    finalizeActiveStage("error", message.timestamp);
+    viewStore.handleResearchError({
+      error_code: message.error_code,
+      error_message: message.error_message,
+    });
+    error.value = message.error_message;
+
+    const taskIdentifier = currentTaskId.value;
+    if (taskIdentifier) {
+      const workspaceCard = workspaceStore.getCard(taskIdentifier);
+      if (workspaceCard && workspaceCard.mode === "research") {
+        workspaceStore.updateCardStatus(taskIdentifier, "error", {
+          error_message: `[${message.error_code}] ${message.error_message}`,
+        });
+      }
+    }
+  }
 
   function buildWebSocketUrl(): string {
     const base = wsBaseUrl.value;
@@ -150,6 +492,24 @@ const wsBaseUrl = ref(
     try {
       const message = JSON.parse(event.data as string);
       switch (message.type) {
+        case "stage":
+          handleStageStreamMessage(message as StageStreamMessage);
+          break;
+        case "data":
+          handleTaskGraphData(message as DataStreamMessage);
+          break;
+        case "graph_node":
+          handleGraphNodeEvent(message as GraphNodeStreamMessage);
+          break;
+        case "llm_call":
+          handleLLMCallEvent(message as LLMCallStreamMessage);
+          break;
+        case "complete":
+          handleCompleteMessage(message as CompleteStreamMessage);
+          break;
+        case "error":
+          handleErrorMessage(message as ErrorStreamMessage);
+          break;
         case "research_start":
           viewStore.handleResearchStart({
             plan: message.plan,
@@ -202,6 +562,7 @@ const wsBaseUrl = ref(
           } as ResearchAnalysis);
           break;
         case "research_complete":
+          finalizeActiveStage(message.success ? "success" : "error", message.timestamp);
           viewStore.handleResearchComplete({
             success: message.success,
             total_time: message.total_time,
@@ -233,6 +594,7 @@ const wsBaseUrl = ref(
           }
           break;
         case "research_error":
+          finalizeActiveStage("error", message.timestamp);
           viewStore.handleResearchError({
             error_code: message.error_code,
             error_message: message.error_message,
@@ -290,6 +652,68 @@ const wsBaseUrl = ref(
   function syncResearchTaskWithMessage(message: any) {
     const taskIdentifier = currentTaskId.value;
     if (!taskIdentifier) return;
+
+    if (message.type === "stage" && isKnownStage(message.stage)) {
+      const query = viewStore.state.query || message.message || "";
+      researchTaskStore.ensureTask(taskIdentifier, query);
+      researchTaskStore.markTaskProcessing(taskIdentifier);
+      researchTaskStore.updateTaskStep(taskIdentifier, {
+        step_id: `stage-${message.stage}`,
+        action: message.message,
+        status: "processing",
+        timestamp: message.timestamp,
+      });
+      const progressHint = STAGE_PROGRESS_HINT[message.stage];
+      if (typeof progressHint === "number") {
+        const workspaceCard = workspaceStore.getCard(taskIdentifier);
+        if (workspaceCard && workspaceCard.mode === "research") {
+          workspaceStore.updateCardProgress(
+            taskIdentifier,
+            progressHint,
+            message.message || "研究进行中"
+          );
+        }
+      }
+      return;
+    }
+
+    if (message.type === "graph_node") {
+      researchTaskStore.updateTaskStep(taskIdentifier, {
+        step_id: `node-${message.node_id}`,
+        action: message.description || message.node_id,
+        status: mapGraphNodeStatus(message.status),
+        timestamp: message.timestamp,
+      });
+      return;
+    }
+
+    if (message.type === "data" && message.stage === "summary" && message.data?.data) {
+      researchTaskStore.appendPreview(taskIdentifier, {
+        previews: [
+          {
+            title: message.data.metadata?.query || store.state.query || "研究结果",
+            items: buildPreviewItems(message.data.data),
+            generated_path: message.data.data?.layout?.mode,
+            source: message.data.metadata?.source,
+          },
+        ],
+      });
+      return;
+    }
+
+    if (message.type === "complete") {
+      researchTaskStore.completeTask(taskIdentifier, message.message, {
+        task_id: taskIdentifier,
+        total_time: message.total_time,
+        success: message.success,
+      } as any);
+      return;
+    }
+
+    if (message.type === "error") {
+      researchTaskStore.setTaskError(taskIdentifier, message.error_message);
+      return;
+    }
 
     if (message.type === "research_start") {
       const query = viewStore.state.query || message.query || "";

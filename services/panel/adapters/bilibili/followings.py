@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Sequence
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
+from ...dataset_schema import DatasetSchemaDescriptor, DatasetSchemaField
 from ..registry import (
     AdapterBlockPlan,
     AdapterExecutionContext,
@@ -18,6 +19,23 @@ from ..utils import safe_int, short_text, early_return_if_no_match
 
 _FOLLOWER_COUNT_KEYS = ("count", "total", "follower_count", "total_followings")
 _COUNT_PATTERN = re.compile(r"总计(\d+)")
+
+
+FOLLOWINGS_SCHEMA = DatasetSchemaDescriptor(
+    schema_id="bilibili.followings.v1",
+    display_name="B站关注动态",
+    description="UP 主关注列表条目字段",
+    primary_key="id",
+    time_field="published_at",
+    fields=[
+        DatasetSchemaField(name="id", type="string", description="唯一条目 ID", required=True, sortable=True),
+        DatasetSchemaField(name="title", type="string", description="标题/提示", required=True),
+        DatasetSchemaField(name="link", type="string", description="用户主页链接"),
+        DatasetSchemaField(name="summary", type="string", description="签名/备注"),
+        DatasetSchemaField(name="published_at", type="datetime", description="关注时间"),
+    ],
+    tags=["bilibili", "social"],
+)
 
 
 FOLLOWINGS_MANIFEST = RouteAdapterManifest(
@@ -38,6 +56,7 @@ FOLLOWINGS_MANIFEST = RouteAdapterManifest(
         )
     ],
     notes="使用 RSSHub /bilibili/user/followings 接口，提取关注动态。",
+    schema=FOLLOWINGS_SCHEMA,
 )
 
 

@@ -196,7 +196,7 @@ class DataExecutor:
 
                 return FetchResult(
                     status="success",
-                    items=[payload],
+                    items=self._extract_items_from_payload(payload),
                     source=source,
                     feed_title=feed_title,
                     feed_link=feed_link,
@@ -298,6 +298,20 @@ class DataExecutor:
         ]
         params.append(("format", "json"))
         return params
+
+    @staticmethod
+    def _extract_items_from_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        从 RSSHub payload 中提取条目列表。
+        """
+        if not payload or not isinstance(payload, dict):
+            return []
+        items = payload.get("items") or payload.get("item") or []
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
 
     def close(self):
         """关闭HTTP客户端，释放资源"""

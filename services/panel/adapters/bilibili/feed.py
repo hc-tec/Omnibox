@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Sequence
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
+from ...dataset_schema import DatasetSchemaDescriptor, DatasetSchemaField
 from ..registry import (
     AdapterBlockPlan,
     AdapterExecutionContext,
@@ -14,6 +15,25 @@ from ..registry import (
     route_adapter,
 )
 from ..utils import ensure_list, short_text, early_return_if_no_match
+
+
+FEED_SCHEMA = DatasetSchemaDescriptor(
+    schema_id="bilibili.generic_feed.v1",
+    display_name="B站投稿/动态",
+    description="通用 B 站内容 feed 字段",
+    primary_key="id",
+    time_field="published_at",
+    fields=[
+        DatasetSchemaField(name="id", type="string", description="唯一 ID", required=True, sortable=True),
+        DatasetSchemaField(name="title", type="string", description="条目标题", required=True, filterable=True),
+        DatasetSchemaField(name="link", type="string", description="跳转链接", required=True),
+        DatasetSchemaField(name="summary", type="string", description="摘要/内容预览"),
+        DatasetSchemaField(name="published_at", type="datetime", description="发布时间", sortable=True),
+        DatasetSchemaField(name="author", type="string", description="作者"),
+        DatasetSchemaField(name="categories", type="array", description="分类/标签"),
+    ],
+    tags=["bilibili", "feed"],
+)
 
 
 FEED_MANIFEST = RouteAdapterManifest(
@@ -33,6 +53,7 @@ FEED_MANIFEST = RouteAdapterManifest(
         )
     ],
     notes="适用于 B 站用户投稿、动态等内容型数据。",
+    schema=FEED_SCHEMA,
 )
 
 

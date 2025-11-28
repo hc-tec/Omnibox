@@ -83,6 +83,7 @@ def bilibili_followings_adapter(
 ```
 
 - **Manifest（路由能力描述）**：列出适配器可产出的组件、成本、默认是否启用、依赖提示等，供 Planner 快速评估。  
+- **Schema 契约**：Manifest 的 `schema` 字段必须引用 `DatasetSchemaDescriptor`（见 `services/panel/dataset_schema.py`），用以声明字段名称、类型、是否可筛选/聚合等元数据，便于 LangGraph/LLM 在后续处理时准确理解结构。新增字段或语义变更时应 bump `schema_id` 并更新文档。  
 - `route_adapter` 支持注册多个前缀，内部会按最长前缀匹配；同一路由可多次注册以覆盖旧实现。  
 - 适配器代码必须按数据域拆分，例如 `services/panel/adapters/bilibili/`、`.../github.py`，便于维护。
 
@@ -184,4 +185,19 @@ def bilibili_followings_adapter(
 - `stats` 必须包含 `total_items`、`api_endpoint`，推荐统一注入 `sample_titles`（示例标题）以及 `metrics`（统一格式的指标字典），方便 Planner 与前端消费。
 - Planner 决策会输出 `PlannerDecision(components, reasons)`，ChatService 会把 `requested_components` 与 `planner_reasons` 写入 metadata，便于排查“为何某组件被选/被跳过”。
 - 当 `requested_components` 与适配器支持列表不重合时，应调用 `early_return_if_no_match` 提前结束，PanelGenerator 会在 debug 中记录 `skipped=True`。
+
+## 10. 数据 Schema 与画像（Dataset Schema & Profiler）
+
+- **Schema 描述符**：复用 `services/panel/dataset_schema.py` 中的 `DatasetSchemaDescriptor`/`DatasetSchemaField`，每个适配器都必须定义或引用一个 schema，并在 Manifest 中设置 `schema=...`。字段应说明 `type`、业务含义、是否 `filterable`/`aggregatable`/`sortable` 等。  
+- **自动画像**：DataQueryService 调用 `services/panel/dataset_profiler.py` 的 `build_dataset_profile()`，在不暴露 `items` 原始记录的前提下生成 `non_null_ratio`、数值范围、文本长度、distinct 估算等统计信息；结果会随 `QueryDataset.profile` 下发。  
+- **LangGraph 工具消费方式**：
+  - `fetch_public_data` 的 `raw_output["datasets"]` 包含 schema、画像、可用组件、适配器备注，Planner/Reflector 应基于这些元数据决定后续 filter/aggregate/python 操作。
+  - 新增的 `inspect_dataset` 工具（见 `langgraph_agents/tools/dataset_inspector.py`）允许在 DataStasher 阶段读取 `data_id` 对应的 schema/profile，而无需将原始数据传给 LLM。  
+- **开发要求**：新增 adapter 时，完成以下动作即可让 LangGraph 拥有完善的结构信息：
+  1. 在 adapter 文件中定义 `DatasetSchemaDescriptor`（或复用已有 schema），命名建议遵循 `<provider>.<route>.vX`。
+  2. Manifest `schema` 指向该描述符，并在 `notes` 中补充字段语义/单位/枚举等约束。
+  3. 若 schema 更新需兼容旧数据，请保留旧 `schema_id` 并在 `services/panel/dataset_profiler.py`/测试中同步调整。
+  4. 测试可参考 `tests/services/test_dataset_profiler.py`、`tests/langgraph_agents/tools/test_dataset_inspector.py`，验证 schema/画像通过性。
+
+> 通过显式 Schema + 画像机制，LangGraph 可以安全地组合 `filter_data`、`aggregate_data`、`python_executor` 等高级工具，而无需让 LLM 接触原始 payload，彻底解决“数据结构未知导致无法处理”的痛点。
 

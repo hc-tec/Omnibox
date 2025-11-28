@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from api.schemas.panel import LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
+from ..dataset_schema import DatasetSchemaDescriptor, DatasetSchemaField
 from .registry import (
     AdapterBlockPlan,
     AdapterExecutionContext,
@@ -14,6 +15,31 @@ from .registry import (
     route_adapter,
 )
 from .utils import safe_int, short_text, early_return_if_no_match, should_skip_component
+
+
+TRENDING_SCHEMA = DatasetSchemaDescriptor(
+    schema_id="github.trending.v1",
+    display_name="GitHub Trending",
+    description="GitHub Trending 榜单字段",
+    primary_key="id",
+    time_field="published_at",
+    fields=[
+        DatasetSchemaField(name="id", type="string", description="仓库唯一 ID", required=True, sortable=True),
+        DatasetSchemaField(name="title", type="string", description="项目名称", required=True, filterable=True),
+        DatasetSchemaField(name="link", type="string", description="仓库链接", required=True),
+        DatasetSchemaField(name="summary", type="string", description="简介"),
+        DatasetSchemaField(name="published_at", type="datetime", description="更新时间"),
+        DatasetSchemaField(name="language", type="string", description="主要语言", filterable=True),
+        DatasetSchemaField(name="stars", type="number", description="Star 总数", aggregatable=True, sortable=True),
+        DatasetSchemaField(name="stars_today", type="number", description="今日 Star"),
+        DatasetSchemaField(name="forks", type="number", description="Fork 数"),
+        DatasetSchemaField(name="rank", type="integer", description="榜单排名", sortable=True),
+        DatasetSchemaField(name="x", type="number", description="图表 X 轴（排名）"),
+        DatasetSchemaField(name="y", type="number", description="图表 Y 轴（Star）"),
+        DatasetSchemaField(name="series", type="string", description="图表分组（语言）"),
+    ],
+    tags=["github", "trending", "developer"],
+)
 
 
 GITHUB_TRENDING_MANIFEST = RouteAdapterManifest(
@@ -34,6 +60,7 @@ GITHUB_TRENDING_MANIFEST = RouteAdapterManifest(
         ),
     ],
     notes="基于 /github/trending，可覆盖 day/week/month 榜单。",
+    schema=TRENDING_SCHEMA,
 )
 
 

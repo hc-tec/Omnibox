@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from uuid import uuid4
 
 from query_processor.llm_client import LLMClient
 from services.data_query_service import DataQueryService, DataQueryResult
@@ -132,7 +133,8 @@ class SyncLangGraphExecutor:
             initial_state["working_memory"]["filter_datasource"] = filter_datasource
 
         # 配置
-        config = {"configurable": {"thread_id": thread_id or "default"}}
+        normalized_thread_id = thread_id or f"sync-{uuid4().hex}"
+        config = {"configurable": {"thread_id": normalized_thread_id}}
 
         logger.info("开始执行 LangGraph 工作流: %s", user_query[:50])
 

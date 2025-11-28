@@ -470,6 +470,8 @@ class LLMCallMessage(StreamMessage):
         "planner",
         "reflector",
         "synthesizer",
+        "research_agent",
+        "tool_executor",
         "data_stasher",
         "entity_resolver",
         "query_parser",

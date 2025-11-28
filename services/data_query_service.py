@@ -7,11 +7,15 @@ from __future__ import annotations
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple
+import json
 from dataclasses import dataclass, field
 
 from orchestrator.rag_in_action import RAGInAction
 from integration.data_executor import DataExecutor, FetchResult
 from integration.cache_service import CacheService, get_cache_service
+from api.schemas.panel import SourceInfo
+from services.panel.adapters import get_route_manifest, get_route_adapter
+from services.panel.dataset_profiler import build_dataset_profile
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +51,32 @@ class QueryDataset:
     cache_hit: str = "none"
     reasoning: str = ""
     payload: Optional[Dict[str, Any]] = None
+    available_components: List[Dict[str, Any]] = field(default_factory=list)
+    schema_id: Optional[str] = None
+    schema: Optional[Dict[str, Any]] = None
+    profile: Optional[Dict[str, Any]] = None
+    adapter_notes: Optional[str] = None
+
+    def to_metadata(self) -> Dict[str, Any]:
+        """提取安全的元数据供 LLM / 前端使用。"""
+        base = {
+            "route": self.generated_path,
+            "generated_path": self.generated_path,
+            "route_id": self.route_id,
+            "provider": self.provider,
+            "name": self.name,
+            "feed_title": self.feed_title,
+            "source": self.source,
+            "cache_hit": self.cache_hit,
+            "reasoning": self.reasoning,
+            "schema_id": self.schema_id,
+            "schema": self.schema,
+            "profile": self.profile,
+            "available_components": self.available_components,
+            "adapter_notes": self.adapter_notes,
+        }
+        # 移除 None / 空列表，保持 payload 精简
+        return {key: value for key, value in base.items() if value not in (None, [], {})}
 
 
 @dataclass
@@ -468,18 +498,31 @@ class DataQueryService:
             )
             return None
 
-        return QueryDataset(
+        manifest = self._resolve_manifest_for_task(task.get("route_id"), generated_path)
+        schema_descriptor = manifest.schema if manifest and manifest.schema else None
+        schema_meta = schema_descriptor.to_metadata() if schema_descriptor else None
+        profile = self._build_dataset_profile(fetch_result.payload, schema_descriptor)
+        normalized_items = self._normalize_dataset_items(task, fetch_result, generated_path)
+
+        dataset = QueryDataset(
             route_id=task.get("route_id"),
             provider=task.get("provider"),
             name=task.get("name"),
             generated_path=generated_path,
-            items=fetch_result.items,
+            items=normalized_items,
             feed_title=fetch_result.feed_title,
             source=fetch_result.source,
             cache_hit=cache_state,
             reasoning=task.get("reasoning", "成功获取数据"),
             payload=fetch_result.payload,
+            available_components=self._manifest_components_metadata(manifest),
+            schema_id=schema_descriptor.schema_id if schema_descriptor else None,
+            schema=schema_meta,
+            profile=profile,
+            adapter_notes=manifest.notes if manifest else None,
         )
+        self._log_dataset_sample(generated_path, normalized_items)
+        return dataset
 
     def _fetch_rss_payload(
         self,
@@ -500,3 +543,117 @@ class DataQueryService:
             self.cache.set_rss_cache(generated_path, fetch_result)
 
         return fetch_result, cache_hint
+
+    def _resolve_manifest_for_task(
+        self,
+        route_id: Optional[str],
+        generated_path: Optional[str],
+    ):
+        candidate = route_id or generated_path or ""
+        if not candidate:
+            return None
+        manifest = get_route_manifest(candidate)
+        if manifest:
+            return manifest
+        normalized = self._sanitize_generated_path(candidate)
+        if normalized and normalized != candidate:
+            return get_route_manifest(normalized)
+        return None
+
+    @staticmethod
+    def _manifest_components_metadata(manifest) -> List[Dict[str, Any]]:
+        if manifest is None:
+            return []
+        payload: List[Dict[str, Any]] = []
+        for entry in manifest.components:
+            payload.append(
+                {
+                    "component_id": entry.component_id,
+                    "description": entry.description,
+                    "cost": entry.cost,
+                    "required": entry.required,
+                    "default_selected": entry.default_selected,
+                    "hints": entry.hints,
+                    "field_requirements": entry.field_requirements,
+                }
+            )
+        return payload
+
+    def _build_dataset_profile(
+        self,
+        payload: Optional[Dict[str, Any]],
+        schema_descriptor,
+    ) -> Optional[Dict[str, Any]]:
+        records = self._extract_payload_records(payload)
+        if not records:
+            return None
+        profile = build_dataset_profile(records, schema=schema_descriptor)
+        if profile.get("sampled_count", 0) == 0:
+            return None
+        return profile
+
+    @staticmethod
+    def _extract_payload_records(payload: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not payload or not isinstance(payload, dict):
+            return []
+        items = payload.get("items") or payload.get("item") or []
+        if isinstance(items, dict):
+            items = [items]
+        return [item for item in items if isinstance(item, dict)]
+
+    def _normalize_dataset_items(
+        self,
+        task: Dict[str, Any],
+        fetch_result: FetchResult,
+        generated_path: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        使用面板适配器将 payload 转换为结构化记录，供 LangGraph/工具层直接使用。
+        """
+        payload = fetch_result.payload or {}
+        route_candidate = generated_path or task.get("route_id") or ""
+
+        if not route_candidate:
+            return list(fetch_result.items or [])
+
+        source_info = SourceInfo(
+            datasource=task.get("provider") or fetch_result.source or "rsshub",
+            route=route_candidate,
+            params={},
+            fetched_at=fetch_result.fetched_at,
+            request_id=None,
+        )
+
+        adapter = get_route_adapter(route_candidate)
+        try:
+            adapter_result = adapter(source_info, [payload])
+            if adapter_result.records:
+                return adapter_result.records
+        except Exception as exc:
+            logger.warning(
+                "适配器转换失败: route=%s, error=%s",
+                route_candidate,
+                exc,
+                exc_info=True,
+            )
+
+        fallback = self._extract_payload_records(payload)
+        if fallback:
+            self._log_dataset_sample(route_candidate, fallback)
+            return fallback
+        return list(fetch_result.items or [])
+
+    def _log_dataset_sample(self, route: Optional[str], records: List[Dict[str, Any]]) -> None:
+        if not records:
+            return
+        sample = records[: min(len(records), 3)]
+        try:
+            preview = json.dumps(sample, ensure_ascii=False)
+        except TypeError:
+            preview = str(sample)
+        logger.info(
+            "数据集样例(route=%s, total=%d): %s",
+            route,
+            len(records),
+            preview,
+        )

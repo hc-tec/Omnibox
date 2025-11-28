@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Sequence
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
+from ..dataset_schema import DatasetSchemaDescriptor, DatasetSchemaField
 from .registry import (
     AdapterBlockPlan,
     AdapterExecutionContext,
@@ -14,6 +15,23 @@ from .registry import (
     route_adapter,
 )
 from .utils import short_text, early_return_if_no_match
+
+
+GENERIC_LIST_SCHEMA = DatasetSchemaDescriptor(
+    schema_id="generic.list_panel.v1",
+    display_name="通用列表数据",
+    description="标题/链接/摘要/时间结构",
+    primary_key="id",
+    time_field="published_at",
+    fields=[
+        DatasetSchemaField(name="id", type="string", description="唯一 ID", required=True, sortable=True),
+        DatasetSchemaField(name="title", type="string", description="标题", required=True, filterable=True),
+        DatasetSchemaField(name="link", type="string", description="原文链接"),
+        DatasetSchemaField(name="summary", type="string", description="简短摘要"),
+        DatasetSchemaField(name="published_at", type="datetime", description="发布时间", sortable=True),
+    ],
+    tags=["rss", "list"],
+)
 
 
 GENERIC_LIST_MANIFEST = RouteAdapterManifest(
@@ -27,6 +45,7 @@ GENERIC_LIST_MANIFEST = RouteAdapterManifest(
         )
     ],
     notes="适用于结构稳定但暂未深度定制的 RSS 路由。",
+    schema=GENERIC_LIST_SCHEMA,
 )
 
 

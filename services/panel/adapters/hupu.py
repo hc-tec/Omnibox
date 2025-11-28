@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Sequence
 from api.schemas.panel import ComponentInteraction, LayoutHint, SourceInfo
 
 from services.panel.view_models import validate_records
+from ..dataset_schema import DatasetSchemaDescriptor, DatasetSchemaField
 from .registry import (
     AdapterBlockPlan,
     AdapterExecutionContext,
@@ -14,6 +15,24 @@ from .registry import (
     route_adapter,
 )
 from .utils import short_text, first_author, early_return_if_no_match
+
+
+HUPU_SCHEMA = DatasetSchemaDescriptor(
+    schema_id="hupu.thread_list.v1",
+    display_name="虎扑帖子",
+    description="虎扑帖子列表标准字段",
+    primary_key="id",
+    time_field="published_at",
+    fields=[
+        DatasetSchemaField(name="id", type="string", description="帖子唯一 ID", required=True, sortable=True),
+        DatasetSchemaField(name="title", type="string", description="帖子标题", required=True, filterable=True),
+        DatasetSchemaField(name="link", type="string", description="帖子链接", required=True),
+        DatasetSchemaField(name="summary", type="string", description="内容摘要"),
+        DatasetSchemaField(name="published_at", type="datetime", description="发布时间", sortable=True),
+        DatasetSchemaField(name="author", type="string", description="作者"),
+    ],
+    tags=["hupu", "forum"],
+)
 
 
 HUPU_MANIFEST = RouteAdapterManifest(
@@ -27,6 +46,7 @@ HUPU_MANIFEST = RouteAdapterManifest(
         )
     ],
     notes="适用于虎扑社区帖子聚合路由，例如 /hupu/bbs/bxj/1。",
+    schema=HUPU_SCHEMA,
 )
 
 

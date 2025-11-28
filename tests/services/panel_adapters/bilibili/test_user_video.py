@@ -5,40 +5,7 @@
 import services.panel.adapters as adapters
 from api.schemas.panel import SourceInfo
 
-
-BILIBILI_USER_VIDEO_SAMPLE = {
-    "title": "某UP主 的 bilibili 空间",
-    "link": "https://space.bilibili.com/2267573",
-    "description": "某UP主 的 bilibili 空间",
-    "author": "某UP主",
-    "image": "https://i2.hdslb.com/bfs/face/example.jpg",
-    "item": [
-        {
-            "title": "【教程】如何使用Python",
-            "description": '<img src="https://i2.hdslb.com/bfs/archive/cover1.jpg"><br>这是一个Python教程视频<br>播放 10.5万 · 弹幕 234',
-            "link": "https://www.bilibili.com/video/BV1xx411c7mD",
-            "pubDate": "2024-01-15T10:30:00Z",
-            "author": "某UP主",
-            "comments": 156,
-        },
-        {
-            "title": "【技术分享】Vue3最佳实践",
-            "description": '<img src="https://i2.hdslb.com/bfs/archive/cover2.jpg"><br>Vue3开发经验分享<br>播放 8.3万 · 弹幕 189',
-            "link": "https://www.bilibili.com/video/BV1yy4y1B7XX",
-            "pubDate": "2024-01-12T14:20:00Z",
-            "author": "某UP主",
-            "comments": 234,
-        },
-        {
-            "title": "【编程日常】Vlog #1",
-            "description": '<img src="https://i2.hdslb.com/bfs/archive/cover3.jpg"><br>记录我的编程日常<br>播放 5.2万 · 弹幕 98',
-            "link": "https://www.bilibili.com/video/BV1zz4y1B7AA",
-            "pubDate": "2024-01-10T09:15:00Z",
-            "author": "某UP主",
-            "comments": 89,
-        },
-    ],
-}
+from .sample_payloads import BILIBILI_USER_VIDEO_SAMPLE
 
 
 def test_bilibili_user_video_adapter():
@@ -55,19 +22,25 @@ def test_bilibili_user_video_adapter():
     result = adapter(source_info, [BILIBILI_USER_VIDEO_SAMPLE])
 
     # 验证返回的记录
-    assert len(result.records) == 3
+    assert len(result.records) == 2
     first = result.records[0]
-    assert first["title"] == "【教程】如何使用Python"
-    assert first["link"] == "https://www.bilibili.com/video/BV1xx411c7mD"
-    assert first["author"] == "某UP主"
-    assert first["published_at"] == "2024-01-15T10:30:00Z"
+    assert first["title"].startswith("英雄联盟总决赛")
+    assert first["link"] == "https://www.bilibili.com/video/BV1uDCrBkEiw"
+    assert first["author"] == "影视飓风"
+    assert first["published_at"] == "2025-11-18T03:00:00.000Z"
+    assert first["player_url"].startswith("https://www.bilibili.com/blackboard/newplayer.html")
+    assert first["duration"] == "13:03"
+    assert "字幕 - 日本語" in first["badges"]
 
     # 验证统计信息
     assert result.stats["datasource"] == "rsshub"
-    assert result.stats["total_items"] == 3
-    # up_name 和 up_face 是可选的统计信息
-    if "up_name" in result.stats:
-        assert result.stats["up_name"] == "某UP主"
+    assert result.stats["total_items"] == 2
+    assert result.stats["profile_url"] == "https://space.bilibili.com/946974"
+    assert result.stats["language"] == "zh-cn"
+    assert result.stats["up_name"] == "影视飓风"
+    assert result.stats["metrics"]["total_videos"] == 2
+    assert result.stats["metrics"]["videos_with_subtitles"] == 1
+    assert result.stats["metrics"]["avg_duration_text"] == "9:28"
 
     # 验证组件计划（默认应该是 ListPanel）
     assert len(result.block_plans) >= 1
@@ -76,8 +49,10 @@ def test_bilibili_user_video_adapter():
     assert list_plan.props["title_field"] == "title"
     assert list_plan.props["link_field"] == "link"
 
-    # 验证使用了配置（可能包含 show_description 和 span）
-    assert "show_description" in list_plan.options or "span" in list_plan.options
+    media_child = list_plan.children[0] if list_plan.children else None
+    if media_child:
+        assert media_child.component_id == "MediaCardGrid"
+    assert any(plan.component_id == "ImageGallery" for plan in result.block_plans)
 
 
 def test_bilibili_user_video_manifest():
@@ -86,11 +61,12 @@ def test_bilibili_user_video_manifest():
     assert manifest is not None
 
     component_ids = {entry.component_id for entry in manifest.components}
-    assert "ListPanel" in component_ids
-    assert "StatisticCard" in component_ids
-    assert "ImageGallery" in component_ids
+    assert {"ListPanel", "StatisticCard", "ImageGallery", "MediaCardGrid"} <= component_ids
 
     # 验证 ListPanel 是必需的
     list_panel = next(entry for entry in manifest.components if entry.component_id == "ListPanel")
     assert list_panel.required is True
     assert list_panel.cost == "medium"
+
+    schema_fields = {field.name for field in manifest.schema.fields}
+    assert {"player_url", "duration_seconds", "subtitle_languages"} <= schema_fields

@@ -21,13 +21,16 @@ class LLMCallEvent:
     # 基础标识
     call_id: str  # 调用唯一 ID（UUID）
     role: Literal[
-        "planner",        # 规划器
-        "reflector",      # 反思器
-        "synthesizer",    # 综合器
-        "data_stasher",   # 数据摘要生成
+        "planner",         # 规划器
+        "reflector",       # 反思器
+        "synthesizer",     # 综合器
+        "research_agent",  # V6.0 单Agent 节点
+        "router",          # 路由器
+        "tool_executor",   # 工具执行器
+        "data_stasher",    # 数据摘要生成
         "entity_resolver", # 订阅实体解析
-        "query_parser",   # 查询解析（RAG）
-        "other",          # 其他
+        "query_parser",    # 查询解析（RAG）
+        "other",           # 其他
     ]
     status: Literal["started", "completed", "failed"]
 
