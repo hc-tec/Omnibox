@@ -6593,3 +6593,9 @@ V5.0 建立在 V4.4 的执行基础设施之上：
 **维护者**: AI Agent
 **审核状态**: 已评审
 
+#  LangGraph V5.0 灵活代理架构设计方案（2025-01-16）
+
+> **2025-11-28 更新**：随着 Schema 不确定性越来越高，`filter_data` / `compare_data` / `aggregate_data` / `extract_insights` 等规则型工具已统一由 **data_operator（动态数据算子）** 取代。下文保留原设计用于追溯，但在实现层面：
+> - ResearchAgent 优先调用 `data_operator`，通过 schema + 样例 + Python transform 实现过滤/聚合/对比。
+> - 旧工具的契约可视为 legacy 参考，不再新增逻辑特性。
+> - 所有新测试 & Planner 提示词都应围绕 data_operator 来编写。

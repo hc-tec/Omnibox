@@ -26,7 +26,7 @@
     - 工具库扩展：从 1 个工具扩展到 8+ 个（探索、过滤、对比、分析、交互）
     - 流程优化：引入轻量模式（探索类工具跳过存储）+ 多步规划（支持依赖链）
     - 数据流改进：工作记忆 vs 外部存储分层 + 知识图谱组织数据关系
-  - **P0 工具**: search_data_sources（发现数据源）、filter_data（数据过滤）、ask_user_clarification（用户交互）
+  - **P0 工具**: search_data_sources（发现数据源）、data_operator（动态代码算子）、ask_user_clarification（用户交互）
   - **实施路线**: 6 个阶段，约 14 天（3 周）
   - **与 V4.4 关系**: V4.4 提供执行基础设施，V5.0 提供能力多样性，两者互补
   - **AI IDE 参考**: 借鉴 Claude Code、Cursor、Kiro、Trae-agent 的工具设计模式
@@ -122,7 +122,7 @@
 ## 当前任务文档
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
   - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
-  - 核心工具：aggregate_data（聚合统计）、extract_insights（洞察提取）、fetch_private_data（私有数据框架）
+  - 核心工具：data_operator（动态算子，统一过滤/对比/聚合）、fetch_private_data（私有数据框架）
   - 测试覆盖：20 个 P1 工具测试 + 106 个完整测试套件全部通过
   - 关键优化：错误处理统一化、容量限制保护、自动采样和超时保护
 - `workflow/251117-v5-phase2-lightweight-mode.md` - **V5.0 Phase 2: 轻量模式支持**（已完成）✅
@@ -131,7 +131,7 @@
   - 轻量工具：search_data_sources、ask_user_clarification
   - 测试覆盖：5 个集成测试 + 34 个单元测试全部通过
 - `workflow/251116-v5-p0-implementation.md` - **V5.0 Phase 1 (P0) 实施任务**（已完成核心功能）
-  - 4 个核心工具：search_data_sources、filter_data、compare_data、ask_user_clarification
+  - 4 个核心工具：search_data_sources、data_operator、ask_user_clarification、fetch_public_data
   - 简化架构，直接启用 V5.0 工具（移除 Feature Flag）
   - 单元测试覆盖率 100% (32/32 通过)
   - 代码质量修复：私有源信息、正则安全、静默失败、DataStasher 优化
@@ -320,7 +320,7 @@
 1. **核心原则：工具应该做什么**
    - ✅ 每个工具只负责**一件事情**
    - ✅ `fetch_public_data` 只负责获取数据，不包含任何过滤提示、后置处理建议
-   - ✅ `filter_data` 只负责过滤数据，不依赖其他工具的输出格式
+   - ✅ `data_operator` 负责所有动态数据处理（过滤/聚合/对比），通过 schema + 样例生成 Python 代码来保证泛化
    - ✅ 工具之间通过 `data_id` 引用，而非通过 hint/suggestion 字段
 
 2. **禁止的做法**
@@ -330,15 +330,15 @@
    - ❌ 在数据流中传递 `post_filters` 等不属于工具结果的元信息
 
 3. **正确的架构模式**
-   - ✅ Planner 应该从工具的 **schema** 和 **过去执行历史** 中学习如何组合工具
+   - ✅ Planner 应该从工具的 **schema**、样例和执行历史中学习如何组合工具
    - ✅ 数据获取与数据处理应该是两个独立的步骤，没有内在耦合
    - ✅ 第一步：`fetch_public_data("B站影视飓风投稿视频")` → 返回 30 条数据
-   - ✅ 第二步：`filter_data(source_ref="lg-abc123", conditions={"title": {"$contains": "英雄联盟"}})` → 返回 1 条数据
+   - ✅ 第二步：`data_operator(source_ref="lg-abc123", instruction="筛选标题包含英雄联盟")` → 返回 1 条数据
 
 4. **Planner 应该如何学习**
-   - ✅ 从 `data_stash` 中看到过去的执行历史：fetch → filter 的成功案例
-   - ✅ 从工具 schema 中理解：filter_data 需要 source_ref 参数
-   - ✅ 从当前查询中识别：用户需要先获取数据，然后筛选
+   - ✅ 从 `data_stash` 中看到过去的执行历史：fetch → data_operator 的成功案例
+   - ✅ 从工具 schema 中理解：data_operator 需要 source_ref + instruction
+   - ✅ 从当前查询中识别：用户需要先获取数据，然后用自然语言指令描述转换
    - ❌ 不应该依赖：特定的提示词模式、hint 字段、中间元信息
 
 5. **2025-11-27 架构清理记录**

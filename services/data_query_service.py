@@ -521,7 +521,7 @@ class DataQueryService:
             profile=profile,
             adapter_notes=manifest.notes if manifest else None,
         )
-        self._log_dataset_sample(generated_path, normalized_items)
+        # self._log_dataset_sample(generated_path, normalized_items)
         return dataset
 
     def _fetch_rss_payload(
@@ -639,7 +639,7 @@ class DataQueryService:
 
         fallback = self._extract_payload_records(payload)
         if fallback:
-            self._log_dataset_sample(route_candidate, fallback)
+            # self._log_dataset_sample(route_candidate, fallback)
             return fallback
         return list(fetch_result.items or [])
 

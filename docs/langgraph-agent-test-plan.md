@@ -17,7 +17,7 @@
 | 类别 | 关键能力 | 相关模块/工具 | 观测点 |
 | --- | --- | --- | --- |
 | 1. 基础数据获取 | 单路 fetch、公用 panel adapter、RAG 命中率 | Router → Planner → ToolExecutor → Synthesizer；bilibili 热搜/UP 主投稿 | datasets 元数据、panel 渲染、retrieved_tools |
-| 2. 组合/过滤/分析 | 多路 fetch、filter/compare/aggregate 协同 | filter_data / compare_data / aggregate_data、DataStasher | data_stash 引用链、Synthesizer 摘要 |
+| 2. 组合/过滤/分析 | 多路 fetch + data_operator 协同 | data_operator（统一过滤/对比/聚合）、DataStasher | data_stash 引用链、Synthesizer 摘要 |
 | 3. 私有数据/记忆 | fetch_private_data、working_memory、任务回溯 | context_manager、working_memory、私有源凭据 | working_memory 内容、Synthesizer 引述、权限隔离 |
 | 4. 人机交互/多轮 | ask_user_clarification、Action Inbox、取消恢复 | Reflector、wait_for_human、WebSocket 消息 | human 请求/响应、任务状态切换 |
 | 5. 异常与兜底 | RAG 未命中、工具失败、权限拒绝 | orchestrator fallback、ErrorStasher、订阅系统 | 错误文案、回退策略、缓存与 state 清理 |
@@ -39,11 +39,11 @@
 ### 4.2 组合/过滤/分析
 | ID | 查询 | 测试目标 | 验证要点 |
 | --- | --- | --- | --- |
-| 2.1 | `B站影视飓风投稿视频中，标题包含"英雄联盟"` | fetch → filter_data 自动链路 | Planner 生成 filter 步骤；无 filter_hint 字段；过滤结果面板仅剩匹配项；Synthesizer 引用过滤条件。 |
-| 2.2 | `把影视飓风最近10条视频和知乎讨论Sora的问题做对比` | compare_data 合并多源 | DataStasher 记录两个 data_id；Synthesizer 输出对比；UI 可用表格 + FallbackRichText。 |
-| 2.3 | `统计B站热搜前20条里科技、游戏的比例` | aggregate_data + 可视化 | aggregate_data 参数包含 bucket；面板为柱状图/统计卡；Synthesizer 给出比例。 |
-| 2.4 | `列出B站和微博热搜都出现的关键词` | 多源交集 + filter/compare | Planner 生成交叉任务；Synthesizer 列出交集列表；UI 以列表/表格呈现。 |
-| 2.5 | `最近一周影视飓风投稿的平均播放量` | 聚合统计 + 时间窗口 | aggregate_data 入参含日期约束；DataStasher summary 带均值；UI 统计卡展示均值。 |
+| 2.1 | `B站影视飓风投稿视频中，标题包含"英雄联盟"` | fetch → data_operator 自动链路 | Planner 生成 data_operator 指令；无 filter_hint 字段；过滤结果面板仅剩匹配项；Synthesizer 引用过滤条件。 |
+| 2.2 | `把影视飓风最近10条视频和知乎讨论Sora的问题做对比` | data_operator 合并多源 | DataStasher 记录两个 data_id；Synthesizer 输出对比；UI 可用表格 + FallbackRichText。 |
+| 2.3 | `统计B站热搜前20条里科技、游戏的比例` | data_operator 聚合 + 可视化 | 指令描述 bucket 逻辑；面板为柱状图/统计卡；Synthesizer 给出比例。 |
+| 2.4 | `列出B站和微博热搜都出现的关键词` | 多源交集 + data_operator | Planner 生成交叉指令；Synthesizer 列出交集列表；UI 以列表/表格呈现。 |
+| 2.5 | `最近一周影视飓风投稿的平均播放量` | data_operator 聚合 + 时间窗口 | 指令含日期约束；DataStasher summary 带均值；UI 统计卡展示均值。 |
 
 执行步骤：记录 Planner JSON、data_stash dump；前端验证组件 props（`options.mode`、`max_items` 等）符合 `frontend-panel-components.md`；日志确认 Synthesizer 仅读 summary。
 

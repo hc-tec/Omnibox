@@ -27,6 +27,7 @@ class LLMCallEvent:
         "research_agent",  # V6.0 单Agent 节点
         "router",          # 路由器
         "tool_executor",   # 工具执行器
+        "schema_coder",    # 动态算子/Schema Coder
         "data_stasher",    # 数据摘要生成
         "entity_resolver", # 订阅实体解析
         "query_parser",    # 查询解析（RAG）

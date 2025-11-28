@@ -16,6 +16,7 @@ from .data_aggregator import register_data_aggregator_tool
 from .insights_extractor import register_insights_extractor_tool
 from .private_data import register_private_data_tool
 from .dataset_inspector import register_dataset_inspector_tool
+from .data_operator import register_data_operator_tool
 
 
 def register_default_tools(registry: ToolRegistry) -> None:
@@ -32,6 +33,7 @@ def register_default_tools(registry: ToolRegistry) -> None:
     register_data_compare_tool(registry)
     register_user_interaction_tool(registry)
     register_dataset_inspector_tool(registry)
+    register_data_operator_tool(registry)
 
     # V5.0 P1 工具 (Phase 3)
     register_data_aggregator_tool(registry)

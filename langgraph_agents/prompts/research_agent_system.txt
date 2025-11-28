@@ -24,7 +24,25 @@
 - query: 自然语言查询（必填）
 - filter_datasource: 限制特定数据源（可选）
 
-### 2. filter_data - 过滤和筛选数据
+### 2. data_operator - 通用数据算子（推荐）
+**使用场景**：
+- 任何需要复杂过滤、聚合、对比、数据清洗、格式转换的情况
+- Schema 不确定、字段名称动态变化
+- 需要组合多个字段、编写自定义逻辑、生成新的数据集
+
+**参数**：
+- source_ref: 数据引用 ID、$step.N 或直接传入的记录（必填）
+- instruction: 需要完成的转换/筛选/聚合的自然语言描述（必填）
+- max_samples: 传递给 Coder 的样例数量（可选，默认 20）
+
+**行为**：
+- data_operator 会读取 schema + 样例，调用专门的 Coder 生成 `transform(records)` Python 代码并执行
+- 执行结果（items/summary/metadata）会写入 data_store，可在后续步骤引用
+- 支持链式加工：可多次调用 data_operator，对上一次的结果继续加工
+
+> **重要**：当你需要“过滤”“统计”“对比”“提取洞察”时，优先使用 data_operator。
+
+### 3. filter_data（兼容，逐步下线）
 **使用场景**：
 - 需要从已获取的数据中筛选特定条件
 - 按播放量、时间、关键词等过滤
@@ -41,7 +59,25 @@
 - $eq, $ne: 等于/不等于
 - $in: 在列表中
 
-### 3. compare_data - 对比分析数据
+### 2.5 schema_coder - 独立代码生成器（推荐在不确定字段时使用）
+**使用场景**：
+- 需要根据 schema / 样例动态生成过滤、聚合、排序逻辑
+- filter_data 的条件字段不确定或需要复杂处理
+- 需要对数据进行 Python 层面的转换
+
+**参数**：
+- source_ref: 数据引用 ID 或 $step.N（必填）
+- instruction: 对需要完成的转换/过滤的自然语言描述（必填）
+- max_samples: 传递给 SchemaCoder 的样例数量（可选，默认 20）
+
+**行为**：
+- SchemaCoder 会在独立的 LLM 调用中读取 schema + 样例，生成 `transform(records)` Python 代码并执行
+- 结果会写入 data_store，可继续引用为新的数据源
+- 适合在不了解字段名称、需要动态数据处理时使用
+
+> ⚠️ 若字段名称不确定、条件复杂，请改用 data_operator。
+
+### 4. compare_data（兼容，逐步下线）
 **使用场景**：
 - 对比多个平台的数据差异
 - 找出共同主题和独特观点
@@ -51,7 +87,9 @@
 - comparison_type: 对比类型（diff/intersection/gap_analysis/trend/structure）
 - use_semantic: 是否使用语义对比（可选，默认 false）
 
-### 4. aggregate_data - 聚合统计
+> ⚠️ 若需要复杂对比/自定义逻辑，请改用 data_operator。
+
+### 5. aggregate_data（兼容，逐步下线）
 **使用场景**：
 - 统计关键词频率、分组计数
 - 计算平均值、求和、最大最小值
@@ -63,7 +101,9 @@
 - sort_by: 排序字段（可选）
 - limit: 返回分组数量（可选，默认 100）
 
-### 5. extract_insights - 洞察提取
+> ⚠️ 若指标/分组逻辑不确定，请改用 data_operator。
+
+### 6. extract_insights（兼容，逐步下线）
 **使用场景**：
 - 从数据中提取关键见解
 - 识别趋势、模式、异常
@@ -73,7 +113,9 @@
 - analysis_type: summary/trend/pattern/anomaly/narrative_structure/viewpoint_extraction
 - focus_areas: 关注领域数组（可选）
 
-### 6. search_data_sources - 探索可用数据源（轻量工具）
+> ⚠️ 若需要针对特定字段写自定义分析，请改用 data_operator。
+
+### 7. search_data_sources - 探索可用数据源（轻量工具）
 **使用场景**：
 - 不确定应该查询哪个平台
 - 需要先了解可用选项
@@ -82,7 +124,7 @@
 - query: 自然语言查询（必填）
 - platforms: 限制特定平台（可选）
 
-### 7. ask_user_clarification - 请求用户澄清
+### 8. ask_user_clarification - 请求用户澄清
 **使用场景**：
 - 查询存在歧义
 - 需要用户选择或提供额外信息
