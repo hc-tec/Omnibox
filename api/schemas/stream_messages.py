@@ -466,6 +466,7 @@ class LLMCallMessage(StreamMessage):
     type: Literal["llm_call"] = "llm_call"
     call_id: str = Field(..., description="调用唯一 ID")
     role: Literal[
+        "router",
         "planner",
         "reflector",
         "synthesizer",

@@ -32,6 +32,9 @@
   - **AI IDE 参考**: 借鉴 Claude Code、Cursor、Kiro、Trae-agent 的工具设计模式
 - `runtime-persistence-plan.md` - Runtime CRUD 与持久化总体方案（账户/会话/研究/运行时配置/模型/RSSHub 等）
 
+## 测试与验证
+- `../docs/langgraph-agent-test-plan.md` - LangGraph V5 Agent 全量测试方案（覆盖前端查询→LangGraph→工具层→面板渲染的测试用例、执行顺序与度量）
+
 ### 前端架构（必读）
 - rontend-design-guidelines.md - 前端界面/组件设计规范（布局、shadcn 使用、MediaCardGrid 等，2025-11 已补充 `layout_size` 语义＆ Electron 调试/打包说明）
 - `frontend-architecture.md` - 前端架构与技术约束，修改任何前端代码时必读
