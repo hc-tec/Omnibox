@@ -213,6 +213,9 @@ def handle_complex_research_streaming(
                 "step_type": "data_fetch",
                 "action": f"正在获取数据：{sub_query.query}",
                 "status": "processing",
+                "details": {
+                    "datasource": sub_query.datasource,
+                },
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -262,6 +265,12 @@ def handle_complex_research_streaming(
                     }
 
                     # 步骤成功
+                    route_hint = (
+                        query_result.generated_path
+                        or (datasets[0].generated_path if datasets else None)
+                        or (datasets[0].route_id if datasets else None)
+                    )
+
                     yield {
                         "type": "research_step",
                         "stream_id": stream_id,
@@ -273,6 +282,9 @@ def handle_complex_research_streaming(
                         "details": {
                             "item_count": len(query_result.items or []),
                             "feed_title": query_result.feed_title,
+                            "route": route_hint,
+                            "datasource": sub_query.datasource,
+                            "cache_hit": query_result.cache_hit,
                         },
                         "timestamp": datetime.now().isoformat(),
                     }
@@ -291,6 +303,7 @@ def handle_complex_research_streaming(
                         "status": "error",
                         "details": {
                             "error": query_result.reasoning,
+                            "datasource": sub_query.datasource,
                         },
                         "timestamp": datetime.now().isoformat(),
                     }
@@ -312,6 +325,7 @@ def handle_complex_research_streaming(
                     "status": "error",
                     "details": {
                         "error": str(exc),
+                        "datasource": sub_query.datasource,
                     },
                     "timestamp": datetime.now().isoformat(),
                 }

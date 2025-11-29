@@ -182,8 +182,8 @@ class _StubResearchService:
         )
 
 
-def test_chat_service_handles_langgraph_research_mode():
-    """测试 LangGraph 研究工作流模式（原 research 模式现改名为 langgraph）。"""
+def test_chat_service_handles_research_mode():
+    """测试研究模式由 ResearchService 执行。"""
     data_service = _DummyDataQueryService(_make_success_query_result())
     research_stub = _StubResearchService()
     chat = ChatService(
@@ -192,15 +192,29 @@ def test_chat_service_handles_langgraph_research_mode():
     )
 
     client_task_id = "task-client-123"
-    response = chat.chat("需要复杂研究", mode="langgraph", client_task_id=client_task_id)
+    response = chat.chat("需要复杂研究", mode="research", client_task_id=client_task_id)
 
     assert research_stub.calls == [("需要复杂研究", None, client_task_id)]
-    assert response.intent_type == "research"  # LangGraph 工作流的 intent_type 仍为 "research"
+    assert response.intent_type == "research"
     assert response.metadata["mode"] == "research"
     assert response.metadata["total_steps"] == 1
     assert response.metadata["execution_steps"][0]["step_id"] == 1
     assert response.metadata["task_id"] == client_task_id
     assert response.message == "研究完成"
+
+
+def test_chat_service_accepts_legacy_langgraph_alias():
+    """向后兼容：mode=langgraph 将按 research 处理。"""
+    data_service = _DummyDataQueryService(_make_success_query_result())
+    research_stub = _StubResearchService()
+    chat = ChatService(
+        data_query_service=data_service,
+        research_service=research_stub,
+    )
+
+    chat.chat("需要复杂研究", mode="langgraph")
+
+    assert len(research_stub.calls) == 1
 
 
 def test_chat_service_exposes_retrieved_tools_on_clarification():

@@ -6,7 +6,9 @@ WebSocket流式对话控制器
 import logging
 import uuid
 import time
-from typing import Generator, Optional, Any
+import threading
+from queue import Queue, Empty
+from typing import Generator, Optional, Any, Dict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 import sys
 from pathlib import Path
@@ -22,6 +24,7 @@ from api.schemas.stream_messages import (
     CompleteMessage,
     GraphNodeMessage,
     LLMCallMessage,
+    ResearchStepMessage,
     StreamStage,
     STAGE_DESCRIPTIONS,
     STAGE_PROGRESS,
@@ -52,6 +55,7 @@ def stream_chat_processing(
     filter_datasource: Optional[str] = None,
     use_cache: bool = True,
     layout_snapshot: Optional[list[dict]] = None,
+    task_id: Optional[str] = None,
 ) -> Generator[dict, None, None]:
     """
     流式处理对话（同步生成器，在线程池中执行）
@@ -74,19 +78,6 @@ def stream_chat_processing(
         流式消息字典
     """
     start_time = time.time()
-
-    # V5.0 可观测性：创建 LLM 调用追踪器
-    llm_events: list[LLMCallEvent] = []
-
-    def on_llm_event(event: LLMCallEvent) -> None:
-        """LLM 事件回调：收集事件供后续推送。"""
-        llm_events.append(event)
-
-    llm_tracker = LLMCallTracker(
-        stream_id=stream_id,
-        callback=on_llm_event,
-        dev_mode=False,  # 生产环境不暴露完整 prompt/response
-    )
 
     try:
         # ========== 阶段1: 意图识别 ==========
@@ -145,6 +136,42 @@ def stream_chat_processing(
                 }
             ).model_dump()
 
+        # ========== 构建事件队列，实时接收 LangGraph 回调 ==========
+        event_queue: Queue = Queue()
+        result_holder: Dict[str, Any] = {}
+
+        def enqueue_llm_event(event: LLMCallEvent) -> None:
+            event_queue.put(("llm_call", event))
+
+        llm_tracker = LLMCallTracker(
+            stream_id=stream_id,
+            callback=enqueue_llm_event,
+            dev_mode=False,
+        )
+
+        def emit_panel_preview(payload: Dict[str, Any]) -> None:
+            event_queue.put(("panel_preview", payload))
+
+        def run_chat():
+            try:
+                response = chat_service.chat(
+                    user_query=user_query,
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    layout_snapshot=layout_snapshot,
+                    force_execute=True,
+                    llm_tracker=llm_tracker,
+                    panel_callback=emit_panel_preview,
+                )
+                result_holder["response"] = response
+            except Exception as exc:  # pragma: no cover
+                result_holder["error"] = exc
+            finally:
+                event_queue.put(("done", None))
+
+        worker = threading.Thread(target=run_chat, daemon=True)
+        worker.start()
+
         # ========== 阶段3: 数据获取 ==========
         yield StageMessage(
             stream_id=stream_id,
@@ -153,15 +180,75 @@ def stream_chat_processing(
             progress=STAGE_PROGRESS[StreamStage.FETCH],
         ).model_dump()
 
-        # 调用ChatService获取完整响应（流式模式直接执行复杂查询）
-        response = chat_service.chat(
-            user_query=user_query,
-            filter_datasource=filter_datasource,
-            use_cache=use_cache,
-            layout_snapshot=layout_snapshot,
-            force_execute=True,  # 流式模式直接执行，不返回 requires_streaming 提示
-            llm_tracker=llm_tracker,  # V5.0 可观测性：传递追踪器
-        )
+        preview_counter = 0
+        while True:
+            try:
+                event_type, payload = event_queue.get(timeout=0.1)
+            except Empty:
+                if worker.is_alive():
+                    continue
+                else:
+                    break
+
+            if event_type == "done":
+                if not worker.is_alive():
+                    break
+                continue
+
+            if event_type == "llm_call":
+                event = payload
+                if isinstance(event, LLMCallEvent):
+                    message = LLMCallMessage(
+                        stream_id=event.stream_id or stream_id,
+                        call_id=event.call_id,
+                        role=event.role,
+                        status=event.status,
+                        step_id=event.step_id,
+                        duration_ms=event.duration_ms,
+                        prompt_tokens=event.prompt_tokens,
+                        completion_tokens=event.completion_tokens,
+                        total_tokens=event.total_tokens,
+                        prompt_preview=event.prompt_preview,
+                        response_preview=event.response_preview,
+                        model=event.model,
+                        temperature=event.temperature,
+                        timestamp=event.timestamp,
+                    ).model_dump()
+                    yield message
+                continue
+
+            if event_type == "panel_preview":
+                preview_counter += 1
+                preview_payload = payload or {}
+                previews = preview_payload.get("previews") or []
+                first_preview = previews[0] if previews else {}
+                title = first_preview.get("title") or preview_payload.get("source_query") or "数据预览"
+                route = first_preview.get("generated_path")
+                source = first_preview.get("source")
+                item_count = len(first_preview.get("items") or [])
+                step_message = ResearchStepMessage(
+                    stream_id=stream_id,
+                    task_id=task_id or stream_id,
+                    step_id=f"preview_{preview_counter}",
+                    step_type="data_fetch",
+                    action=f"生成数据预览：{title}",
+                    status="success",
+                    details={
+                        "route": route,
+                        "datasource": source,
+                        "item_count": item_count,
+                        "preview_id": first_preview.get("preview_id"),
+                    },
+                ).model_dump()
+                yield step_message
+                continue
+
+        if "error" in result_holder:
+            raise result_holder["error"]
+
+        response = result_holder.get("response")
+        if response is None:
+            raise RuntimeError("查询响应为空")
 
         # 推送数据
         items_count = 0
@@ -178,14 +265,33 @@ def stream_chat_processing(
 
         panel_block_count = len(response.data.blocks) if response.data else 0
 
+        metadata = getattr(response, "metadata", None) or {}
+        refresh_metadata = metadata.get("refresh_metadata") if isinstance(metadata, dict) else None
+        route_hint = None
+        feed_title = None
+        if isinstance(metadata, dict):
+            feed_title = metadata.get("feed_title")
+            if isinstance(refresh_metadata, dict):
+                route_hint = refresh_metadata.get("generated_path") or refresh_metadata.get("route_id")
+            if not route_hint:
+                route_hint = metadata.get("generated_path")
+            if not route_hint:
+                datasets_meta = metadata.get("datasets")
+                if isinstance(datasets_meta, list) and datasets_meta:
+                    first_dataset = datasets_meta[0]
+                    if isinstance(first_dataset, dict):
+                        route_hint = first_dataset.get("generated_path") or first_dataset.get("route")
+
         yield DataMessage(
             stream_id=stream_id,
             stage=StreamStage.FETCH,
             data={
                 "items_count": items_count,
                 "block_count": panel_block_count,
-                "cache_hit": response.metadata.get("cache_hit") if response.metadata else None,
-                "source": response.metadata.get("source") if response.metadata else None,
+                "cache_hit": metadata.get("cache_hit") if isinstance(metadata, dict) else None,
+                "source": metadata.get("source") if isinstance(metadata, dict) else None,
+                "route": route_hint,
+                "feed_title": feed_title,
             }
         ).model_dump()
 
@@ -240,28 +346,6 @@ def stream_chat_processing(
                         summary=record.get("summary"),
                         error=record.get("error"),
                     ).model_dump()
-
-        # ========== V5.0 可观测性：推送 LLM 调用事件 ==========
-        for event in llm_events:
-            yield LLMCallMessage(
-                stream_id=stream_id,
-                call_id=event.call_id,
-                role=event.role,
-                status=event.status,
-                step_id=event.step_id,
-                duration_ms=event.duration_ms,
-                prompt_tokens=event.prompt_tokens,
-                completion_tokens=event.completion_tokens,
-                total_tokens=event.total_tokens,
-                prompt_preview=event.prompt_preview,
-                response_preview=event.response_preview,
-                full_prompt=event.full_prompt,
-                full_response=event.full_response,
-                error_message=event.error_message,
-                model=event.model,
-                temperature=event.temperature,
-                metadata=event.metadata,
-            ).model_dump()
 
         # ========== 完成 ==========
         total_time = time.time() - start_time
@@ -406,6 +490,7 @@ async def chat_stream(
             filter_datasource=filter_datasource,
             use_cache=use_cache,
             layout_snapshot=layout_snapshot,
+            task_id=task_id,
         )
 
         # 在线程池中逐个获取消息

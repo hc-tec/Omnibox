@@ -503,7 +503,7 @@ const wsBaseUrl = ref(
           handleGraphNodeEvent(message as GraphNodeStreamMessage);
           break;
         case "llm_call":
-          handleLLMCallEvent(message as LLMCallStreamMessage);
+          // 暂不在界面展示 LLM 调用事件，避免冗余步骤
           break;
         case "complete":
           handleCompleteMessage(message as CompleteStreamMessage);

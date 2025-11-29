@@ -5,7 +5,7 @@
 
 import logging
 import time
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from dataclasses import dataclass, field, asdict
 from uuid import uuid4
 
@@ -285,11 +285,12 @@ class ChatService:
         filter_datasource: Optional[str] = None,
         use_cache: bool = True,
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
-        mode: str = "auto",  # auto / simple / research / langgraph
+        mode: str = "auto",  # auto / simple / research
         client_task_id: Optional[str] = None,
         user_id: Optional[int] = None,  # Phase 2: 用户 ID（游客模式可为 None）
         force_execute: bool = False,  # 强制执行（流式接口使用）
         llm_tracker: Optional["LLMCallTracker"] = None,  # V5.0 LLM 调用追踪器
+        panel_callback: Optional[Callable[[Dict[str, Any]], None]] = None,  # LangGraph 工具实时回调
     ) -> ChatResponse:
         """
         处理用户查询（三层智能路由）。
@@ -303,7 +304,7 @@ class ChatService:
                 - auto: 自动智能路由（使用 LLM 意图分类）
                 - simple: 强制简单查询（单次 RAG）
                 - research: 强制复杂研究（查询规划 + 并行执行）
-                - langgraph: 强制使用 LangGraph 工作流
+                - research: 强制复杂研究（ResearchAgent 多轮任务）
             client_task_id: 客户端任务 ID（可选）
             user_id: 用户 ID（Phase 2，游客模式可为 None）
             force_execute: 强制执行复杂查询（流式接口使用，跳过 requires_streaming 提示）
@@ -313,6 +314,10 @@ class ChatService:
             ChatResponse 对象
         """
         logger.info("收到对话请求: %s (mode=%s, user_id=%s)", user_query, mode, user_id)
+
+        if mode == "langgraph":
+            logger.warning("mode=langgraph 已废弃，将作为 research 模式处理")
+            mode = "research"
 
         try:
             llm_logs: List[Dict[str, Any]] = []
@@ -342,31 +347,10 @@ class ChatService:
                     user_id=user_id,
                     is_complex=True,
                     llm_tracker=llm_tracker,
+                    panel_callback=panel_callback,
                 )
 
-            # 情况2：LangGraph 模式（特殊的研究模式）
-            elif mode == "langgraph":
-                if not self.research_service:
-                    logger.warning("LangGraph 模式被请求但 ResearchService 未初始化，回退到数据查询")
-                    return self._handle_data_query(
-                        user_query=user_query,
-                        filter_datasource=filter_datasource,
-                        use_cache=use_cache,
-                        intent_confidence=0.5,
-                        layout_snapshot=layout_snapshot,
-                        llm_logs=llm_logs,
-                        user_id=user_id,
-                        llm_tracker=llm_tracker,
-                    )
-                else:
-                    return self._handle_langgraph_research(
-                        user_query=user_query,
-                        filter_datasource=filter_datasource,
-                        intent_confidence=1.0,
-                        client_task_id=client_task_id,
-                    )
-
-            # 情况3：显式指定简单查询
+            # 情况2：显式指定简单查询
             elif mode == "simple":
                 return self._handle_data_query(
                     user_query=user_query,
@@ -377,6 +361,7 @@ class ChatService:
                     llm_logs=llm_logs,
                     user_id=user_id,
                     llm_tracker=llm_tracker,
+                    panel_callback=panel_callback,
                 )
 
             # 阶段1：LLM 意图分类（三层架构第一层）
@@ -392,6 +377,7 @@ class ChatService:
                     llm_logs=llm_logs,
                     user_id=user_id,
                     llm_tracker=llm_tracker,
+                    panel_callback=panel_callback,
                 )
 
             intent_result: IntentClassification = self.intent_classifier.classify(user_query)
@@ -422,6 +408,7 @@ class ChatService:
                     llm_logs=llm_logs,
                     user_id=user_id,
                     llm_tracker=llm_tracker,
+                    panel_callback=panel_callback,
                 )
 
             elif intent_result.intent == "complex_research":
@@ -430,15 +417,16 @@ class ChatService:
                     logger.info("LLM 识别为复杂研究意图，流式模式直接执行 Task Graph")
                     return self._handle_data_query(
                         user_query=user_query,
-                        filter_datasource=filter_datasource,
-                        use_cache=use_cache,
-                        intent_confidence=intent_result.confidence,
-                        layout_snapshot=layout_snapshot,
-                        llm_logs=llm_logs,
-                        user_id=user_id,
-                        is_complex=True,
-                        llm_tracker=llm_tracker,
-                    )
+                    filter_datasource=filter_datasource,
+                    use_cache=use_cache,
+                    intent_confidence=intent_result.confidence,
+                    layout_snapshot=layout_snapshot,
+                    llm_logs=llm_logs,
+                    user_id=user_id,
+                    is_complex=True,
+                    llm_tracker=llm_tracker,
+                    panel_callback=panel_callback,
+                )
                 else:
                     # 非流式接口：返回提示，让前端切换到 WebSocket 流式
                     logger.info("LLM 识别为复杂研究意图，返回流式接口提示")
@@ -461,6 +449,7 @@ class ChatService:
                     llm_logs=llm_logs,
                     user_id=user_id,
                     llm_tracker=llm_tracker,
+                    panel_callback=panel_callback,
                 )
 
         except Exception as exc:
@@ -483,6 +472,7 @@ class ChatService:
         user_id: Optional[int] = None,
         is_complex: bool = False,  # V5.0：标记是否为复杂查询
         llm_tracker: Optional["LLMCallTracker"] = None,  # V5.0 LLM 调用追踪器
+        panel_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> ChatResponse:
         """
         统一处理数据查询意图（V5.0 LangGraph 架构）。
@@ -502,8 +492,15 @@ class ChatService:
         query_result: Optional[DataQueryResult] = None
         panel_events: List[Dict[str, Any]] = []
 
+        bound_panel_callback = panel_callback
+
         def capture_panel(payload: Dict[str, Any]) -> None:
             panel_events.append(payload)
+            if bound_panel_callback:
+                try:
+                    bound_panel_callback(payload)
+                except Exception as exc:  # pragma: no cover
+                    logger.warning("panel_callback 执行失败: %s", exc)
 
         # 优先使用 V5.0 LangGraph 执行器
         if self.langgraph_executor or llm_tracker:

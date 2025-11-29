@@ -191,7 +191,7 @@ class StreamStage:
 # 阶段描述映射
 STAGE_DESCRIPTIONS = {
     StreamStage.INTENT: "正在识别意图...",
-    StreamStage.RAG: "正在检索知识库...",
+    StreamStage.RAG: "正在检索相关数据源...",
     StreamStage.FETCH: "正在获取数据...",
     StreamStage.SUMMARY: "正在总结结果...",
 }

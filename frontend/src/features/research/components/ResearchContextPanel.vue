@@ -129,28 +129,22 @@
               </div>
 
               <p class="mt-1 text-xs font-medium text-foreground">
-                {{ step.action }}
+                {{ formatStepAction(step) }}
               </p>
 
               <!-- 详情 -->
               <div v-if="hasDetails(step)" class="mt-2 space-y-1.5 text-[11px] text-muted-foreground">
-                <div v-if="step.details?.item_count" class="flex items-center gap-1">
-                  <Database class="h-3 w-3" />
-                  {{ step.details.item_count }} 条数据
-                </div>
-                <div v-if="step.details?.feed_title">
-                  来源：{{ step.details.feed_title }}
-                </div>
-                <div v-if="step.details?.error" class="text-red-400">
-                  错误：{{ step.details.error }}
-                </div>
-                <div v-if="step.details?.summary" class="rounded border border-border/30 bg-background/60 p-2">
-                  <p class="text-[10px] font-semibold text-muted-foreground/80 mb-1">摘要</p>
-                  <pre class="whitespace-pre-wrap break-words text-[11px] text-muted-foreground/90">{{ formatSummary(step.details.summary) }}</pre>
-                </div>
-                <div v-for="detail in otherDetailEntries(step.details)" :key="detail.label" class="flex items-start gap-1">
+                <div
+                  v-for="detail in stepDetailEntries(step)"
+                  :key="`${detail.label}-${detail.value}`"
+                  class="flex items-start gap-1"
+                >
                   <span class="text-muted-foreground/70">{{ detail.label }}：</span>
                   <span class="text-foreground/80">{{ detail.value }}</span>
+                </div>
+                <div v-if="summaryText(step)" class="rounded border border-border/30 bg-background/60 p-2">
+                  <p class="text-[10px] font-semibold text-muted-foreground/80 mb-1">摘要</p>
+                  <pre class="whitespace-pre-wrap break-words text-[11px] text-muted-foreground/90">{{ summaryText(step) }}</pre>
                 </div>
               </div>
 
@@ -206,7 +200,7 @@
 import { computed } from "vue";
 import { useResearchViewStore } from "@/store/researchViewStore";
 import type { ResearchStep, ResearchStepType } from "@/store/researchViewStore";
-import { CheckCircle2, XCircle, Circle, Loader2, Database } from "lucide-vue-next";
+import { CheckCircle2, XCircle, Circle, Loader2 } from "lucide-vue-next";
 
 // ========== Store ==========
 const store = useResearchViewStore();
@@ -279,45 +273,213 @@ function stepTypeClass(type: ResearchStepType) {
   };
 }
 
-function hasDetails(step: ResearchStep): boolean {
-  if (!step.details) return false;
-  const keys = Object.keys(step.details);
-  return keys.some((key) => step.details && step.details[key] !== undefined && step.details[key] !== null);
+type StepDetailEntry = {
+  label: string;
+  value: string;
+};
+
+function isStageStep(step: ResearchStep): boolean {
+  return Boolean(step.step_id?.startsWith("stage-"));
 }
 
-function formatSummary(summary: unknown): string {
+function formatIntentType(intent?: unknown): string | null {
+  if (typeof intent !== "string" || !intent) return null;
+  if (intent === "data_query") return "需要数据分析";
+  if (intent === "chitchat") return "闲聊问答";
+  return intent;
+}
+
+function parseRouterPreview(preview: unknown): { route?: string; reasoning?: string } | null {
+  if (typeof preview !== "string" || !preview.trim()) {
+    return null;
+  }
+  const trimmed = preview.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object") {
+        return {
+          route: typeof (parsed as Record<string, unknown>).route === "string" ? (parsed as Record<string, unknown>).route : undefined,
+          reasoning: typeof (parsed as Record<string, unknown>).reasoning === "string" ? (parsed as Record<string, unknown>).reasoning : undefined,
+        };
+      }
+    } catch {
+      return { reasoning: trimmed };
+    }
+  }
+  return { reasoning: trimmed };
+}
+
+const CACHE_LABELS: Record<string, string> = {
+  rss_cache: "RSS 缓存命中",
+  rag_cache: "RAG 缓存命中",
+  none: "未命中",
+};
+
+function formatCacheLabel(flag: unknown): string | null {
+  if (typeof flag !== "string" || !flag) return null;
+  return CACHE_LABELS[flag] ?? flag;
+}
+
+function formatStepAction(step: ResearchStep): string {
+  const details = step.details || {};
+  if (isStageStep(step) && step.step_id) {
+    const stage = step.step_id.replace("stage-", "");
+    if (stage === "intent") {
+      const intent = formatIntentType(details.intent_type);
+      return intent ? `识别查询意图：${intent}` : "识别查询意图";
+    }
+    if (stage === "rag") {
+      return typeof details.message === "string" && details.message ? details.message : "检索候选数据源";
+    }
+    if (stage === "fetch") {
+      const target = details.feed_title || details.route || details.generated_path || details.source;
+      if (step.status === "success") {
+        return target ? `已获取 ${target} 的数据` : "数据获取完成";
+      }
+      return target ? `正在获取 ${target} 的数据` : "正在获取数据";
+    }
+    if (stage === "summary") {
+      return typeof details.message === "string" && details.message ? details.message : "生成总结与洞察";
+    }
+  }
+
+  if (step.step_id?.startsWith("llm-") && details.role === "router") {
+    const routerDecision = parseRouterPreview(details.response_preview);
+    if (routerDecision?.reasoning) {
+      return `Router 决策：${routerDecision.reasoning}`;
+    }
+  }
+
+  if (step.step_type === "data_fetch") {
+    const target = details.feed_title || details.route || details.datasource;
+    if (target) {
+      if (step.status === "success") {
+        return `数据准备完成：${target}`;
+      }
+      if (step.status === "processing") {
+        return `正在获取 ${target} 的数据`;
+      }
+    }
+  }
+
+  return step.action;
+}
+
+function summaryText(step: ResearchStep): string | null {
+  const summary = step.details?.summary;
+  if (!summary) return null;
   if (typeof summary === "string") {
-    return summary;
+    return truncateText(summary);
   }
-  try {
-    return JSON.stringify(summary, null, 2);
-  } catch {
-    return String(summary);
+  if (typeof summary === "object" && summary !== null) {
+    const summaryObj = summary as Record<string, unknown>;
+    const candidate = summaryObj.preview || summaryObj.description || summaryObj.text;
+    if (typeof candidate === "string" && candidate.trim()) {
+      return truncateText(candidate);
+    }
   }
+  return null;
 }
 
-function otherDetailEntries(details?: Record<string, any>) {
-  if (!details) return [];
-  const skip = new Set(["item_count", "feed_title", "error", "summary"]);
-  return Object.entries(details)
-    .filter(([key, value]) => !skip.has(key) && value !== undefined && value !== null)
-    .map(([key, value]) => ({
-      label: formatDetailLabel(key),
-      value: formatDetailValue(value),
-    }));
+function truncateText(value: string, maxLength = 160): string {
+  if (!value) return value;
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
-function formatDetailLabel(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
+function stepDetailEntries(step: ResearchStep): StepDetailEntry[] {
+  const details = step.details || {};
+  const entries: StepDetailEntry[] = [];
+  const used = new Set<string>();
 
-function formatDetailValue(value: unknown): string {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
+  const pushEntry = (label: string, value?: unknown) => {
+    if (value === undefined || value === null) return;
+    const text = String(value).trim();
+    if (!text) return;
+    const key = `${label}-${text}`;
+    if (used.has(key)) return;
+    used.add(key);
+    entries.push({ label, value: text });
+  };
+
+  if (isStageStep(step) && step.step_id) {
+    const stage = step.step_id.replace("stage-", "");
+    if (stage === "intent") {
+      if (typeof details.reasoning === "string") {
+        pushEntry("判定理由", details.reasoning);
+      }
+      return entries;
+    }
+    if (stage === "rag") {
+      if (typeof details.message === "string") {
+        pushEntry("检索说明", details.message);
+      }
+      return entries;
+    }
+    if (stage === "fetch") {
+      pushEntry("数据源", details.feed_title || details.route || details.generated_path);
+      if (typeof details.items_count === "number") {
+        pushEntry("返回条数", details.items_count);
+      }
+      const cache = formatCacheLabel(details.cache_hit);
+      if (cache) {
+        pushEntry("缓存", cache);
+      }
+      return entries;
+    }
+    if (stage === "summary") {
+      if (typeof details.message === "string") {
+        pushEntry("说明", details.message);
+      }
+      if (typeof details.block_count === "number") {
+        pushEntry("面板数量", details.block_count);
+      }
+      return entries;
+    }
   }
-  return JSON.stringify(value);
+
+  if (step.step_id?.startsWith("llm-") && details.role === "router") {
+    const routerDecision = parseRouterPreview(details.response_preview);
+    if (routerDecision?.route) {
+      pushEntry("路由", routerDecision.route);
+    }
+    if (routerDecision?.reasoning) {
+      pushEntry("决策理由", routerDecision.reasoning);
+    }
+    return entries;
+  }
+
+  pushEntry("数据源", details.feed_title || details.route || details.datasource);
+  if (typeof details.item_count === "number") {
+    pushEntry("数据条数", details.item_count);
+  }
+  if (typeof details.cache_hit === "string") {
+    const cache = formatCacheLabel(details.cache_hit);
+    if (cache) {
+      pushEntry("缓存", cache);
+    }
+  }
+  if (typeof details.reasoning === "string") {
+    pushEntry("说明", details.reasoning);
+  }
+  if (typeof details.error === "string") {
+    pushEntry("错误", details.error);
+  }
+  if (details.summary && typeof details.summary === "object" && details.summary !== null) {
+    const summaryObj = details.summary as Record<string, unknown>;
+    if (typeof summaryObj.dataset_count === "number") {
+      pushEntry("数据集数量", summaryObj.dataset_count);
+    }
+    if (typeof summaryObj.item_count === "number") {
+      pushEntry("记录数", summaryObj.item_count);
+    }
+  }
+
+  return entries;
+}
+
+function hasDetails(step: ResearchStep): boolean {
+  return stepDetailEntries(step).length > 0 || Boolean(summaryText(step));
 }
 
 /**

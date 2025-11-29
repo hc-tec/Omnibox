@@ -127,29 +127,6 @@
         </div>
       </div>
 
-      <!-- Footer（仅 completed 状态显示） -->
-      <div
-        v-if="card.status === 'completed'"
-        class="border-t border-border/40 bg-muted/10 px-5 py-3 backdrop-blur-sm"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-xs text-muted-foreground">
-            点击卡片查看调试信息
-          </span>
-          <div class="flex gap-2">
-            <Button
-              v-if="card.refresh_metadata"
-              variant="ghost"
-              size="sm"
-              class="h-8 rounded-lg text-xs"
-              @click.stop="$emit('refresh', card.id)"
-            >
-              <RefreshCw class="h-3.5 w-3.5 mr-1.5" />
-              刷新
-            </Button>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
