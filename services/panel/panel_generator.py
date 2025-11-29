@@ -11,6 +11,16 @@ from api.schemas.panel import LayoutHint, LayoutTree, PanelPayload, SourceInfo, 
 from services.panel.adapters import AdapterBlockPlan
 from services.panel.data_block_builder import BlockBuildResult, DataBlockBuilder
 from services.panel.layout_engine import LayoutEngine
+from services.panel.envelope_builder import build_envelope_from_data_block
+from services.panel.panel_spec import (
+    DisplaySchema,
+    PanelNode,
+    DataBinding,
+    PanelDSL,
+    StructuredDataEnvelope,
+)
+from services.panel.view_model_builder import ViewModelBuilder, GeneratedViewModel
+from services.panel.schema_encoder import build_display_schema_from_data_block
 
 
 @dataclass
@@ -29,6 +39,10 @@ class PanelBlockInput:
 class PanelGenerationResult:
     payload: PanelPayload
     data_blocks: Dict[str, Any]
+    data_envelopes: Dict[str, StructuredDataEnvelope]
+    display_schemas: Dict[str, DisplaySchema]
+    view_models: Dict[str, GeneratedViewModel]
+    panel_dsl: Optional[PanelDSL]
     view_descriptors: List[Any]
     component_confidence: Dict[str, float]
     debug: Dict[str, Any]
@@ -38,9 +52,11 @@ class PanelGenerator:
     def __init__(
         self,
         data_block_builder: Optional[DataBlockBuilder] = None,
+        view_model_builder: Optional[ViewModelBuilder] = None,
         layout_engine: Optional[LayoutEngine] = None,
     ):
         self.data_block_builder = data_block_builder or DataBlockBuilder()
+        self.view_model_builder = view_model_builder or ViewModelBuilder()
         self.layout_engine = layout_engine or LayoutEngine()
 
     def generate(
@@ -50,6 +66,10 @@ class PanelGenerator:
         history_token: Optional[str] = None,
     ) -> PanelGenerationResult:
         data_blocks: Dict[str, Any] = {}
+        data_envelopes: Dict[str, StructuredDataEnvelope] = {}
+        display_schemas: Dict[str, DisplaySchema] = {}
+        view_models: Dict[str, GeneratedViewModel] = {}
+
         ui_blocks: List[UIBlock] = []
         component_confidence: Dict[str, float] = {}
         debug_info: Dict[str, Any] = {"blocks": []}
@@ -59,6 +79,26 @@ class PanelGenerator:
             result = self._build_data_block(block_input)
             data_block = result.data_block
             data_blocks[data_block.id] = data_block
+            try:
+                envelope = build_envelope_from_data_block(data_block)
+                data_envelopes[data_block.id] = envelope
+            except Exception as exc:  # pragma: no cover - envelope 构建失败不影响主流程
+                debug_info.setdefault("envelope_errors", []).append(
+                    {
+                        "data_block_id": data_block.id,
+                        "error": str(exc),
+                    }
+                )
+
+            display_schema = build_display_schema_from_data_block(data_block)
+            display_schemas[data_block.id] = display_schema
+            try:
+                generated_vm = self.view_model_builder.build(display_schema)
+                view_models[generated_vm.view_model_id] = generated_vm
+            except Exception as exc:  # pragma: no cover
+                debug_info.setdefault("view_model_errors", []).append(
+                    {"data_block_id": data_block.id, "error": str(exc)}
+                )
 
             plans = list(result.block_plans)
             block_debug: Dict[str, Any] = {
@@ -107,10 +147,15 @@ class PanelGenerator:
         )
 
         payload = PanelPayload(mode=mode, layout=layout, blocks=ui_blocks)
+        panel_dsl = self._build_default_panel_dsl(view_models)
 
         return PanelGenerationResult(
             payload=payload,
             data_blocks=data_blocks,
+            data_envelopes=data_envelopes,
+            display_schemas=display_schemas,
+            view_models=view_models,
+            panel_dsl=panel_dsl,
             view_descriptors=[],
             component_confidence=component_confidence,
             debug=debug_info,
@@ -179,3 +224,18 @@ class PanelGenerator:
             layout_hint=LayoutHint(layout_size="full", span=12, min_height=220),
             confidence=0.4,
         )
+    def _build_default_panel_dsl(
+        self,
+        view_models: Dict[str, GeneratedViewModel],
+    ) -> PanelDSL:
+        nodes: List[PanelNode] = []
+        for vm in view_models.values():
+            node = PanelNode(
+                node=vm.component_id,
+                props=vm.props or {},
+                data_binding=DataBinding(view_model_id=vm.view_model_id),
+                events={},
+                children=[],
+            )
+            nodes.append(node)
+        return PanelDSL(layout=nodes)

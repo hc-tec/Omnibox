@@ -121,6 +121,7 @@
 - 多源/多场景复用：新增平台或分析指令，只需保证工具输出标准 schema；UI 自动适配。
 - 可观测性：所有失败/回退都有明确日志，方便持续优化提示与模型；ViewModel/DSL 可回放复现。
 - Skeleton 体验：初次响应 < 500ms（渲染骨架），后续数据流式填充。
+- 研究流集成：`research_panel` / `research_analysis` / `research_complete` WebSocket 消息统一携带 `panel_spec`（envelope、display_schema、view_model、panel_dsl、rendered_preview），前端可在研究模式下复用相同的 SDUI 渲染逻辑。
 
 ---
 通过 Structured Envelope + Display Schema + ViewModel + Panel DSL + Sandbox 的组合，我们既保持了数据安全，又给 Planner/Reflector 足够的可编程空间。复杂工作流不再依赖硬编码 adapter，而是由 LLM 在受控环境下拼装组件，实现真正的灵活 + 可控的 UI 生成链路，并具备交互闭环、Skeleton 体验与全面可观测性。

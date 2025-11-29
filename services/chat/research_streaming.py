@@ -17,6 +17,12 @@ from services.chat.dataset_utils import (
     build_dataset_preview,
     build_analysis_prompt,
 )
+from services.panel.panel_spec_serializer import (
+    build_panel_spec_metadata,
+    build_panel_spec_metadata_from_components,
+)
+from services.panel.panel_spec import DisplaySchema
+from services.panel.view_model_builder import ViewModelBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +267,7 @@ def handle_complex_research_streaming(
                             for key, block in (panel_result.data_blocks or {}).items()
                         },
                         "source_query": sub_query.query,
+                        "panel_spec": build_panel_spec_metadata(panel_result),
                         "timestamp": datetime.now().isoformat(),
                     }
 
@@ -364,6 +371,12 @@ def handle_complex_research_streaming(
 
         # ========== 第四步：研究完成 ==========
         total_time = time.time() - start_time
+        completion_panel_spec = None
+        if 'panel_result' in locals():
+            try:
+                completion_panel_spec = build_panel_spec_metadata(panel_result)
+            except Exception as exc:  # pragma: no cover
+                completion_panel_spec = {"error": str(exc)}
         yield {
             "type": "research_complete",
             "stream_id": stream_id,
@@ -372,6 +385,7 @@ def handle_complex_research_streaming(
             "message": f"研究完成，共获取 {success_count} 组数据",
             "total_time": total_time,
             "summary": None,
+            "panel_spec": completion_panel_spec,
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -451,7 +465,27 @@ def _execute_analysis_queries(
             if response is None or not response.strip():
                 raise ValueError("LLM 返回空响应")
 
-            # 推送分析结果
+            analysis_schema = DisplaySchema(
+                kind="record_set",
+                title=f"分析结果：{sub_query.query}",
+                summary=response.strip(),
+                fields={
+                    "items": [
+                        {
+                            "title": sub_query.query,
+                            "summary": response.strip(),
+                            "id": f"analysis-{idx}",
+                        }
+                    ]
+                },
+                source_refs=[],
+                warnings=[],
+            )
+            view_model = ViewModelBuilder().build(analysis_schema)
+            analysis_panel_spec = build_panel_spec_metadata_from_components(
+                {"analysis": analysis_schema},
+                {view_model.view_model_id: view_model},
+            )
             yield {
                 "type": "research_analysis",
                 "stream_id": stream_id,
@@ -460,6 +494,7 @@ def _execute_analysis_queries(
                 "step_index": idx + 1,
                 "analysis_text": response.strip(),
                 "is_complete": True,
+                "panel_spec": analysis_panel_spec,
                 "timestamp": datetime.now().isoformat(),
             }
 

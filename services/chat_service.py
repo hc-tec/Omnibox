@@ -29,6 +29,7 @@ from services.panel.panel_generator import (
     PanelBlockInput,
     PanelGenerationResult,
 )
+from services.panel.panel_spec_serializer import build_panel_spec_metadata
 from services.panel.component_planner import (
     ComponentPlannerConfig,
     PlannerContext,
@@ -625,11 +626,13 @@ class ChatService:
                 "refresh_metadata": refresh_metadata,  # Phase 2: 快速刷新元数据
                 "is_complex": is_complex,  # V5.0: 标记是否为复杂研究
             }
-            if panel_events:
-                metadata["panel_preview_events"] = panel_events
+        if panel_events:
+            metadata["panel_preview_events"] = panel_events
 
-            # 提取并暴露适配器/渲染警告信息到顶层 metadata
-            blocks_debug = debug_info.get("blocks", [])
+        metadata["panel_spec"] = build_panel_spec_metadata(panel_result)
+
+        # 提取并暴露适配器/渲染警告信息到顶层 metadata
+        blocks_debug = debug_info.get("blocks", [])
             warnings = []
             for block in blocks_debug:
                 if block.get("using_default_adapter"):
