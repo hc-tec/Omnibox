@@ -106,7 +106,7 @@ def bilibili_hot_search_adapter(
     stats = {
         "datasource": source_info.datasource or "bilibili",
         "route": source_info.route,
-        "feed_title": payload.get("title") or "B站热搜",
+        "feed_title": "B站热搜",
         "total_items": len(raw_items),
         "api_endpoint": source_info.route or "/bilibili/hot-search",
     }
@@ -132,7 +132,7 @@ def bilibili_hot_search_adapter(
                 "id": f"hot-search-{idx}",
                 "title": f"#{idx} {keyword}",  # 添加排名前缀
                 "link": link,
-                "summary": description or keyword,
+                "summary": None,
                 "published_at": None,  # 热搜没有发布时间
                 "image_url": image_url,
             }
@@ -158,7 +158,7 @@ def bilibili_hot_search_adapter(
         },
         options=size_config,
         interactions=[ComponentInteraction(type="open_link", label="搜索关键词")],
-        title=None,
+        title="B站热搜",
         layout_hint=LayoutHint(
             layout_size=size_config.get("layout_size"),
             span=size_config.get("span"),

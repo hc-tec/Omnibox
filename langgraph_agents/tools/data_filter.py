@@ -11,6 +11,7 @@ from ..state import ToolCall, ToolExecutionPayload
 from ..runtime import ToolExecutionContext
 from .registry import ToolRegistry, tool
 from .data_ref_resolver import DataRefResolver, create_resolver_from_context
+from .data_payload_utils import build_source_metadata, extract_records
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +317,7 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
             )
 
         try:
+            resolved_meta: Optional[Dict[str, Any]] = None
             # 3. 获取源数据
             # V6.0 Phase 2: 支持多种引用格式
             # - 字符串 data_id (如 "lg-abc123")
@@ -332,6 +334,11 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                 try:
                     resolved = resolver.resolve(source_ref)
                     source_data = resolved.data
+                    resolved_meta = build_source_metadata(
+                        source_data if isinstance(source_data, dict) else {"items": source_data},
+                        resolved.source_data_id,
+                        resolved.source_step_id,
+                    )
                     logger.debug(
                         "filter_data: 解析引用 %s -> data_id=%s (类型=%s)",
                         source_ref, resolved.source_data_id, resolved.source_type
@@ -370,12 +377,11 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                     error_message=f"source_ref 类型无效: {type(source_ref)}"
                 )
 
-            # 4. 确保 source_data 是列表格式
+            # 4. 解析元信息并提取记录
             if isinstance(source_data, dict):
-                # 如果是 DataQueryResult 对象，提取 items
-                items = source_data.get("items", [])
+                payload_for_meta = source_data
             elif isinstance(source_data, list):
-                items = source_data
+                payload_for_meta = {"items": source_data}
             else:
                 logger.error("filter_data: 不支持的数据格式 - %s", type(source_data))
                 return ToolExecutionPayload(
@@ -387,6 +393,18 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                     status="error",
                     error_message=f"数据格式异常: {type(source_data)}"
                 )
+            if resolved_meta:
+                source_metadata = resolved_meta
+            else:
+                data_id_hint = None
+                if isinstance(source_ref, str) and source_ref.startswith("lg-"):
+                    data_id_hint = source_ref
+                source_metadata = build_source_metadata(
+                    payload_for_meta,
+                    data_id_hint,
+                    None,
+                )
+            items = extract_records(payload_for_meta)
 
             logger.info(
                 "filter_data: 加载 %d 条记录, 条件=%s, limit=%d, offset=%d",
@@ -395,13 +413,13 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                 limit,
                 offset
             )
-            if items:
-                preview = items[: min(len(items), 3)]
-                logger.info(
-                    "filter_data: 数据样例 (前%s条): %s",
-                    len(preview),
-                    preview,
-                )
+            # if items:
+            #     preview = items[: min(len(items), 3)]
+            #     logger.info(
+            #         "filter_data: 数据样例 (前%s条): %s",
+            #         len(preview),
+            #         preview,
+            #     )
 
             # 5. 应用过滤
             filtered_items, total, sampled, sampling_rate = _filter_items(
@@ -412,6 +430,18 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
             )
 
             # 6. 构造返回结果
+            result_metadata: Dict[str, Any] = dict(source_metadata or {})
+            result_metadata.update({
+                "total_before_filter": len(items),
+                "total_after_filter": total,
+                "returned": len(filtered_items),
+                "offset": offset,
+                "limit": limit,
+            })
+            if sampled:
+                result_metadata["sampled"] = True
+                result_metadata["sampling_rate"] = sampling_rate
+
             result = {
                 "type": "data_filter",
                 "items": filtered_items,
@@ -419,8 +449,19 @@ def register_data_filter_tool(registry: ToolRegistry) -> None:
                 "total_after_filter": total,
                 "returned": len(filtered_items),
                 "offset": offset,
-                "limit": limit
+                "limit": limit,
+                "metadata": result_metadata,
             }
+            route = result_metadata.get("generated_path")
+            if route:
+                result["generated_path"] = route
+                result["route"] = route
+            feed_title = result_metadata.get("feed_title")
+            if feed_title:
+                result["feed_title"] = feed_title
+            datasource = result_metadata.get("datasource") or result_metadata.get("source")
+            if datasource:
+                result["source"] = datasource
 
             warning_message = None
             if sampled:

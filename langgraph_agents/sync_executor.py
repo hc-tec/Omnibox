@@ -21,6 +21,7 @@ from uuid import uuid4
 from query_processor.llm_client import LLMClient
 from services.data_query_service import DataQueryService, DataQueryResult, QueryDataset
 
+from .config import LangGraphConfig
 from .factory import build_runtime
 from .graph_builder import create_langgraph_app
 from .runtime import LangGraphRuntime
@@ -57,6 +58,8 @@ class SyncLangGraphExecutor:
         llm_client: LLMClient,
         data_query_service: DataQueryService,
         llm_tracker: Optional["LLMCallTracker"] = None,  # V5.0 可观测性
+        config: Optional[LangGraphConfig] = None,
+        recursion_limit: Optional[int] = None,
     ):
         """
         初始化同步执行器。
@@ -65,10 +68,15 @@ class SyncLangGraphExecutor:
             llm_client: LLM 客户端（用于所有 Agent 节点）
             data_query_service: 数据查询服务
             llm_tracker: LLM 调用追踪器（可选，用于前端可视化）
+            config: LangGraph 运行时配置（可选）
+            recursion_limit: 自定义递归上限（可选，优先级高于 config）
         """
         self.llm_client = llm_client
         self.data_query_service = data_query_service
         self.llm_tracker = llm_tracker
+        self.config = config or LangGraphConfig.default()
+        configured_limit = recursion_limit or self.config.execution.recursion_limit
+        self.recursion_limit = max(1, int(configured_limit))
 
         # 构建 V5.0 Runtime（注入追踪器）
         self.runtime = build_runtime(
@@ -87,8 +95,9 @@ class SyncLangGraphExecutor:
         self.app = create_langgraph_app(self.runtime)
 
         logger.info(
-            "SyncLangGraphExecutor 初始化完成（%d 个工具%s）",
+            "SyncLangGraphExecutor 初始化完成（%d 个工具，recursion_limit=%d%s）",
             len(self.runtime.tool_registry.list_tools()),
+            self.recursion_limit,
             "，已启用 LLM 追踪" if llm_tracker else ""
         )
 
@@ -135,7 +144,10 @@ class SyncLangGraphExecutor:
 
         # 配置
         normalized_thread_id = thread_id or f"sync-{uuid4().hex}"
-        config = {"configurable": {"thread_id": normalized_thread_id}}
+        config = {
+            "recursion_limit": self.recursion_limit,
+            "configurable": {"thread_id": normalized_thread_id},
+        }
 
         logger.info("开始执行 LangGraph 工作流: %s", user_query[:50])
 
@@ -346,6 +358,8 @@ def create_sync_executor(
     llm_client: LLMClient,
     data_query_service: DataQueryService,
     llm_tracker: Optional["LLMCallTracker"] = None,  # V5.0 可观测性
+    config: Optional[LangGraphConfig] = None,
+    recursion_limit: Optional[int] = None,
 ) -> SyncLangGraphExecutor:
     """
     创建同步执行器的便捷工厂函数。
@@ -354,6 +368,8 @@ def create_sync_executor(
         llm_client: LLM 客户端
         data_query_service: 数据查询服务
         llm_tracker: LLM 调用追踪器（可选，用于前端可视化）
+        config: LangGraph 配置（可选）
+        recursion_limit: 自定义递归上限（可选）
 
     Returns:
         SyncLangGraphExecutor 实例
@@ -362,4 +378,6 @@ def create_sync_executor(
         llm_client=llm_client,
         llm_tracker=llm_tracker,  # V5.0 可观测性
         data_query_service=data_query_service,
+        config=config,
+        recursion_limit=recursion_limit,
     )

@@ -23,8 +23,8 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=8002,
-        help="监听端口（默认：8002）"
+        default=8001,
+        help="监听端口（默认：8001）"
     )
     parser.add_argument(
         "--prod",
@@ -34,7 +34,7 @@ def main():
     parser.add_argument(
         "--log-level",
         type=str,
-        default="debug",
+        default="info",
         choices=["debug", "info", "warning", "error"],
         help="日志级别（默认：info）"
     )

@@ -446,6 +446,7 @@ class ChatService:
                         reasoning=intent_result.reasoning,
                         confidence=intent_result.confidence,
                         llm_logs=llm_logs,
+                        client_task_id=client_task_id,
                     )
 
             else:
@@ -764,6 +765,7 @@ class ChatService:
         reasoning: str,
         confidence: float,
         llm_logs: Optional[List[Dict[str, Any]]] = None,
+        client_task_id: Optional[str] = None,
     ) -> ChatResponse:
         """
         创建"需要流式接口"的统一响应
@@ -782,6 +784,8 @@ class ChatService:
         """
         logger.info("返回流式研究提示: %s (置信度 %.2f)", reasoning, confidence)
 
+        task_id = client_task_id or f"task-{uuid4().hex}"
+
         return ChatResponse(
             success=True,
             intent_type="complex_research",
@@ -792,6 +796,7 @@ class ChatService:
                 "requires_streaming": True,  # ← 核心标记
                 "websocket_endpoint": "/api/v1/chat/stream",
                 "suggested_action": "使用 WebSocket 连接获取流式研究进度",
+                "task_id": task_id,
                 "debug": compose_debug_payload(None, llm_logs, None),
             }
         )

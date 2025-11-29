@@ -47,7 +47,10 @@ export class PanelStreamClient {
     this.handler = onMessage;
     this.errorHandler = onError ?? null;
 
-    const socket = new WebSocket(WS_BASE);
+    const socketUrl = payload.task_id
+      ? `${WS_BASE}${WS_BASE.includes("?") ? "&" : "?"}task_id=${encodeURIComponent(payload.task_id)}`
+      : WS_BASE;
+    const socket = new WebSocket(socketUrl);
     this.socket = socket;
 
     socket.addEventListener("open", () => {
@@ -58,6 +61,7 @@ export class PanelStreamClient {
           use_cache: payload.use_cache ?? true,
           layout_snapshot: payload.layout_snapshot ?? null,
           mode: payload.mode ?? 'auto',
+          task_id: payload.task_id ?? null,
         })
       );
     });

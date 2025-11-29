@@ -74,9 +74,9 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
                 },
                 "max_samples": {
                     "type": "integer",
-                    "description": "提供给 Coder 的样例数量（默认 20，范围 1-100）",
+                    "description": "提供给 Coder 的样例数量（默认 5，范围 1-5）",
                     "minimum": 1,
-                    "maximum": 100,
+                    "maximum": 5,
                 },
             },
             "required": ["source_ref", "instruction"],
@@ -113,12 +113,12 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
             )
 
         source_ref = call.args.get("source_ref")
-        max_samples = call.args.get("max_samples") or 20
+        max_samples = call.args.get("max_samples") or 5
         try:
             max_samples = int(max_samples)
         except (TypeError, ValueError):
-            max_samples = 20
-        max_samples = max(1, min(max_samples, 100))
+            max_samples = 5
+        max_samples = max(1, min(max_samples, 5))
 
         source_context = _resolve_records(source_ref, context, data_store)
         if not source_context or not source_context.records:

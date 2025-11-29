@@ -4,6 +4,7 @@ import { usePanelStore } from "../../store/panelStore";
 import type { PanelResponse } from "@/shared/types/panel";
 import { useResearchStore } from "@/features/research/stores/researchStore";
 import { persistResearchTaskQuery } from "@/features/research/utils/taskStorage";
+import { generateUUID } from "@/utils/uuid";
 
 interface SubmitPayload {
   query: string;
@@ -32,12 +33,14 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
     console.log('[usePanelActions] submit payload:', payload);
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
+    const effectiveClientTaskId = payload.client_task_id ?? generateUUID();
+
     const response = await panelStore.fetchPanel(
       query.value,
       datasource.value,
       panelStore.getLayoutSnapshot(),
       payload.mode,
-      payload.client_task_id ?? null
+      effectiveClientTaskId
     );
 
     console.log('[usePanelActions] response:', response);
@@ -47,30 +50,33 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
     const requiresStreaming = response.metadata?.requires_streaming === true;
     console.log('[usePanelActions] requires_streaming:', response.metadata?.requires_streaming);
     console.log('[usePanelActions] requiresStreaming (boolean):', requiresStreaming);
-    let taskId: string | undefined;
+    let taskId: string | undefined = effectiveClientTaskId || response.metadata?.task_id || undefined;
 
     if (requiresStreaming) {
       console.log('[usePanelActions] 创建研究任务 (processing 状态)');
-      // 如果 MainView 已经创建了 workspace 卡片并传递了 client_task_id，使用它
-      // 否则创建新的研究任务
-      if (payload.client_task_id) {
-        console.log('[usePanelActions] 使用已存在的 workspace 卡片 taskId:', payload.client_task_id);
-        taskId = payload.client_task_id;
-        // 创建 researchStore 任务（关联到已存在的 workspace 卡片）
-        researchStore.createTask(query.value, "research", taskId, {
-          status: "processing",
-          metadata: response.metadata,
-          autoDetected: true,
-        });
-        persistResearchTaskQuery(taskId, query.value);
+      const metadata = response.metadata;
+
+      if (taskId) {
+        const existing = researchStore.getTask(taskId);
+        if (existing) {
+          researchStore.updateTaskMetadata(taskId, metadata);
+          researchStore.markTaskProcessing(taskId);
+        } else {
+          researchStore.createTask(query.value, "research", taskId, {
+            status: "processing",
+            metadata,
+            autoDetected: true,
+          });
+        }
       } else {
-        console.log('[usePanelActions] 创建新的研究任务（无 client_task_id）');
-        // 创建研究任务（processing 状态），不跳转
+        console.log('[usePanelActions] 创建新的研究任务（无 task_id）');
         taskId = researchStore.createTask(query.value, "research", undefined, {
           status: "processing",
-          metadata: response.metadata,
+          metadata,
           autoDetected: true,
         });
+      }
+      if (taskId) {
         persistResearchTaskQuery(taskId, query.value);
       }
       console.log('[usePanelActions] 任务已创建, taskId:', taskId);
@@ -88,10 +94,16 @@ export function usePanelActions(initialQuery = "我想看看bilibili热点") {
     };
   };
 
-  const startStream = (payload: { query: string; datasource?: string | null; mode?: string }) => {
+  const startStream = (payload: { query: string; datasource?: string | null; mode?: string; task_id?: string | null }) => {
     query.value = payload.query;
     datasource.value = payload.datasource ?? null;
-    panelStore.connectStream(query.value, datasource.value, panelStore.getLayoutSnapshot(), payload.mode);
+    panelStore.connectStream(
+      query.value,
+      datasource.value,
+      panelStore.getLayoutSnapshot(),
+      payload.mode,
+      payload.task_id ?? null,
+    );
   };
 
   const stopStream = () => {

@@ -111,17 +111,10 @@ export const usePanelStore = defineStore("panel", () => {
       // 检测复杂任务：后端返回 requires_streaming=true 时自动切换到流式
       if (response.metadata?.requires_streaming) {
         console.log("[PanelStore] 检测到复杂任务，自动切换到流式接口");
+        state.value.message = response.message;
+        state.value.metadata = response.metadata;
         state.value.loading = false;
-        // 返回一个 Promise，在流式完成时 resolve
-        return new Promise((resolve) => {
-          connectStreamWithCallback(
-            query,
-            filterDatasource,
-            layoutSnapshot ?? state.value.layoutSnapshot ?? null,
-            mode,
-            (finalResponse) => resolve(finalResponse)
-          );
-        });
+        return response;
       }
 
       if (response.success && response.data) {
@@ -141,6 +134,7 @@ export const usePanelStore = defineStore("panel", () => {
     filterDatasource?: string | null,
     layoutSnapshot?: LayoutSnapshotItem[] | null,
     mode?: string,
+    taskId?: string | null,
     onComplete?: (response: PanelResponse) => void
   ) {
     state.value.streamLoading = true;
@@ -155,6 +149,7 @@ export const usePanelStore = defineStore("panel", () => {
         use_cache: true,
         layout_snapshot: layoutSnapshot ?? state.value.layoutSnapshot ?? null,
         mode: mode as any,
+        task_id: taskId ?? null,
       },
       (message) => {
         state.value.streamLog.push(message);
@@ -266,7 +261,13 @@ export const usePanelStore = defineStore("panel", () => {
     };
   }
 
-  function connectStream(query: string, filterDatasource?: string | null, layoutSnapshot?: LayoutSnapshotItem[] | null, mode?: string) {
+  function connectStream(
+    query: string,
+    filterDatasource?: string | null,
+    layoutSnapshot?: LayoutSnapshotItem[] | null,
+    mode?: string,
+    taskId?: string | null,
+  ) {
     state.value.streamLoading = true;
     state.value.streamLog = [];
     state.value.fetchSnapshot = null;
@@ -279,6 +280,7 @@ export const usePanelStore = defineStore("panel", () => {
         use_cache: true,
         layout_snapshot: layoutSnapshot ?? state.value.layoutSnapshot ?? null,
         mode: mode as any,
+        task_id: taskId ?? null,
       },
       (message) => {
         state.value.streamLog.push(message);

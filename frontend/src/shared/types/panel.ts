@@ -103,6 +103,8 @@ export interface PanelResponse {
     reasoning?: string | null;
     component_confidence?: Record<string, number>;
     debug?: Record<string, unknown>;
+    task_id?: string | null;
+    stream_id?: string | null;
     sub_queries?: Array<{ query: string; task_type?: string }> | null;
     query_plan?: {
       sub_query_count?: number;
@@ -262,5 +264,5 @@ export interface ChatRequestParams {
 export interface StreamRequestPayload extends ChatRequestParams {
   use_cache?: boolean;
   mode?: QueryMode;
+  task_id?: string | null;
 }
-
