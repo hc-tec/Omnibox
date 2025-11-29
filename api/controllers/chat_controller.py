@@ -64,6 +64,11 @@ class MockChatService:
         layout_snapshot: Optional[List[Dict[str, Any]]] = None,
         mode: str = "auto",
         client_task_id: Optional[str] = None,
+        *,
+        force_execute: bool = False,
+        llm_tracker: Optional[Any] = None,
+        panel_callback: Optional[Any] = None,
+        **_: Any,
     ) -> SimpleChatResponse:
         """返回模拟响应，满足测试和本地无依赖场景"""
         normalized = (user_query or "").strip()
@@ -166,7 +171,7 @@ class MockChatService:
                 "reasoning": "mock-service-chitchat",
             }
 
-        return SimpleChatResponse(
+        response = SimpleChatResponse(
             success=True,
             intent_type=intent_type,
             message=message,
@@ -174,6 +179,21 @@ class MockChatService:
             data_blocks=data_blocks,
             metadata=metadata,
         )
+        if panel_callback and intent_type == "data_query" and panel_payload:
+            panel_callback(
+                {
+                    "source_query": user_query,
+                    "previews": [
+                        {
+                            "title": panel_payload.blocks[0].title if panel_payload.blocks else None,
+                            "items": block_records,
+                            "generated_path": metadata.get("generated_path") if isinstance(metadata, dict) else None,
+                            "source": metadata.get("source") if isinstance(metadata, dict) else None,
+                        }
+                    ],
+                }
+            )
+        return response
 
     def quick_refresh(
         self,

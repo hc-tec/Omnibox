@@ -42,9 +42,9 @@ class PanelDSLParser:
 
         if self.allowed_components:
             illegal = [
-                node.component
+                node.node
                 for node in dsl.iter_nodes()
-                if node.component not in self.allowed_components
+                if node.node not in self.allowed_components
             ]
             if illegal:
                 raise PanelDSLValidationError(

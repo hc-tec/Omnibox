@@ -144,16 +144,22 @@ class SyncLangGraphExecutor:
 
         # 配置
         normalized_thread_id = thread_id or f"sync-{uuid4().hex}"
+        recursion_limit = getattr(self, "recursion_limit", None)
+        if recursion_limit is None:
+            config_obj = getattr(self, "config", None)
+            recursion_limit = getattr(getattr(config_obj, "execution", None), "recursion_limit", 10)
         config = {
-            "recursion_limit": self.recursion_limit,
+            "recursion_limit": recursion_limit,
             "configurable": {"thread_id": normalized_thread_id},
         }
 
         logger.info("开始执行 LangGraph 工作流: %s", user_query[:50])
 
-        old_callback = self.runtime.tool_context.extras.get("emit_panel_preview")
-        if panel_callback:
-            self.runtime.tool_context.extras["emit_panel_preview"] = panel_callback
+        tool_context = getattr(self.runtime, "tool_context", None)
+        extras = getattr(tool_context, "extras", None)
+        old_callback = extras.get("emit_panel_preview") if extras else None
+        if panel_callback and extras is not None:
+            extras["emit_panel_preview"] = panel_callback
 
         try:
             # 同步调用 LangGraph
@@ -173,11 +179,11 @@ class SyncLangGraphExecutor:
                 error=str(exc),
             )
         finally:
-            if panel_callback:
+            if panel_callback and extras is not None:
                 if old_callback is None:
-                    self.runtime.tool_context.extras.pop("emit_panel_preview", None)
+                    extras.pop("emit_panel_preview", None)
                 else:
-                    self.runtime.tool_context.extras["emit_panel_preview"] = old_callback
+                    extras["emit_panel_preview"] = old_callback
 
     def _extract_result(self, state: GraphState) -> LangGraphExecutionResult:
         """从最终状态提取结果。"""

@@ -110,7 +110,7 @@ class DisplaySchema(BaseModel):
 class TransformationSpec(BaseModel):
     """数据绑定中的转换指令，由 Sandbox 执行。"""
 
-    type: Literal["inline_python", "code_ref", "builtin"] = Field(
+    type: Literal["inline_python", "code_ref", "builtin", "pipeline"] = Field(
         ...,
         description="转换类型：内联 Python、引用预置代码或使用内置函数",
     )

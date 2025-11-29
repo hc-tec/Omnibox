@@ -90,6 +90,11 @@ def _empty_panel_result():
     return types.SimpleNamespace(
         payload=payload,
         data_blocks={},
+        data_envelopes={},
+        display_schemas={},
+        view_models={},
+        panel_dsl=None,
+        view_descriptors=[],
         component_confidence={},
         debug={"blocks": [], "planner_reasons": [], "planner_engine": "rule"},
     )
@@ -114,6 +119,11 @@ def test_chat_service_exposes_panel_warnings(monkeypatch):
     stub_result = types.SimpleNamespace(
         payload=payload,
         data_blocks={},
+        data_envelopes={},
+        display_schemas={},
+        view_models={},
+        panel_dsl=None,
+        view_descriptors=[],
         component_confidence={},
         debug={
             "blocks": [block_debug],
@@ -132,6 +142,41 @@ def test_chat_service_exposes_panel_warnings(monkeypatch):
         "fallback_rendering",
         "component_skipped",
     ]
+
+
+def test_chat_service_exposes_degraded_components(monkeypatch):
+    query_result = _make_success_query_result()
+    data_service = _DummyDataQueryService(query_result)
+    chat = ChatService(data_query_service=data_service)
+
+    layout = LayoutTree(mode="append", nodes=[], history_token=None)
+    payload = PanelPayload(mode="append", layout=layout, blocks=[])
+    stub_result = types.SimpleNamespace(
+        payload=payload,
+        data_blocks={},
+        data_envelopes={},
+        display_schemas={},
+        view_models={},
+        panel_dsl=None,
+        view_descriptors=[],
+        component_confidence={},
+        debug={"blocks": [], "planner_engine": "rule", "planner_reasons": [], "requested_components": None},
+    )
+    chat.panel_generator = _RecordingPanelGenerator(stub_result)
+
+    degraded_payload = {
+        "panel_dsl": None,
+        "rendered_preview": [],
+        "degraded_components": [{"block_id": "dsl-123", "original_component": "ListPanel"}],
+    }
+    monkeypatch.setattr(
+        chat_service_module,
+        "build_panel_spec_metadata",
+        lambda result: degraded_payload,
+    )
+
+    response = chat.chat("show degraded info", mode="simple")
+    assert response.metadata["panel_degraded_components"] == degraded_payload["degraded_components"]
 
 
 def test_chat_service_ignores_empty_planner_components(monkeypatch):

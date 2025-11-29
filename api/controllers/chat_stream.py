@@ -140,7 +140,10 @@ def stream_chat_processing(
         event_queue: Queue = Queue()
         result_holder: Dict[str, Any] = {}
 
+        llm_events: list[LLMCallEvent] = []
+
         def enqueue_llm_event(event: LLMCallEvent) -> None:
+            llm_events.append(event)
             event_queue.put(("llm_call", event))
 
         llm_tracker = LLMCallTracker(

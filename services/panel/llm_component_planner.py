@@ -39,6 +39,37 @@ from services.panel.component_planner import (
 
 logger = logging.getLogger(__name__)
 
+PIPELINE_GUIDELINES = {
+    "principles": [
+        "优先使用 transformation pipeline（type='pipeline'）串联多个 builtin（rename_fields、coerce_number、aggregate_numeric、group_count、sort_by、head）。",
+        "避免使用 inline_python；所有 preview 级处理都应组合 builtin，实现字段映射、类型转换和 Top-N 排序。",
+        "统计指标与列表视图都可以通过 pipeline 就地完成，无需请求额外工具。",
+    ],
+    "examples": [
+        {
+            "scenario": "计算播放量指标",
+            "pipeline": {
+                "steps": [
+                    {"code": "rename_fields", "params": {"mapping": {"播放量": "views"}}},
+                    {"code": "coerce_number", "params": {"field": "views", "target_field": "views_num"}},
+                    {"code": "aggregate_numeric", "params": {"field": "views_num"}}
+                ]
+            },
+            "usage": "将 aggregate_numeric 的 sum/avg/min/max 映射到 StatisticCard/MetricSet props。",
+        },
+        {
+            "scenario": "生成 Top5 列表",
+            "pipeline": {
+                "steps": [
+                    {"code": "sort_by", "params": {"field": "views", "order": "desc"}},
+                    {"code": "head", "params": {"limit": 5}}
+                ]
+            },
+            "usage": "ListPanel/MediaCardGrid 等列表组件直接消费 pipeline 输出。",
+        },
+    ],
+}
+
 
 class LLMComponentPlanner:
     """
@@ -203,7 +234,8 @@ class LLMComponentPlanner:
         payload = {
             "instruction": (
                 "You are a UI component planner. Based on the manifest and user intent, "
-                "choose the best components. Output valid JSON."
+                "choose the best components. Output valid JSON. "
+                "同时为每个组件设计合适的 transformation pipeline（避免 inline python，优先使用 rename_fields/coerce_number/aggregate_numeric/group_count/sort_by/head 组合）。"
             ),
             "route": route,
             "constraints": {
@@ -219,6 +251,7 @@ class LLMComponentPlanner:
                 "item_count": context.item_count,
             },
             "manifest": component_lines,
+            "transformation_guidelines": PIPELINE_GUIDELINES,
         }
 
         return (

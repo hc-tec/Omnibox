@@ -125,3 +125,81 @@
 
 ---
 通过 Structured Envelope + Display Schema + ViewModel + Panel DSL + Sandbox 的组合，我们既保持了数据安全，又给 Planner/Reflector 足够的可编程空间。复杂工作流不再依赖硬编码 adapter，而是由 LLM 在受控环境下拼装组件，实现真正的灵活 + 可控的 UI 生成链路，并具备交互闭环、Skeleton 体验与全面可观测性。
+
+## 2025-11-30 实施进展（面向 Runtime/DSL 运行时）
+
+### 1. DSL 渲染器容错机制
+- **节点级兜底**：`PanelDSLRenderer` 现在会以 `_render_node_with_fallback()` 包裹所有节点；一旦数据绑定、Sandbox 转换或 ViewModel 引用失败，只会降级该节点，不影响其他节点。
+- **降级视图结构**：降级块统一渲染为 `FallbackRichText`，在 `props/options` 中写入 `original_component` 与 `degraded=true`，便于前端标注异常来源并给出调试提示。
+- **错误可观察性**：`SandboxExecutionError` 会带上具体信息，Renderer 会截断并塞入降级块内容中，防止 Runtime 静默失败。
+
+### 2. ViewModel 引用与数据绑定对齐
+- 当 DSL 中引用 `view_model_id` 时，Renderer 现在会显式验证该 ID 是否存在于传入的 `view_models` registry，并在缺失时抛出受控异常 → 触发降级渲染。
+- 研究/查询链路在构建 panel_spec metadata 时会把同一 `view_models` registry 注入 `PanelRuntime.render_dsl()`，确保 preview/回放与实时渲染一致。
+
+### 3. 组件白名单治理
+- **默认白名单**：新增 `services/panel/component_whitelist.py`，自动从 `ComponentRegistry.default_components()` 收集所有数据组件 ID，并补充 TabGroup/Accordion/Section 等容器组件。
+- **Runtime 入口**：`PanelRuntime` 默认开启 `enforce_component_whitelist`，在未显式传参时会加载上述白名单。若 DSL 中含未知组件会在 parse 阶段直接拒绝。
+- **可控扩展**：Runtime 构造函数提供 `enforce_component_whitelist=False`，供实验阶段或脚本注入自定义节点；也允许调用方传入额外白名单集合。
+
+### 4. 测试覆盖
+- `tests/services/test_panel_structured_pipeline.py` 新增 10 个单测，覆盖：
+  - 嵌套容器渲染、view_model 绑定、Runtime 接收 `PanelDSL` 模型实例。
+  - envelope/view_model 缺失时的降级行为。
+  - Runtime 默认/关闭白名单两种行为。
+  - Sandbox inline python 的安全限制。
+
+### 5. 前后端组件清单同步
+- 新增 `component_whitelist.build_component_whitelist()` 对前端 `componentManifest.ts` 进行解析，后端白名单自动包含所有前端声明组件，杜绝“前端组件新增但后端拒绝”的不一致。
+- 默认运行时仍可选传入 `extra_components` 或通过 `enforce_component_whitelist=False` 关闭校验，方便实验性组件落地。
+- 新增单测验证自定义 manifest 文件解析，保证 regex 解析逻辑可控。
+
+### 6. Sandbox 受控算子扩展
+- 新增 `sort_by` / `slice` / `group_count` 三个内置算子，覆盖排序、区间切片、分组计数三类常用面板级操作，所有输出都保持“列表 + dict”结构，直接供组件消费。
+- 内置算子统一通过 `TransformationSpec(type="builtin", code=...)` 调用，仍可叠加 `head` / `select_fields` 等操作，实现“先排序再取 Top-N”。
+- 扩展后的环境依然禁止 I/O / data_store 访问，仅对 preview 数据做纯内存计算；错误通过 `SandboxExecutionError` 抛出并被 Renderer 降级。
+- 单测补充 sort/slice/group 组合用例，确保受限环境行为可预期。
+- 2025-11-30：新增 `rename_fields` 内置算子，支持字段重命名/映射，解决前端 props 与数据字段不一致的问题；依旧在受控映射表内执行。
+- 2025-11-30：补充 `aggregate_numeric`（输出 count/sum/avg/min/max）与 `coerce_number`（字段类型转换）内置算子，满足 preview 级快速汇总与类型对齐需求，相关测试已覆盖。
+- 2025-11-30：引入 `pipeline` TransformationSpec，支持通过 `steps` 列表顺序执行多个 builtin（如 rename_fields → coerce_number → aggregate_numeric），面板 DSL 可以直接声明组合流程，无需 inline_python。
+  ```jsonc
+  {
+    "node": "StatisticCard",
+    "data_binding": {
+      "data_id": "lg-123",
+      "transformation": {
+        "type": "pipeline",
+        "params": {
+          "steps": [
+            { "code": "rename_fields", "params": { "mapping": { "播放量": "views" } } },
+            { "code": "coerce_number", "params": { "field": "views", "target_field": "views_num" } },
+            { "code": "aggregate_numeric", "params": { "field": "views_num" } }
+          ]
+        }
+      }
+    },
+    "props": { "title": "累计播放量" }
+  }
+  ```
+  上述 DSL 将中文字段映射为标准字段 → 转换类型 → 输出统计指标，仅依赖 preview 数据即可驱动指标卡。
+
+### 8. Planner 指南（草案）
+- **Pipeline 优先**：Planner 在需要执行多步 preview 处理时，应优先生成 `transformation: { "type": "pipeline" }`，将多个 builtin 串联，避免 inline_python。
+- **常见模式**：
+  1. **列表过滤/排序**：`pipeline` 内使用 `sort_by` → `head`，之后绑定到 `ListPanel`。
+  2. **聚合指标**：`rename_fields`（将平台特定字段映射到统一名称）→ `coerce_number`（获得 `*_num`）→ `aggregate_numeric`（产出 sum/avg）→ 绑定 `StatisticCard` 或 `MetricSet`。
+  3. **分组计数**：`rename_fields` → `group_count`（限制 limit 5-10）→ `ListPanel`/`BarChart`。
+- **命名约定**：
+  - `rename_fields.mapping` 目标字段应与前端 props 使用的语义一致（如 `views`, `likes`, `platform`）。
+  - `coerce_number.target_field` 建议使用 `<field>_num`，便于后续 agg/builtin 复用。
+  - `aggregate_numeric` 返回 `count/sum/avg/min/max`，Planner 需指示组件 props 从这些字段读取值，如 `props.metric_value_field = "sum"`。
+- **Prompt 实施**：`LLMComponentPlanner` 的 `_build_prompt` 已在 payload 中注入 `transformation_guidelines`，明确 pipeline 原则，并附带两个 JSON 示例（rename→coerce→aggregate、sort→head）。新增 `tests/services/test_llm_component_planner.py` 校验 prompt 含相关关键字。
+
+### 7. 降级信息透出
+- `panel_spec` 元数据新增 `degraded_components`，Runtime 在渲染 DSL 时收集所有被 Fallback 替换的节点，包含 block_id / 原组件 / 提示文案，前端无需解析 options 即可知晓退化情况。
+- `build_panel_spec_metadata()` / `build_panel_spec_metadata_from_components()` 都输出该字段，并在异常时记录 `{"error": ...}` 方便追踪。
+- 对应单测 `test_panel_spec_metadata_reports_degraded_blocks` 验证 metadata 确实包含退化节点列表。
+- ChatService 会将 `panel_spec.degraded_components` 同步复制到顶层 `metadata["panel_degraded_components"]`，方便前端直接订阅，无需解析整个 panel_spec 结构。
+
+TODO（下一阶段）
+1. 观察真实 Planner 日志，收集 LLM 输出的 pipeline 质量，酌情扩充更多场景示例（如分组统计→图表），并持续通过自动化回归测试验证。

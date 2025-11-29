@@ -626,13 +626,17 @@ class ChatService:
                 "refresh_metadata": refresh_metadata,  # Phase 2: 快速刷新元数据
                 "is_complex": is_complex,  # V5.0: 标记是否为复杂研究
             }
-        if panel_events:
-            metadata["panel_preview_events"] = panel_events
+            if panel_events:
+                metadata["panel_preview_events"] = panel_events
 
-        metadata["panel_spec"] = build_panel_spec_metadata(panel_result)
+            panel_spec_metadata = build_panel_spec_metadata(panel_result)
+            metadata["panel_spec"] = panel_spec_metadata
+            degraded_components = panel_spec_metadata.get("degraded_components") or []
+            if degraded_components:
+                metadata["panel_degraded_components"] = degraded_components
 
-        # 提取并暴露适配器/渲染警告信息到顶层 metadata
-        blocks_debug = debug_info.get("blocks", [])
+            # 提取并暴露适配器/渲染警告信息到顶层 metadata
+            blocks_debug = debug_info.get("blocks", [])
             warnings = []
             for block in blocks_debug:
                 if block.get("using_default_adapter"):

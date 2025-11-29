@@ -103,10 +103,11 @@ def bilibili_hot_search_adapter(
         raw_items = [raw_items]
 
     # 先构建基础 stats（无论是否提前返回都需要）
+    feed_title = payload.get("title") or "B站热搜"
     stats = {
         "datasource": source_info.datasource or "bilibili",
         "route": source_info.route,
-        "feed_title": "B站热搜",
+        "feed_title": feed_title,
         "total_items": len(raw_items),
         "api_endpoint": source_info.route or "/bilibili/hot-search",
     }

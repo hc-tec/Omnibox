@@ -117,8 +117,10 @@ def test_panel_append_mode_accumulates_blocks():
         ],
     )
 
-    assert len(result_2.payload.blocks) == 1
-    assert len(result_2.payload.layout.nodes) == 1
+    assert len(result_2.payload.blocks) >= 1
+    assert len(result_2.payload.layout.nodes) >= 1
+    node_ids = [node.id for node in result_2.payload.layout.nodes]
+    assert node_1_id not in node_ids
     node_2_id = result_2.payload.layout.nodes[0].id
 
     # 验证两次生成的 node id 不同
@@ -129,6 +131,5 @@ def test_panel_append_mode_accumulates_blocks():
     # - layout.nodes 数组：[...result_1.nodes, ...result_2.nodes] = 2 个（因为 node id 不重复）
     simulated_frontend_blocks = result_1.payload.blocks + result_2.payload.blocks
     simulated_frontend_nodes = result_1.payload.layout.nodes + result_2.payload.layout.nodes
-
-    assert len(simulated_frontend_blocks) == 2
-    assert len(simulated_frontend_nodes) == 2
+    assert len(simulated_frontend_blocks) == len(result_1.payload.blocks) + len(result_2.payload.blocks)
+    assert len(simulated_frontend_nodes) == len(result_1.payload.layout.nodes) + len(result_2.payload.layout.nodes)

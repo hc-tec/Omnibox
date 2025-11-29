@@ -30,8 +30,21 @@ class PanelDSLRenderer:
         rendered: List[UIBlock] = []
         vm_registry = view_models or {}
         for node in dsl.layout:
-            rendered.append(self._render_node(node, envelopes, vm_registry))
+            rendered.append(self._render_node_with_fallback(node, envelopes, vm_registry))
         return rendered
+
+    def _render_node_with_fallback(
+        self,
+        node: PanelNode,
+        envelopes: Dict[str, StructuredDataEnvelope],
+        view_models: Dict[str, GeneratedViewModel],
+    ) -> UIBlock:
+        try:
+            return self._render_node(node, envelopes, view_models)
+        except SandboxExecutionError as exc:
+            return self._build_error_block(node, str(exc))
+        except Exception as exc:  # pragma: no cover - 避免异常直接中断整个渲染链路
+            return self._build_error_block(node, f"unknown error: {exc}")
 
     def _render_node(
         self,
@@ -47,9 +60,12 @@ class PanelDSLRenderer:
             binding = node.data_binding
             if binding.view_model_id:
                 vm = view_models.get(binding.view_model_id)
-                if vm:
-                    data_payload = vm.data
-                    data_ref = vm.view_model_id
+                if not vm:
+                    raise SandboxExecutionError(
+                        f"view_model_id '{binding.view_model_id}' not found"
+                    )
+                data_payload = vm.data
+                data_ref = vm.view_model_id
             elif binding.data_id:
                 envelope = envelopes.get(binding.data_id)
                 if not envelope:
@@ -63,9 +79,11 @@ class PanelDSLRenderer:
                 data_payload = {"items": records}
                 data_ref = binding.data_id
 
-        children_blocks = [
-            self._render_node(child, envelopes) for child in node.children
-        ] if node.children else None
+        children_blocks = (
+            [self._render_node_with_fallback(child, envelopes, view_models) for child in node.children]
+            if node.children
+            else None
+        )
 
         interactions = self._build_interactions(node)
 
@@ -80,6 +98,33 @@ class PanelDSLRenderer:
             confidence=None,
             title=node.props.get("title"),
             children=children_blocks,
+        )
+
+    @staticmethod
+    def _build_error_block(node: PanelNode, error_message: str) -> UIBlock:
+        fallback_title = node.props.get("title") or f"{node.node} 渲染失败"
+        sanitized_error = error_message[:200]
+        return UIBlock(
+            id=f"error-{uuid4().hex[:8]}",
+            component="FallbackRichText",
+            data_ref=None,
+            data={
+                "items": [
+                    {
+                        "title": fallback_title,
+                        "content": f"组件渲染失败：{sanitized_error}",
+                    }
+                ]
+            },
+            props={"title": fallback_title, "original_component": node.node},
+            options={
+                "degraded": True,
+                "original_component": node.node,
+            },
+            interactions=[],
+            confidence=None,
+            title=fallback_title,
+            children=None,
         )
 
     @staticmethod
