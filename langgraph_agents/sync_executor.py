@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 from uuid import uuid4
 
 from query_processor.llm_client import LLMClient
-from services.data_query_service import DataQueryService, DataQueryResult
+from services.data_query_service import DataQueryService, DataQueryResult, QueryDataset
 
 from .factory import build_runtime
 from .graph_builder import create_langgraph_app
@@ -97,6 +97,7 @@ class SyncLangGraphExecutor:
         user_query: str,
         filter_datasource: Optional[str] = None,
         thread_id: Optional[str] = None,
+        panel_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> LangGraphExecutionResult:
         """
         同步执行 LangGraph 工作流。
@@ -138,6 +139,10 @@ class SyncLangGraphExecutor:
 
         logger.info("开始执行 LangGraph 工作流: %s", user_query[:50])
 
+        old_callback = self.runtime.tool_context.extras.get("emit_panel_preview")
+        if panel_callback:
+            self.runtime.tool_context.extras["emit_panel_preview"] = panel_callback
+
         try:
             # 同步调用 LangGraph
             final_state = self.app.invoke(initial_state, config)
@@ -155,6 +160,12 @@ class SyncLangGraphExecutor:
                 execution_steps=[],
                 error=str(exc),
             )
+        finally:
+            if panel_callback:
+                if old_callback is None:
+                    self.runtime.tool_context.extras.pop("emit_panel_preview", None)
+                else:
+                    self.runtime.tool_context.extras["emit_panel_preview"] = old_callback
 
     def _extract_result(self, state: GraphState) -> LangGraphExecutionResult:
         """从最终状态提取结果。"""
@@ -211,6 +222,16 @@ class SyncLangGraphExecutor:
             clarification_question=clarification_question,
         )
 
+    DATA_RESULT_TOOLS = {
+        "fetch_public_data",
+        "fetch_private_data",
+        "data_operator",
+        "filter_data",
+        "compare_data",
+        "aggregate_data",
+        "extract_insights",
+    }
+
     def get_final_data(self, result: LangGraphExecutionResult) -> Optional[DataQueryResult]:
         """
         从执行结果中提取最终数据（DataQueryResult）。
@@ -220,26 +241,104 @@ class SyncLangGraphExecutor:
         if not result.data_stash:
             return None
 
-        # 找到最后一个成功的 fetch_public_data 或 filter_data 结果
+        def _load_data(ref: DataReference) -> Optional[DataQueryResult]:
+            if not ref.data_id:
+                return None
+            data = self.runtime.data_store.load(ref.data_id)
+            if not data:
+                logger.debug("langgraph.get_final_data skip empty data_id=%s tool=%s", ref.data_id, ref.tool_name)
+                return None
+            return self._dict_to_query_result(data)
+
+        # 优先选择可渲染数据的工具结果
         for ref in reversed(result.data_stash):
-            if ref.status == "success" and ref.data_id:
-                data = self.runtime.data_store.load(ref.data_id)
-                if data:
-                    return self._dict_to_query_result(data)
+            if ref.status == "success" and ref.tool_name in self.DATA_RESULT_TOOLS:
+                loaded = _load_data(ref)
+                if loaded:
+                    logger.debug(
+                        "langgraph.get_final_data resolved tool=%s data_id=%s",
+                        ref.tool_name,
+                        ref.data_id,
+                    )
+                    return loaded
+
+        # 兜底：若没有匹配的工具，退回到最后一个成功结果
+        logger.warning(
+            "langgraph.get_final_data: 未找到可用数据工具，使用最后一个成功结果（总计=%s）",
+            len(result.data_stash),
+        )
+        for ref in reversed(result.data_stash):
+            if ref.status == "success":
+                loaded = _load_data(ref)
+                if loaded:
+                    return loaded
 
         return None
 
     @staticmethod
-    def _dict_to_query_result(data: Dict[str, Any]) -> DataQueryResult:
+    def _select_non_empty(*values: Optional[str]) -> Optional[str]:
+        for value in values:
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped:
+                    return stripped
+            elif value:
+                return value
+        return None
+
+    def _dict_to_query_result(self, data: Dict[str, Any]) -> DataQueryResult:
         """将字典转换为 DataQueryResult。"""
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        logger.debug(
+            "langgraph.dict_to_query_result raw_keys=%s metadata_keys=%s",
+            list(data.keys()),
+            list(metadata.keys()),
+        )
+        generated_path = self._select_non_empty(
+            data.get("generated_path"),
+            metadata.get("generated_path"),
+            metadata.get("source_route"),
+            metadata.get("route"),
+        )
+        source = self._select_non_empty(
+            data.get("source"),
+            metadata.get("source"),
+            metadata.get("datasource"),
+            metadata.get("source_datasource"),
+        )
+        feed_title = self._select_non_empty(
+            data.get("feed_title"),
+            metadata.get("feed_title"),
+            metadata.get("source_feed_title"),
+        )
+        cache_hit = data.get("cache_hit") or metadata.get("cache_hit") or "none"
+        items = data.get("items")
+        if not isinstance(items, list):
+            items = []
+
+        dataset = QueryDataset(
+            route_id=None,
+            provider=None,
+            name=feed_title,
+            generated_path=generated_path,
+            items=items,
+            feed_title=feed_title,
+            source=source,
+            cache_hit=cache_hit,
+            reasoning=data.get("reasoning", ""),
+            payload=data if isinstance(data, dict) else None,
+        )
+
         return DataQueryResult(
-            status="success",
-            items=data.get("items", []),
-            feed_title=data.get("feed_title"),
-            generated_path=data.get("generated_path"),
-            source=data.get("source"),
-            cache_hit=data.get("cache_hit"),
-            reasoning=data.get("reasoning"),
+            status=data.get("status") or "success",
+            items=items,
+            feed_title=feed_title,
+            generated_path=generated_path,
+            source=source,
+            cache_hit=cache_hit,
+            reasoning=data.get("reasoning", ""),
+            payload=data if isinstance(data, dict) else None,
+            datasets=[dataset],
         )
 
 

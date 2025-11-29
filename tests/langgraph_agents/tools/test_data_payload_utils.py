@@ -51,10 +51,12 @@ def test_unwrap_payload_with_result_key():
 
 def test_extract_and_metadata_helpers():
     payload = {
-        "route": "/foo",
-        "title": "示例",
         "items": [{"id": 1}, {"id": 2}],
-        "datasource": "rsshub",
+        "metadata": {
+            "source_route": "/foo",
+            "source_feed_title": "示例",
+            "source_datasource": "rsshub",
+        },
     }
     records = extract_records(payload)
     assert len(records) == 2
@@ -64,4 +66,6 @@ def test_extract_and_metadata_helpers():
     assert metadata["source_step_id"] == 3
     assert metadata["payload_ref"] == "lg-raw"
     assert metadata["generated_path"] == "/foo"
+    assert metadata["feed_title"] == "示例"
+    assert metadata["datasource"] == "rsshub"
     assert metadata["item_count"] == 2

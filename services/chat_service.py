@@ -499,6 +499,10 @@ class ChatService:
 
         langgraph_result: Optional[LangGraphExecutionResult] = None
         query_result: Optional[DataQueryResult] = None
+        panel_events: List[Dict[str, Any]] = []
+
+        def capture_panel(payload: Dict[str, Any]) -> None:
+            panel_events.append(payload)
 
         # 优先使用 V5.0 LangGraph 执行器
         if self.langgraph_executor or llm_tracker:
@@ -514,10 +518,20 @@ class ChatService:
                     logger.debug("创建带 LLM 追踪器的临时执行器")
 
                 if executor:
-                    langgraph_result = executor.execute(
-                        user_query=user_query,
-                        filter_datasource=filter_datasource,
-                    )
+                    try:
+                        langgraph_result = executor.execute(
+                            user_query=user_query,
+                            filter_datasource=filter_datasource,
+                            panel_callback=capture_panel,
+                        )
+                    except TypeError as exc:
+                        if "panel_callback" in str(exc):
+                            langgraph_result = executor.execute(
+                                user_query=user_query,
+                                filter_datasource=filter_datasource,
+                            )
+                        else:
+                            raise
 
                     # 提取最终数据（如果成功）
                     if langgraph_result and langgraph_result.success:
@@ -613,6 +627,8 @@ class ChatService:
                 "refresh_metadata": refresh_metadata,  # Phase 2: 快速刷新元数据
                 "is_complex": is_complex,  # V5.0: 标记是否为复杂研究
             }
+            if panel_events:
+                metadata["panel_preview_events"] = panel_events
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
             blocks_debug = debug_info.get("blocks", [])
@@ -850,9 +866,18 @@ class ChatService:
         planner_engines: List[str] = []
 
         for index, dataset in enumerate(normalized, start=1):
+            route = self._resolve_dataset_route(dataset, query_result, dataset_index=index)
+            datasource = dataset.source or (guess_datasource(route) if route else (query_result.source or "rsshub"))
+            logger.debug(
+                "panel.build_block dataset_index=%s route=%s datasource=%s feed_title=%s",
+                index,
+                route,
+                datasource,
+                dataset.feed_title,
+            )
             source_info = SourceInfo(
-                datasource=guess_datasource(dataset.generated_path),
-                route=dataset.generated_path or "",
+                datasource=datasource,
+                route=route or "",
                 params={},
                 fetched_at=None,
                 request_id=None,
@@ -867,12 +892,24 @@ class ChatService:
             planner_engines.append(planner_engine)
             planner_reasons_acc.extend([f"[dataset-{index}] {reason}" for reason in planner_reasons])
 
+            if planner_engine == "error":
+                logger.warning(
+                    "panel.component_planner route=%s dataset_index=%s reasons=%s",
+                    route,
+                    index,
+                    planner_reasons,
+                )
+
             block_input = PanelBlockInput(
                 block_id=f"data_block_{uuid4().hex[:8]}",
                 records=dataset_records(dataset),
                 source_info=source_info,
                 title=dataset.feed_title,
-                stats={"intent_confidence": intent_confidence, "dataset_index": index},
+                stats={
+                    "intent_confidence": intent_confidence,
+                    "dataset_index": index,
+                    "generated_path": route,
+                },
                 requested_components=planned_components,
             )
             block_inputs.append(block_input)
@@ -890,6 +927,13 @@ class ChatService:
         )
         if layout_snapshot:
             result.debug.setdefault("layout_snapshot", layout_snapshot)
+
+        logger.debug(
+            "panel.generate route_count=%s planner_engine=%s reasons=%s",
+            len(normalized),
+            result.debug.get("planner_engine"),
+            result.debug.get("planner_reasons"),
+        )
         return result
 
     def _plan_components_for_source(
@@ -902,6 +946,12 @@ class ChatService:
         planner_engine = "rule"
         planner_reasons: List[str] = []
         planned_components: Optional[List[str]] = None
+
+        if not route:
+            planner_engine = "error"
+            planner_reasons.append("route_missing: 无法确定路由，跳过组件规划")
+            logger.error("panel.component_planner route_missing user_query=%s", user_query)
+            return None, planner_reasons, planner_engine
 
         try:
             planner_context = PlannerContext(
@@ -946,6 +996,77 @@ class ChatService:
         if filter_datasource:
             return True
         return self._force_single_route
+
+    @staticmethod
+    def _select_non_empty(*values: Optional[str]) -> Optional[str]:
+        for value in values:
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped:
+                    return stripped
+            elif value:
+                return value
+        return None
+
+    @staticmethod
+    def _normalize_route(route: str) -> str:
+        cleaned = route.strip()
+        if not cleaned.startswith("/"):
+            cleaned = f"/{cleaned}"
+        if cleaned != "/" and cleaned.endswith("/"):
+            cleaned = cleaned.rstrip("/")
+        return cleaned
+
+    def _resolve_dataset_route(
+        self,
+        dataset: QueryDataset,
+        query_result: Optional[DataQueryResult],
+        dataset_index: Optional[int] = None,
+    ) -> Optional[str]:
+        payload_meta: Dict[str, Any] = {}
+        payload_root: Dict[str, Any] = {}
+        if isinstance(dataset.payload, dict):
+            payload_root = dataset.payload
+            metadata = payload_root.get("metadata")
+            if isinstance(metadata, dict):
+                payload_meta = metadata
+
+        query_payload: Dict[str, Any] = {}
+        query_payload_meta: Dict[str, Any] = {}
+        if query_result and isinstance(query_result.payload, dict):
+            query_payload = query_result.payload
+            qp_meta = query_payload.get("metadata")
+            if isinstance(qp_meta, dict):
+                query_payload_meta = qp_meta
+
+        candidate = self._select_non_empty(
+            dataset.generated_path,
+            payload_root.get("generated_path"),
+            payload_root.get("route"),
+            payload_meta.get("generated_path"),
+            payload_meta.get("route"),
+            payload_meta.get("source_route"),
+            dataset.route_id,
+            query_payload.get("generated_path"),
+            query_payload_meta.get("generated_path"),
+            query_payload_meta.get("route"),
+            query_payload_meta.get("source_route"),
+            query_result.generated_path if query_result else None,
+        )
+        logger.debug(
+            "panel.resolve_route dataset_index=%s dataset_path=%s payload_route=%s metadata_route=%s route_id=%s fallback=%s resolved=%s",
+            dataset_index,
+            dataset.generated_path,
+            payload_root.get("generated_path") or payload_root.get("route"),
+            payload_meta.get("generated_path") or payload_meta.get("route"),
+            dataset.route_id,
+            query_result.generated_path if query_result else None,
+            candidate,
+        )
+        if not candidate:
+            logger.warning("panel.resolve_route_failed feed_title=%s dataset_index=%s", dataset.feed_title, dataset_index)
+            return None
+        return self._normalize_route(candidate)
 
     def _build_dataset_preview(
         self,

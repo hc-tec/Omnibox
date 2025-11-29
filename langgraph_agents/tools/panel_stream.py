@@ -203,10 +203,18 @@ def _build_panel_from_source_ref(
     if not route:
         raise ValueError("缺少 generated_path，无法确定面板适配器")
 
-    records = [dataset_payload]
     preview_source_records = extract_records(dataset_payload)
     if not preview_source_records:
-        raise ValueError("数据为空，无法渲染面板")
+        if isinstance(dataset_payload, dict):
+            logger.warning(
+                "emit_panel_preview: 无 items 字段，使用 payload 作为单条记录 (source_ref=%s data_id=%s route=%s)",
+                source_ref,
+                resolved.source_data_id,
+                route,
+            )
+            preview_source_records = [dataset_payload]
+        else:
+            raise ValueError("数据为空，无法渲染面板")
 
     datasource = stats.get("source_datasource") or stats.get("datasource") or dataset_payload.get("source") or "rsshub"
     source_info = SourceInfo(
@@ -219,7 +227,7 @@ def _build_panel_from_source_ref(
 
     block_input = PanelBlockInput(
         block_id=f"panel-{uuid4().hex[:8]}",
-        records=records,
+        records=preview_source_records,
         source_info=source_info,
         title=dataset_payload.get("feed_title") or dataset_payload.get("title"),
         full_data_ref=resolved.source_data_id,

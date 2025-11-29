@@ -34,7 +34,7 @@ def main():
     parser.add_argument(
         "--log-level",
         type=str,
-        default="info",
+        default="debug",
         choices=["debug", "info", "warning", "error"],
         help="日志级别（默认：info）"
     )

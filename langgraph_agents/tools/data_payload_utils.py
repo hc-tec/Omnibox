@@ -108,6 +108,35 @@ def build_source_metadata(
             metadata["source"] = payload.get("source")
         if payload.get("cache_hit"):
             metadata["cache_hit"] = payload.get("cache_hit")
+        inner_meta = payload.get("metadata")
+        if isinstance(inner_meta, dict):
+            if "generated_path" not in metadata:
+                inner_route = select_non_empty(
+                    inner_meta.get("source_route"),
+                    inner_meta.get("generated_path"),
+                    inner_meta.get("route"),
+                )
+                if inner_route:
+                    metadata["generated_path"] = inner_route
+            if "feed_title" not in metadata:
+                inner_feed = select_non_empty(
+                    inner_meta.get("source_feed_title"),
+                    inner_meta.get("feed_title"),
+                    inner_meta.get("title"),
+                )
+                if inner_feed:
+                    metadata["feed_title"] = inner_feed
+            if "datasource" not in metadata:
+                inner_ds = select_non_empty(
+                    inner_meta.get("source_datasource"),
+                    inner_meta.get("datasource"),
+                )
+                if inner_ds:
+                    metadata["datasource"] = inner_ds
+            if "source" not in metadata and inner_meta.get("source"):
+                metadata["source"] = inner_meta.get("source")
+            if "cache_hit" not in metadata and inner_meta.get("cache_hit") is not None:
+                metadata["cache_hit"] = inner_meta.get("cache_hit")
         metadata["item_count"] = len(extract_records(payload))
 
     return {key: value for key, value in metadata.items() if value is not None}
