@@ -207,6 +207,8 @@ def handle_complex_research_streaming(
         aggregated_datasets: List[QueryDataset] = []
         success_count = 0
 
+        last_panel_spec: Optional[Dict[str, Any]] = None
+
         for idx, sub_query in enumerate(data_sub_queries):
             step_id = f"data_fetch_{idx}"
 
@@ -253,6 +255,8 @@ def handle_complex_research_streaming(
                         user_query=sub_query.query,
                         layout_snapshot=layout_snapshot,
                     )
+                    panel_spec_metadata = build_panel_spec_metadata(panel_result)
+                    last_panel_spec = panel_spec_metadata
 
                     # 推送面板消息
                     yield {
@@ -262,12 +266,10 @@ def handle_complex_research_streaming(
                         "step_id": step_id,
                         "step_index": idx + 1,
                         "panel_payload": panel_result.payload.model_dump(),
-                        "panel_data_blocks": {
-                            key: block.model_dump()
-                            for key, block in (panel_result.data_blocks or {}).items()
-                        },
+                        "panel_data_blocks": panel_spec_metadata.get("data_envelopes") or {},
                         "source_query": sub_query.query,
-                        "panel_spec": build_panel_spec_metadata(panel_result),
+                        "panel_spec": panel_spec_metadata,
+                        "panel_contracts": panel_spec_metadata.get("contracts_applied") or [],
                         "timestamp": datetime.now().isoformat(),
                     }
 
@@ -372,7 +374,9 @@ def handle_complex_research_streaming(
         # ========== 第四步：研究完成 ==========
         total_time = time.time() - start_time
         completion_panel_spec = None
-        if 'panel_result' in locals():
+        if last_panel_spec:
+            completion_panel_spec = last_panel_spec
+        elif 'panel_result' in locals():
             try:
                 completion_panel_spec = build_panel_spec_metadata(panel_result)
             except Exception as exc:  # pragma: no cover
@@ -386,6 +390,7 @@ def handle_complex_research_streaming(
             "total_time": total_time,
             "summary": None,
             "panel_spec": completion_panel_spec,
+            "panel_contracts": (completion_panel_spec or {}).get("contracts_applied") if isinstance(completion_panel_spec, dict) else [],
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -495,6 +500,7 @@ def _execute_analysis_queries(
                 "analysis_text": response.strip(),
                 "is_complete": True,
                 "panel_spec": analysis_panel_spec,
+                "panel_contracts": analysis_panel_spec.get("contracts_applied") or [],
                 "timestamp": datetime.now().isoformat(),
             }
 

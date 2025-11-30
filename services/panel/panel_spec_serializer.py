@@ -30,6 +30,7 @@ def build_panel_spec_metadata(result: PanelGenerationResult) -> Dict[str, Any]:
             "component_id": vm.component_id,
             "data": vm.data,
             "props": vm.props,
+            "contract_id": vm.contract_id,
         }
         for key, vm in result.view_models.items()
     }
@@ -53,6 +54,17 @@ def build_panel_spec_metadata(result: PanelGenerationResult) -> Dict[str, Any]:
             rendered_preview = {"error": str(exc)}
             degraded_components = [{"error": str(exc)}]
 
+    contracts_applied = [
+        {
+            "component_id": vm.component_id,
+            "contract_id": vm.contract_id,
+            "view_model_id": key,
+            "title": vm.props.get("title"),
+        }
+        for key, vm in result.view_models.items()
+        if vm.contract_id
+    ]
+
     return {
         "data_envelopes": envelopes_dump,
         "display_schemas": display_schemas_dump,
@@ -60,6 +72,7 @@ def build_panel_spec_metadata(result: PanelGenerationResult) -> Dict[str, Any]:
         "panel_dsl": dsl_dump,
         "rendered_preview": rendered_preview,
         "degraded_components": degraded_components,
+        "contracts_applied": contracts_applied,
     }
 
 
@@ -74,6 +87,7 @@ def build_panel_spec_metadata_from_components(
             "component_id": vm.component_id,
             "data": vm.data,
             "props": vm.props,
+            "contract_id": vm.contract_id,
         }
         for key, vm in view_models.items()
     }
@@ -103,6 +117,17 @@ def build_panel_spec_metadata_from_components(
         rendered_preview = {"error": str(exc)}
         degraded_components = [{"error": str(exc)}]
 
+    contracts_applied = [
+        {
+            "component_id": vm.component_id,
+            "contract_id": vm.contract_id,
+            "view_model_id": key,
+            "title": vm.props.get("title"),
+        }
+        for key, vm in view_models.items()
+        if vm.contract_id
+    ]
+
     return {
         "data_envelopes": envelopes_dump,
         "display_schemas": display_schemas_dump,
@@ -110,6 +135,7 @@ def build_panel_spec_metadata_from_components(
         "panel_dsl": panel_dsl.model_dump(),
         "rendered_preview": rendered_preview,
         "degraded_components": degraded_components,
+        "contracts_applied": contracts_applied,
     }
 
 

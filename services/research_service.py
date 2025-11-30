@@ -52,6 +52,7 @@ class ResearchResult:
     data_stash: List[Dict[str, Any]] = field(default_factory=list)
     execution_steps: List[ResearchStep] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    panel_previews: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
 
 
@@ -270,6 +271,13 @@ class ResearchService:
                 "data": payload,
             }
             self.task_hub.publish_event(task_identifier, event)
+            sanitized = None
+            try:
+                sanitized = _capture_panel_payload(payload)
+            except Exception as exc:  # pragma: no cover - 防御性
+                logger.debug("capture panel preview failed: %s", exc)
+            if sanitized:
+                captured_panels.append(sanitized)
 
         # 注入到 tool_context，供 emit_panel_preview 工具使用
         self.runtime.tool_context.extras["emit_panel_preview"] = emit_panel_preview
@@ -287,6 +295,27 @@ class ResearchService:
 
             execution_steps: List[ResearchStep] = []
             step_counter = 0
+            captured_panels: List[Dict[str, Any]] = []
+
+            def _capture_panel_payload(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                panel_bundle = payload.get("panel_bundle")
+                panel_payload = None
+                panel_spec = None
+                if panel_bundle and isinstance(panel_bundle, dict):
+                    panel_payload = panel_bundle.get("panel_payload")
+                    panel_spec = panel_bundle.get("panel_spec")
+                if panel_payload is None:
+                    panel_payload = payload.get("panel_payload")
+                if panel_spec is None:
+                    panel_spec = payload.get("panel_spec")
+                if panel_payload is None:
+                    return None
+                return {
+                    "panel_payload": panel_payload,
+                    "panel_spec": panel_spec,
+                    "source_query": payload.get("source_query") or payload.get("query"),
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
 
             for event in self.app.stream(base_state, langgraph_config):
                 step_counter += 1
@@ -345,6 +374,7 @@ class ResearchService:
                 data_stash=data_stash,
                 execution_steps=execution_steps,
                 metadata=metadata,
+                panel_previews=captured_panels,
             )
 
             self.task_hub.mark_completed(task_identifier, final_report, True, metadata)

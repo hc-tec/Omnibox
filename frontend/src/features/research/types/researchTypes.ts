@@ -2,7 +2,12 @@
  * 研究功能类型定义
  */
 
-import type { QueryMode } from '@/shared/types/panel';
+import type {
+  QueryMode,
+  PanelPayload,
+  PanelSpecMetadata,
+  PanelContractInfo,
+} from '@/shared/types/panel';
 
 /** 查询模式（从 panel types 导入） */
 export type { QueryMode };
@@ -50,6 +55,7 @@ export interface ResearchTask {
   error?: string;
   metadata?: Record<string, unknown>;
   previews?: ResearchPreview[];
+  panel_previews?: ResearchPanelPreview[];
   auto_detected?: boolean;
   created_at: string;
   updated_at: string;
@@ -70,6 +76,10 @@ export interface ResearchResponse {
     intent_type?: string | null;
     research_type?: string | null;
     sub_queries?: Array<{ query: string; task_type?: string }> | null;
+    panel_previews?: ResearchPanelPreview[];
+    panel_contracts?: PanelContractInfo[];
+    panel_spec?: PanelSpecMetadata;
+    panel_degraded_components?: Array<Record<string, unknown>>;
     query_plan?: {
       sub_query_count?: number;
       estimated_steps?: number;
@@ -86,9 +96,19 @@ export interface ResearchPreview {
   created_at: string;
 }
 
+export interface ResearchPanelPreview {
+  panel_payload: PanelPayload;
+  panel_spec?: PanelSpecMetadata | null;
+  source_query?: string;
+  timestamp?: string;
+  panel_contracts?: PanelContractInfo[];
+}
+
 /** WebSocket 消息 */
 export interface ResearchWebSocketMessage {
   type: 'step' | 'human_in_loop' | 'complete' | 'error' | 'human_response_ack' | 'cancelled' | 'panel_preview';
   task_id: string;
   data?: any;
+  panel_spec?: PanelSpecMetadata | null;
+  panel_contracts?: PanelContractInfo[];
 }

@@ -150,6 +150,26 @@ class TestFormatHelpers:
         assert "filter_datasource" not in result
         assert "search_data_sources" in result
 
+    def test_format_working_memory_component_contracts(self):
+        """测试组件契约格式化"""
+        working_memory = {
+            "component_contracts": {
+                "contracts": {
+                    "StatisticCard-contract-v2": {
+                        "component_id": "StatisticCard",
+                        "contract_id": "StatisticCard-contract-v2",
+                        "status": "planned",
+                        "targets": ["$step.2"],
+                        "description": "统计B站热搜数量",
+                    }
+                }
+            }
+        }
+        result = _format_working_memory(working_memory)
+        assert "组件契约登记" in result
+        assert "StatisticCard" in result
+        assert "$step.2" in result
+
     def test_extract_executed_tools_empty(self):
         """测试空执行记录"""
         result = _extract_executed_tools([])
@@ -238,6 +258,32 @@ class TestProcessAgentDecision:
         assert result["next_tool_call"] is not None
         assert result["next_tool_call"].plugin_id == "ask_user_clarification"
 
+    def test_process_continue_updates_component_contracts(self):
+        """记录组件契约时应写入 working_memory"""
+        data = {
+            "decision": "CONTINUE",
+            "reasoning": "统计指标卡",
+            "tool_call": {
+                "plugin_id": "data_operator",
+                "args": {"source_ref": "$step.1", "instruction": "统计数量"},
+                "description": "统计热搜数量",
+            },
+            "component_contract": {
+                "component_id": "StatisticCard",
+                "contract_id": "StatisticCard-contract-v2",
+                "status": "planned",
+                "description": "输出数字卡片",
+            },
+        }
+        state: GraphState = {"original_query": "测试", "data_stash": [], "working_memory": {}}
+        result = _process_agent_decision(data, 1, state)
+
+        working_memory = result.get("working_memory")
+        assert working_memory is not None
+        contracts = working_memory["component_contracts"]["contracts"]
+        assert "StatisticCard-contract-v2" in contracts
+        assert contracts["StatisticCard-contract-v2"]["targets"] == ["$step.1"]
+
 
 class TestResearchAgentNode:
     """测试ResearchAgent节点"""
@@ -274,6 +320,10 @@ class TestResearchAgentNode:
 
         assert result["agent_decision"] == "CONTINUE"
         assert result["next_tool_call"].plugin_id == "fetch_public_data"
+        # Prompt 应包含组件契约提示
+        prompt = runtime.planner_llm.last_prompt
+        assert "组件契约参考" in prompt
+        assert "StatisticCard-contract-v2" in prompt
 
     def test_agent_node_finish_decision(self):
         """测试Agent节点返回FINISH"""

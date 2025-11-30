@@ -9,7 +9,17 @@
     @click="handleBlockClick"
   >
     <header class="panel-block__header">
-      <h3>{{ displayTitle }}</h3>
+      <div class="flex items-center gap-2 w-full">
+        <h3 class="panel-block__title" :title="displayTitle">
+          {{ displayTitle }}
+        </h3>
+        <span
+          v-if="devModeEnabled && resolved.block.contract_id"
+          class="contract-chip"
+        >
+          {{ resolved.block.contract_id }}
+        </span>
+      </div>
       <div class="flex items-center gap-2">
         <span v-if="devModeEnabled" class="dev-indicator">
           🔧 DEV
@@ -237,6 +247,14 @@ function handleBlockClick(event: MouseEvent) {
   border-radius: 999px;
   font-weight: 600;
 }
+.contract-chip {
+  font-size: var(--panel-meta-size, 10px);
+  color: color-mix(in srgb, var(--primary) 80%, black);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  padding: 2px 6px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
 
 .panel-block__header {
   display: flex;
@@ -250,6 +268,17 @@ function handleBlockClick(event: MouseEvent) {
   font-size: var(--panel-heading-size, 16px);
   color: var(--foreground);
   font-weight: 600;
+}
+.panel-block__title {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+  font-size: var(--panel-heading-size, 15px);
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .confidence {

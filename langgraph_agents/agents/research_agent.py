@@ -18,6 +18,10 @@ from ..llm_retry import retry_with_backoff
 from ..prompt_loader import load_prompt
 from ..runtime import LangGraphRuntime
 from ..state import DataReference, GraphState, ToolCall
+from ..component_contracts import (
+    COMPONENT_CONTRACTS_PROMPT,
+    get_contract_by_component,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,22 @@ def _format_working_memory(working_memory: Dict) -> str:
     for tool_id, result in working_memory.items():
         if tool_id == "filter_datasource":
             continue  # 跳过内部标记
+        if tool_id == "component_contracts":
+            contracts = result.get("contracts") or {}
+            if not contracts:
+                continue
+            lines.append("组件契约登记：")
+            for entry in contracts.values():
+                component_id = entry.get("component_id", "未知组件")
+                contract_id = entry.get("contract_id", "未知契约")
+                status = entry.get("status", "pending")
+                targets = entry.get("targets") or []
+                target_str = ", ".join(targets) if targets else "未指定数据引用"
+                description = entry.get("description") or ""
+                lines.append(
+                    f"  - {component_id} ({contract_id}) [{status}] → {target_str} {description}".rstrip()
+                )
+            continue
         status = result.get("status", "unknown")
         description = result.get("description", "")
         step_id = result.get("step_id", "?")
@@ -77,6 +97,103 @@ def _format_raw_fetch_refs(data_stash: List[DataReference]) -> str:
             f" 调用 data_operator 时使用 \"$step.{ref.step_id}\" 或 \"{data_id}\" 引用。"
         )
     return "\n".join(lines)
+
+
+def _format_component_contract_registry(working_memory: Dict[str, Any]) -> str:
+    """单独格式化组件契约信息，供提示词引用。"""
+    contracts_entry = working_memory.get("component_contracts")
+    if not contracts_entry:
+        return "暂无"
+    contracts = contracts_entry.get("contracts") or {}
+    if not contracts:
+        return "暂无"
+    lines: List[str] = []
+    for entry in contracts.values():
+        component_id = entry.get("component_id", "未知组件")
+        contract_id = entry.get("contract_id", "未知契约")
+        status = entry.get("status", "pending")
+        targets = entry.get("targets") or []
+        description = entry.get("description") or ""
+        lines.append(
+            f"- {component_id} ({contract_id}) [{status}] 目标: {', '.join(targets) if targets else '未绑定'} {description}".rstrip()
+        )
+    return "\n".join(lines) if lines else "暂无"
+
+
+def _extract_component_contract_payloads(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """从 LLM 输出中提取 component_contract 定义（兼容单个或数组）。"""
+    if "component_contract" not in data:
+        return []
+    payload = data["component_contract"]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        return [payload]
+    return []
+
+
+def _merge_component_contracts(
+    state: GraphState,
+    payloads: List[Dict[str, Any]],
+    step_id: int,
+) -> Optional[Dict[str, Any]]:
+    """将新增的组件契约写入 working_memory."""
+    if not payloads:
+        return None
+
+    working_memory = dict(state.get("working_memory", {}))
+    current_entry = dict(working_memory.get("component_contracts", {}))
+    existing_contracts = dict(current_entry.get("contracts", {}))
+
+    updated = False
+    for payload in payloads:
+        component_id = payload.get("component_id")
+        contract_id = payload.get("contract_id")
+        if component_id and not contract_id:
+            contract_def = get_contract_by_component(component_id)
+            if contract_def:
+                contract_id = contract_def.contract_id
+        if not component_id or not contract_id:
+            continue
+        targets = payload.get("targets")
+        if isinstance(targets, str):
+            targets = [targets]
+        if not targets:
+            targets = [f"$step.{step_id}"]
+        normalized_targets = []
+        for target in targets:
+            if isinstance(target, str):
+                normalized_targets.append(target)
+        if not normalized_targets:
+            normalized_targets = [f"$step.{step_id}"]
+        record = existing_contracts.get(contract_id, {}).copy()
+        record.update(
+            {
+                "component_id": component_id,
+                "contract_id": contract_id,
+                "status": payload.get("status", "planned"),
+                "description": payload.get("description", ""),
+                "targets": normalized_targets,
+                "notes": payload.get("notes"),
+                "last_updated_step": step_id,
+            }
+        )
+        existing_contracts[contract_id] = record
+        updated = True
+
+    if not updated:
+        return None
+
+    current_entry.update(
+        {
+            "step_id": step_id,
+            "status": "info",
+            "description": f"{len(existing_contracts)} 个组件契约已登记",
+            "contracts": existing_contracts,
+        }
+    )
+    working_memory["component_contracts"] = current_entry
+    return working_memory
 
 
 def create_research_agent_node(runtime: LangGraphRuntime):
@@ -135,6 +252,10 @@ def create_research_agent_node(runtime: LangGraphRuntime):
 
         if working_memory:
             prompt_parts.append(f"\n## 工作记忆（轻量工具结果）\n{_format_working_memory(working_memory)}")
+        prompt_parts.append(
+            f"\n## 已登记的组件契约\n{_format_component_contract_registry(working_memory)}"
+        )
+        prompt_parts.append(f"\n## 组件契约参考\n{COMPONENT_CONTRACTS_PROMPT}")
 
         if tool_status_note:
             prompt_parts.append(tool_status_note)
@@ -181,6 +302,8 @@ def _process_agent_decision(
     """
     decision = data.get("decision", "CONTINUE")
     reasoning = data.get("reasoning", "")
+    contract_payloads = _extract_component_contract_payloads(data)
+    updated_working_memory = _merge_component_contracts(state, contract_payloads, next_step)
 
     logger.info("ResearchAgent 决策: %s - %s", decision, reasoning[:100])
 
@@ -194,12 +317,15 @@ def _process_agent_decision(
             # 否则序列化为 JSON
             report_str = json.dumps(final_report, ensure_ascii=False, indent=2)
 
-        return {
+        result = {
             "final_report": report_str,
             "next_tool_call": None,
             "agent_decision": "FINISH",
             "agent_reasoning": reasoning,
         }
+        if updated_working_memory is not None:
+            result["working_memory"] = updated_working_memory
+        return result
 
     elif decision == "REQUEST_CLARIFICATION":
         # 需要用户澄清
@@ -215,11 +341,14 @@ def _process_agent_decision(
             description=f"请求用户澄清: {question}",
         )
 
-        return {
+        result = {
             "next_tool_call": tool_call,
             "agent_decision": "REQUEST_CLARIFICATION",
             "agent_reasoning": reasoning,
         }
+        if updated_working_memory is not None:
+            result["working_memory"] = updated_working_memory
+        return result
 
     else:  # CONTINUE
         # 继续执行，调用工具
@@ -251,8 +380,11 @@ def _process_agent_decision(
             tool_call.step_id,
         )
 
-        return {
+        result = {
             "next_tool_call": tool_call,
             "agent_decision": "CONTINUE",
             "agent_reasoning": reasoning,
         }
+        if updated_working_memory is not None:
+            result["working_memory"] = updated_working_memory
+        return result

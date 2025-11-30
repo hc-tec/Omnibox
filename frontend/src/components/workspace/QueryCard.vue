@@ -109,6 +109,40 @@
               查询已完成，生成了 {{ card.panels?.length || 0 }} 个数据面板
             </p>
           </div>
+          <div
+            v-if="panelPreviews.length > 0"
+            class="space-y-3 rounded-2xl border border-border/40 bg-background/40 p-3"
+          >
+            <div
+              v-for="(preview, idx) in panelPreviews.slice(0, 2)"
+              :key="preview.timestamp || `panel-preview-${idx}`"
+              class="space-y-2 rounded-xl border border-border/30 bg-muted/10 p-3"
+            >
+              <div class="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>面板预览 #{{ idx + 1 }}</span>
+                <span class="truncate max-w-[60%]">
+                  {{ preview.source_query || researchTask?.query || '临时展示' }}
+                </span>
+              </div>
+              <div v-if="preview.panel_payload?.blocks?.length" class="space-y-3">
+                <DynamicBlockRenderer
+                  v-for="block in preview.panel_payload.blocks"
+                  :key="block.id"
+                  :block="block"
+                  :data-blocks="getPreviewDataBlocks(preview)"
+                />
+              </div>
+              <p v-else class="text-[11px] text-muted-foreground/80">
+                暂无可渲染的组件。
+              </p>
+            </div>
+            <p
+              v-if="panelPreviews.length > 2"
+              class="text-[11px] text-muted-foreground/70"
+            >
+              还有 {{ panelPreviews.length - 2 }} 组预览，可在研究详情页查看完整面板。
+            </p>
+          </div>
         </div>
 
         <!-- Error 状态：显示错误 -->
@@ -144,7 +178,10 @@ import {
   RefreshCw,
 } from 'lucide-vue-next';
 import type { QueryCard } from '@/types/queryCard';
-import type { ResearchTask } from '@/features/research/types/researchTypes';
+import type { ResearchTask, ResearchPanelPreview } from '@/features/research/types/researchTypes';
+import type { DataBlock } from '@/shared/types/panel';
+import DynamicBlockRenderer from "@/features/panel/components/blocks/DynamicBlockRenderer.vue";
+import { buildDataBlocksFromSpec } from "@/shared/panelSpecUtils";
 
 interface Props {
   card: QueryCard;
@@ -329,6 +366,23 @@ const backgroundGradient = computed(() => {
   }
   return '';
 });
+
+const panelPreviews = computed(() => props.researchTask?.panel_previews ?? []);
+const previewBlocksCache = new WeakMap<ResearchPanelPreview, Record<string, DataBlock>>();
+
+function getPreviewDataBlocks(preview: ResearchPanelPreview): Record<string, DataBlock> {
+  if (!preview.panel_spec) {
+    return {};
+  }
+  const cached = previewBlocksCache.get(preview);
+  if (cached) {
+    return cached;
+  }
+  const blocks = buildDataBlocksFromSpec(preview.panel_spec);
+  previewBlocksCache.set(preview, blocks);
+  return blocks;
+}
+
 </script>
 
 <style scoped>

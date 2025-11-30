@@ -11,7 +11,7 @@ MAX_PREVIEW_ITEMS = 20  # 单张预览卡片最多显示的记录数
 MAX_PREVIEW_FIELDS = 3  # 每条记录最多保留的字段数，避免 payload 过大
 
 from services.data_query_service import DataQueryResult, QueryDataset
-from services.panel.panel_generator import PanelGenerator, PanelBlockInput
+from services.panel.panel_spec_builder import build_panel_spec_from_dataset
 from api.schemas.panel import SourceInfo
 
 from ..state import ToolCall, ToolExecutionPayload
@@ -21,7 +21,6 @@ from .data_ref_resolver import create_resolver_from_context, ResolvedData
 from .data_payload_utils import unwrap_payload, extract_records, build_source_metadata, select_non_empty
 
 logger = logging.getLogger(__name__)
-_PANEL_GENERATOR = PanelGenerator()
 
 
 def register_panel_stream_tool(registry: ToolRegistry) -> None:
@@ -76,6 +75,8 @@ def register_panel_stream_tool(registry: ToolRegistry) -> None:
             max_items = 6
         max_items = max(1, min(max_items, MAX_PREVIEW_ITEMS))
 
+        panel_spec_bundle: Optional[Dict[str, Any]] = None
+
         if source_ref:
             if data_store is None:
                 raise RuntimeError("数据存储不可用，无法通过 source_ref 渲染面板")
@@ -85,6 +86,7 @@ def register_panel_stream_tool(registry: ToolRegistry) -> None:
                 data_store=data_store,
                 max_items=max_items,
             )
+            panel_spec_bundle = preview_payload.get("panel_bundle")
         else:
             if dq is None:
                 raise RuntimeError("DataQueryService 未注入，无法根据 query 获取数据")
@@ -106,16 +108,33 @@ def register_panel_stream_tool(registry: ToolRegistry) -> None:
                 )
 
             previews = _build_preview_payload(result, max_items=max_items)
-            preview_payload = {"previews": previews, "query": query}
+            dataset_payload = _extract_first_dataset_payload(result)
+            if dataset_payload:
+                panel_spec_bundle = build_panel_spec_from_dataset(
+                    dataset_payload,
+                    data_id=None,
+                    max_items=max_items,
+                )
+            preview_payload = {
+                "previews": previews,
+                "query": query,
+            }
+            if panel_spec_bundle:
+                preview_payload["panel_bundle"] = panel_spec_bundle
+                preview_payload["panel_payload"] = panel_spec_bundle["panel_payload"]
+                preview_payload["panel_spec"] = panel_spec_bundle["panel_spec"]
 
         emitter(preview_payload)
 
+        panel_spec_raw = panel_spec_bundle["panel_spec"] if panel_spec_bundle else None
+        panel_payload_raw = panel_spec_bundle["panel_payload"] if panel_spec_bundle else None
         return ToolExecutionPayload(
             call=call,
             raw_output={
                 "type": "panel_preview",
                 "count": len(preview_payload.get("previews", [])),
-                "has_panel_payload": "panel_payload" in preview_payload,
+                "panel_spec": panel_spec_raw,
+                "panel_payload": panel_payload_raw,
             },
             status="success",
         )
@@ -225,17 +244,13 @@ def _build_panel_from_source_ref(
         request_id=None,
     )
 
-    block_input = PanelBlockInput(
-        block_id=f"panel-{uuid4().hex[:8]}",
-        records=preview_source_records,
-        source_info=source_info,
-        title=dataset_payload.get("feed_title") or dataset_payload.get("title"),
-        full_data_ref=resolved.source_data_id,
-        stats=stats,
-        requested_components=None,
+    dataset_payload = dict(dataset_payload)
+    dataset_payload.setdefault("metadata", stats)
+    panel_bundle = build_panel_spec_from_dataset(
+        dataset_payload,
+        data_id=resolved.source_data_id,
+        max_items=max_items,
     )
-
-    panel_result = _PANEL_GENERATOR.generate(mode="append", block_inputs=[block_input])
 
     preview_items = [_trim_record(record) for record in preview_source_records[:max_items]]
     preview_payload = {
@@ -248,9 +263,47 @@ def _build_panel_from_source_ref(
                 "source": datasource,
             }
         ],
-        "panel_payload": panel_result.payload.model_dump(),
-        "panel_data_blocks": {key: block.model_dump() for key, block in panel_result.data_blocks.items()},
+        "panel_payload": panel_bundle["panel_payload"],
+        "panel_spec": panel_bundle["panel_spec"],
+        "panel_data_blocks": panel_bundle["panel_spec"]["data_envelopes"],
+        "panel_bundle": panel_bundle,
         "source_query": envelope_meta.get("instruction") or dataset_payload.get("feed_title") or route,
         "stats": stats,
     }
     return preview_payload
+
+
+def _extract_first_dataset_payload(result: DataQueryResult) -> Optional[Dict[str, Any]]:
+    datasets = result.datasets or []
+    target = datasets[0] if datasets else None
+    if target is None:
+        if result.items:
+            target = QueryDataset(
+                route_id=None,
+                provider=None,
+                name=result.feed_title,
+                generated_path=result.generated_path,
+                items=result.items,
+                feed_title=result.feed_title,
+                source=result.source,
+                cache_hit=result.cache_hit,
+                reasoning=result.reasoning,
+                payload=result.payload,
+            )
+        else:
+            return None
+    metadata = {
+        "item_count": len(target.items or []),
+        "datasource": target.source or result.source,
+        "instruction": result.reasoning or result.feed_title,
+    }
+    payload = target.payload if isinstance(target.payload, dict) else {}
+    dataset_payload = dict(payload)
+    dataset_payload.setdefault("items", target.items or [])
+    dataset_payload.setdefault("feed_title", target.feed_title or result.feed_title)
+    dataset_payload.setdefault("generated_path", target.generated_path or result.generated_path)
+    dataset_payload.setdefault("source", target.source or result.source)
+    dataset_payload.setdefault("metadata", metadata)
+    dataset_payload.setdefault("type", "rss_public_data")
+    dataset_payload.setdefault("summary", result.reasoning)
+    return dataset_payload

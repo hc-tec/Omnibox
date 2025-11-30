@@ -244,6 +244,64 @@ class TestBasicWorkflow:
         assert result["pending_tool_result"] is not None
         assert result["next_tool_call"] is None  # 应该被清空
 
+    def test_tool_executor_injects_component_contracts(self):
+        """工具执行器应把组件契约透传到上下文 extras"""
+        from langgraph_agents.agents.tool_executor import create_tool_executor_node
+        from langgraph_agents.state import ToolCall, ToolExecutionPayload
+        from langgraph_agents.runtime import ToolExecutionContext
+        from langgraph_agents.schema_registry import SchemaRegistry
+
+        runtime = Mock()
+        captured_extras = {}
+
+        class DummyRegistry:
+            def execute(self, call, context):
+                nonlocal captured_extras
+                captured_extras = context.extras
+                return ToolExecutionPayload(call=call, raw_output={"ok": True}, status="success")
+
+        runtime.tool_registry = DummyRegistry()
+        runtime.tool_context = ToolExecutionContext(extras={"planner_llm": Mock()})
+        runtime.data_store = Mock()
+        runtime.schema_registry = SchemaRegistry()
+
+        node = create_tool_executor_node(runtime)
+
+        call = ToolCall(
+            plugin_id="data_operator",
+            args={"source_ref": "$step.1", "instruction": "统计数量"},
+            step_id=5,
+            description="测试contract",
+        )
+
+        working_memory = {
+            "component_contracts": {
+                "contracts": {
+                    "StatisticCard-contract-v2": {
+                        "component_id": "StatisticCard",
+                        "contract_id": "StatisticCard-contract-v2",
+                        "status": "planned",
+                        "targets": ["$step.5"],
+                    }
+                }
+            }
+        }
+
+        state: GraphState = {
+            "original_query": "test",
+            "next_tool_call": call,
+            "working_memory": working_memory,
+        }
+
+        result = node(state)
+
+        assert result["pending_tool_result"].status == "success"
+        assert "component_contracts_for_call" in captured_extras
+        contracts = captured_extras["component_contracts_for_call"]
+        assert isinstance(contracts, list) and contracts
+        assert contracts[0]["contract_id"] == "StatisticCard-contract-v2"
+        assert "definition" in contracts[0]
+
     def test_data_stasher_node(self):
         """测试数据暂存节点"""
         from langgraph_agents.agents.data_stasher import create_data_stasher_node

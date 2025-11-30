@@ -44,6 +44,7 @@
   - ECharts 集成规范（按需引入、响应式调整）
   - 禁止事项（React 语法、其他 UI 库、其他图表库）
   - **已实现组件清单**（8个组件全部完成）
+- `component_contracts.md` - 前后端共享的组件契约清单（contract-first 渲染基线，Phase13 实施必须引用，不得通过 heuristics 猜测组件）
 
 - `frontend-panel-components.md` - **前端面板组件实现指南**（开发面板组件时必读）
   - 8个已实现组件的详细实现说明（ListPanel、StatisticCard、LineChart、BarChart、PieChart、Table、ImageGallery、FallbackRichText）

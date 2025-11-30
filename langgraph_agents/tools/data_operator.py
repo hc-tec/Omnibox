@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import statistics
+import datetime as _datetime
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -22,8 +23,23 @@ from .data_payload_utils import (
     extract_records,
     build_source_metadata,
 )
+from ..component_contracts import (
+    ComponentContract,
+    get_contract_by_id,
+    get_contract_by_component,
+)
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_IMPORTS = {"datetime"}
+
+
+def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split(".")[0]
+    if root not in ALLOWED_IMPORTS:
+        raise ImportError(f"Import of '{name}' is not allowed")
+    return __import__(name, globals, locals, fromlist, level)
+
 
 SAFE_BUILTINS = {
     "len": len,
@@ -37,7 +53,18 @@ SAFE_BUILTINS = {
     "abs": abs,
     "round": round,
     "enumerate": enumerate,
+    "isinstance": isinstance,
+    "__import__": _safe_import,
 }
+
+BANNED_PANEL_KEYS = {"panel_hint", "metric_value"}
+ALWAYS_ALLOWED_FIELDS = {"id"}
+
+
+class ComponentContractViolation(RuntimeError):
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.details = details or {}
 
 
 @dataclass
@@ -84,6 +111,9 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
     )
     def data_operator(call: ToolCall, context: ToolExecutionContext) -> ToolExecutionPayload:
         extras = context.extras or {}
+        contract_entries = extras.get("component_contracts_for_call") or []
+        active_contract = _select_active_contract(contract_entries)
+
         planner_llm = extras.get("planner_llm")
         data_store = extras.get("data_store")
         coder_prompt = extras.get("data_operator_prompt") or load_prompt("schema_coder_system.txt")
@@ -130,7 +160,8 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
             )
 
         schema_context = _build_schema_context(source_context, extras, max_samples)
-        prompt = _build_prompt(instruction, schema_context, coder_prompt)
+        contract_prompt_specs = _build_contract_prompt_specs(contract_entries)
+        prompt = _build_prompt(instruction, schema_context, coder_prompt, contract_prompt_specs)
 
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():
@@ -176,6 +207,19 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
             )
 
         normalized_result = _normalize_transform_result(result, source_context, instruction, explanation)
+        try:
+            normalized_result = _apply_contract_constraints(normalized_result, active_contract)
+        except ComponentContractViolation as exc:
+            return ToolExecutionPayload(
+                call=call,
+                status="error",
+                error_message=str(exc),
+                raw_output={
+                    "type": "data_operator",
+                    "error": "contract_violation",
+                    "details": exc.details,
+                },
+            )
         trimmed_result = _trim_result(normalized_result)
         raw_output = {
             "type": "data_operator",
@@ -285,6 +329,7 @@ def _build_prompt(
     instruction: str,
     schema_context: Dict[str, Any],
     base_prompt: str,
+    contract_specs: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     samples = schema_context.get("samples") or []
     raw_schema = schema_context.get("schema") or {}
@@ -308,8 +353,20 @@ def _build_prompt(
     if source_notes:
         source_section = "## 数据上下文\n" + "\n".join(source_notes) + "\n\n"
 
+    contract_section = ""
+    if contract_specs:
+        contract_lines = [
+            "## 组件契约（必须严格遵守）",
+            "所有输出必须满足下列字段要求，不得添加契约未声明的字段。",
+        ]
+        for spec in contract_specs:
+            contract_lines.append(json.dumps(spec, ensure_ascii=False, indent=2))
+        contract_lines.append("")
+        contract_section = "\n".join(contract_lines)
+
     return (
         f"{base_prompt}\n\n"
+        f"{contract_section}"
         f"{source_section}"
         f"## 转换指令\n{instruction}\n\n"
         f"## 数据 Schema (原始 RSS 推断)\n{schema_json}\n\n"
@@ -328,6 +385,7 @@ def _execute_transform(code: str, records: List[Dict[str, Any]]) -> Any:
         "json": json,
         "math": math,
         "statistics": statistics,
+        "datetime": _datetime,
     }
     exec_namespace: Dict[str, Any] = {}
     compiled = compile(code, "<data_operator>", "exec")
@@ -366,6 +424,8 @@ def _normalize_transform_result(
     normalized["items"] = items
 
     metadata = dict(normalized.get("metadata") or {})
+    for banned in BANNED_PANEL_KEYS:
+        metadata.pop(banned, None)
     metadata.setdefault("instruction", instruction)
     if explanation:
         metadata.setdefault("transformation_reason", explanation)
@@ -393,7 +453,106 @@ def _normalize_transform_result(
     normalized["cache_hit"] = False
     normalized["reasoning"] = explanation or instruction
     normalized["type"] = normalized.get("type") or "data_operator_result"
+    for banned in BANNED_PANEL_KEYS:
+        normalized.pop(banned, None)
     return normalized
+
+
+def _build_contract_prompt_specs(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    specs: List[Dict[str, Any]] = []
+    for entry in entries or []:
+        contract = _load_contract_definition(entry)
+        if not contract:
+            continue
+        props_override = entry.get("props") or entry.get("component_props")
+        specs.append(
+            {
+                "component_id": contract.component_id,
+                "contract_id": contract.contract_id,
+                "required_fields": contract.required_fields,
+                "optional_fields": contract.optional_fields,
+                "props_mapping": contract.props_mapping,
+                "layout_hint": contract.layout_hint,
+                "props_override": props_override or {},
+            }
+        )
+    return specs
+
+
+def _select_active_contract(entries: List[Dict[str, Any]]) -> Optional[ActiveContract]:
+    for entry in entries or []:
+        contract = _load_contract_definition(entry)
+        if contract:
+            return ActiveContract(definition=contract, payload=entry)
+    return None
+
+
+def _load_contract_definition(entry: Dict[str, Any]) -> Optional[ComponentContract]:
+    definition = entry.get("definition")
+    if isinstance(definition, dict):
+        try:
+            return ComponentContract(**definition)
+        except TypeError:
+            pass
+    contract_id = entry.get("contract_id")
+    if contract_id:
+        contract = get_contract_by_id(contract_id)
+        if contract:
+            return contract
+    component_id = entry.get("component_id")
+    if component_id:
+        return get_contract_by_component(component_id)
+    return None
+
+
+def _apply_contract_constraints(
+    normalized_result: Dict[str, Any],
+    active_contract: Optional[ActiveContract],
+) -> Dict[str, Any]:
+    if not active_contract:
+        return normalized_result
+
+    contract = active_contract.definition
+    payload = active_contract.payload
+    items = normalized_result.get("items") or []
+    if not isinstance(items, list):
+        raise ComponentContractViolation("contract requires result['items'] 为列表", {"field": "items"})
+
+    allowed_fields = set(contract.required_fields or []) | set(contract.optional_fields or []) | ALWAYS_ALLOWED_FIELDS
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ComponentContractViolation("contract requires items 为字典列表", {"index": idx})
+        missing = [field for field in contract.required_fields if field not in item]
+        if missing:
+            raise ComponentContractViolation(
+                f"{contract.contract_id} 缺少字段: {missing}",
+                {"index": idx, "missing": missing},
+            )
+        disallowed = [field for field in item.keys() if allowed_fields and field not in allowed_fields]
+        if disallowed:
+            raise ComponentContractViolation(
+                f"{contract.contract_id} 不允许字段: {disallowed}",
+                {"index": idx, "disallowed": disallowed},
+            )
+
+    metadata = dict(normalized_result.get("metadata") or {})
+    metadata["component_id"] = contract.component_id
+    metadata["contract_id"] = contract.contract_id
+    metadata["contract_version"] = contract.contract_id
+    layout_hint = payload.get("layout_hint") or contract.layout_hint
+    if layout_hint:
+        metadata["layout_hint"] = layout_hint
+    props_override = payload.get("props") or payload.get("component_props")
+    if props_override:
+        metadata["component_props"] = props_override
+
+    normalized_result["metadata"] = metadata
+    normalized_result["component_id"] = contract.component_id
+    normalized_result["contract_id"] = contract.contract_id
+    if props_override:
+        normalized_result["component_props"] = props_override
+
+    return normalized_result
 
 
 def _trim_result(result: Any) -> Any:
@@ -407,3 +566,7 @@ def _trim_result(result: Any) -> Any:
     if isinstance(result, list) and len(result) > 200:
         return result[:200]
     return result
+@dataclass
+class ActiveContract:
+    definition: ComponentContract
+    payload: Dict[str, Any]

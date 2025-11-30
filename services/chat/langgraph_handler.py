@@ -76,6 +76,7 @@ def handle_langgraph_research(
             if research_result.metadata:
                 metadata.update(research_result.metadata)
             metadata.setdefault("task_id", task_id)
+            metadata["panel_previews"] = getattr(research_result, "panel_previews", [])
 
             return chat_response_class(
                 success=True,
@@ -93,6 +94,7 @@ def handle_langgraph_research(
                     "error": research_result.error,
                     "intent_confidence": intent_confidence,
                     "task_id": task_id,
+                    "panel_previews": getattr(research_result, "panel_previews", []),
                 },
             )
 

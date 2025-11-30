@@ -11,7 +11,14 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { PanelPayload, DataBlock } from "@/shared/types/panel";
+import type {
+  PanelPayload,
+  DataBlock,
+  PanelSpecMetadata,
+  PanelContractInfo,
+} from "@/shared/types/panel";
+import { buildDataBlocksFromSpec } from "@/shared/panelSpecUtils";
+import type { ResearchPanelPreview } from "@/features/research/types/researchTypes";
 
 /**
  * 研究步骤状态
@@ -44,6 +51,8 @@ export interface ResearchPanel {
   source_query: string;
   panel_payload: PanelPayload;
   data_blocks: Record<string, DataBlock>;
+  panel_spec: PanelSpecMetadata | null;
+  panel_contracts?: PanelContractInfo[] | null;
   timestamp: string;
 }
 
@@ -222,9 +231,11 @@ export const useResearchViewStore = defineStore("researchView", () => {
    * 处理研究面板消息
    */
   function handleResearchPanel(panel: ResearchPanel) {
+    const contracts = panel.panel_contracts ?? panel.panel_spec?.contracts_applied ?? [];
     state.value.panels.push({
       ...panel,
-      data_blocks: panel.data_blocks ?? {},
+      panel_contracts: contracts,
+      data_blocks: buildDataBlocksFromSpec(panel.panel_spec),
     });
   }
 
@@ -320,6 +331,31 @@ export const useResearchViewStore = defineStore("researchView", () => {
     }
   }
 
+  function applyHistoricalPanels(previews: ResearchPanelPreview[]) {
+    if (!Array.isArray(previews) || previews.length === 0 || state.value.panels.length > 0) {
+      return;
+    }
+    const hydrated = previews
+      .map((preview, index) => {
+        if (!preview.panel_payload) {
+          return null;
+        }
+          return {
+            step_id: `history-${index}`,
+            source_query: preview.source_query || state.value.query || "历史面板",
+            panel_payload: preview.panel_payload,
+            data_blocks: buildDataBlocksFromSpec(preview.panel_spec),
+            panel_spec: preview.panel_spec ?? null,
+            panel_contracts: preview.panel_spec?.contracts_applied ?? preview.panel_contracts ?? [],
+            timestamp: preview.timestamp || new Date().toISOString(),
+          } as ResearchPanel;
+        })
+      .filter((panel): panel is ResearchPanel => panel !== null);
+    if (hydrated.length > 0) {
+      state.value.panels = hydrated;
+    }
+  }
+
   return {
     state,
     isActive,
@@ -339,5 +375,6 @@ export const useResearchViewStore = defineStore("researchView", () => {
     handleResearchError,
     ensurePlan,
     reset,
+    applyHistoricalPanels,
   };
 });

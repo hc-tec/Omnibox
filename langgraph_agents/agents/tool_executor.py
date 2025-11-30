@@ -7,6 +7,7 @@ from typing import Dict
 
 from ..runtime import LangGraphRuntime, ToolExecutionContext
 from ..state import GraphState, ToolExecutionPayload
+from ..component_contracts import resolve_contracts_for_step
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,22 @@ def create_tool_executor_node(runtime: LangGraphRuntime):
         # 创建增强的上下文副本，避免修改原始 runtime.tool_context
         enhanced_extras = dict(runtime.tool_context.extras)
         enhanced_extras["data_stash"] = state.get("data_stash", [])
-        enhanced_extras["working_memory"] = state.get("working_memory", {})
+        working_memory = state.get("working_memory", {})
+        enhanced_extras["working_memory"] = working_memory
         enhanced_extras["data_store"] = runtime.data_store
         enhanced_extras["schema_registry"] = runtime.schema_registry
+        enhanced_extras["component_contract_registry"] = (
+            (working_memory.get("component_contracts") or {}).get("contracts") or {}
+        )
+        active_contracts = resolve_contracts_for_step(working_memory, call.step_id)
+        if active_contracts:
+            enhanced_extras["component_contracts_for_call"] = active_contracts
+            logger.info(
+                "ToolExecutor 契约透传: step=%s plugin=%s contracts=%s",
+                call.step_id,
+                call.plugin_id,
+                [c.get("contract_id") for c in active_contracts],
+            )
 
         enhanced_context = ToolExecutionContext(
             data_query_service=runtime.tool_context.data_query_service,

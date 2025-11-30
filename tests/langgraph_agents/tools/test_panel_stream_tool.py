@@ -85,3 +85,6 @@ def test_panel_preview_emits_data_when_callback_present():
     preview = captured[0]["previews"][0]
     assert preview["title"] == "Demo Feed"
     assert preview["items"][0]["title"] == "demo"
+    assert "panel_payload" in captured[0]
+    assert "panel_spec" in captured[0]
+    assert payload.raw_output.get("panel_spec") is not None

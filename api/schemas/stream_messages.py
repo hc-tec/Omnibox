@@ -314,7 +314,7 @@ class ResearchPanelMessage(BaseModel):
     )
     panel_data_blocks: dict[str, Any] = Field(
         default_factory=dict,
-        description="面板数据块（PanelResult.data_blocks）"
+        description="面板数据块（结构化 envelope 列表，PanelSpec.data_envelopes）"
     )
     source_query: str = Field(..., description="数据来源查询")
     timestamp: str = Field(

@@ -7,7 +7,9 @@ import type {
   ExecutionStep,
   ResearchPreview,
   ResearchTaskStatus,
+  ResearchPanelPreview,
 } from '../types/researchTypes';
+import type { PanelPayload, PanelSpecMetadata } from '@/shared/types/panel';
 
 // 常量定义
 const MAX_PREVIEW_CARDS = 5; // 最多保留的预览卡片数量
@@ -139,6 +141,10 @@ export const useResearchStore = defineStore('research', () => {
         if (metadata.execution_steps) {
           task.execution_steps = metadata.execution_steps;
         }
+        const previews = extractPanelPreviews(metadata);
+        if (previews.length > 0) {
+          task.panel_previews = previews;
+        }
       }
       task.status = 'completed';
       task.final_report = report;
@@ -190,6 +196,12 @@ export const useResearchStore = defineStore('research', () => {
     if (!task) return;
 
     task.metadata = metadata;
+    if (metadata) {
+      const previews = extractPanelPreviews(metadata as ResearchResponse["metadata"]);
+      if (previews.length > 0) {
+        task.panel_previews = previews;
+      }
+    }
     task.updated_at = new Date().toISOString();
   }
 
@@ -240,4 +252,27 @@ export const useResearchStore = defineStore('research', () => {
     updateTaskMetadata,
     appendPreview,
   };
+
+  function extractPanelPreviews(metadata?: ResearchResponse["metadata"]): ResearchPanelPreview[] {
+    if (!metadata || !Array.isArray((metadata as any).panel_previews)) {
+      return [];
+    }
+    const previews = (metadata as any).panel_previews as Array<Record<string, unknown>>;
+    return previews
+      .map((entry) => normalizePanelPreview(entry))
+      .filter((preview): preview is ResearchPanelPreview => preview !== null);
+  }
+
+  function normalizePanelPreview(entry: Record<string, unknown>): ResearchPanelPreview | null {
+    const payload = entry.panel_payload as PanelPayload | undefined;
+    if (!payload) {
+      return null;
+    }
+    return {
+      panel_payload: payload,
+      panel_spec: (entry.panel_spec as PanelSpecMetadata) ?? null,
+      source_query: typeof entry.source_query === 'string' ? entry.source_query : undefined,
+      timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : new Date().toISOString(),
+    };
+  }
 });

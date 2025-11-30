@@ -75,6 +75,22 @@ def default_components() -> List[ComponentDefinition]:
             description="用于展示时间序列数据的折线图组件。",
         ),
         ComponentDefinition(
+            id="BarChart",
+            requirements=["category", "value"],
+            optional_fields=["series"],
+            options={
+                "horizontal": {"type": "boolean", "default": False},
+                "stacked": {"type": "boolean", "default": False},
+            },
+            interactions=["filter", "sort"],
+            layout_defaults={
+                "layout_size": "half",
+                "span": 12,
+                "min_height": 280,
+            },
+            description="用于比较不同维度数值的柱状图组件。",
+        ),
+        ComponentDefinition(
             id="StatisticCard",
             requirements=["title", "value"],
             optional_fields=["trend", "unit"],

@@ -21,6 +21,27 @@ export interface SchemaSummary {
   schema_digest: string;
 }
 
+export interface EnvelopeCursor {
+  next_token?: string | null;
+  total?: number | null;
+  sampled?: number | null;
+}
+
+export interface StructuredDataSchema {
+  type: "table" | "record" | "graph" | "geojson" | "metric_set" | "custom";
+  description?: string | null;
+  [key: string]: unknown;
+}
+
+export interface StructuredDataEnvelope {
+  data_id: string;
+  data_schema: StructuredDataSchema;
+  summary?: string | null;
+  preview: Record<string, unknown>[];
+  cursor?: EnvelopeCursor | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface DataBlock {
   id: string;
   source_info: SourceInfo;
@@ -78,12 +99,38 @@ export interface UIBlock {
   confidence?: number | null;
   title?: string | null;
   children?: UIBlock[] | null;
+  contract_id?: string | null;
+}
+
+export interface PanelContractInfo {
+  component_id: string;
+  contract_id?: string | null;
+  view_model_id?: string | null;
+  title?: string | null;
 }
 
 export interface PanelPayload {
   mode: LayoutMode;
   layout: LayoutTree;
   blocks: UIBlock[];
+}
+
+export interface PanelSpecMetadata {
+  data_envelopes: Record<string, StructuredDataEnvelope>;
+  display_schemas: Record<string, unknown>;
+  view_models: Record<
+    string,
+    {
+      component_id: string;
+      data: Record<string, unknown>;
+      props: Record<string, unknown>;
+      contract_id?: string | null;
+    }
+  >;
+  panel_dsl?: Record<string, unknown> | null;
+  rendered_preview?: unknown;
+  degraded_components?: Array<Record<string, unknown>>;
+  contracts_applied?: PanelContractInfo[];
 }
 
 export interface PanelResponse {
@@ -125,6 +172,9 @@ export interface PanelResponse {
       }>;
       query_plan?: any;
     } | null;
+    panel_spec?: PanelSpecMetadata;
+    panel_contracts?: PanelContractInfo[];
+    panel_degraded_components?: Array<Record<string, unknown>>;
   };
 }
 

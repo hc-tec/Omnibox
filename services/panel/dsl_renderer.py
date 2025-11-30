@@ -55,6 +55,7 @@ class PanelDSLRenderer:
         block_id = node.props.get("id") or f"dsl-{uuid4().hex[:8]}"
         data_payload = None
         data_ref = None
+        contract_id = None
 
         if node.data_binding:
             binding = node.data_binding
@@ -66,6 +67,7 @@ class PanelDSLRenderer:
                     )
                 data_payload = vm.data
                 data_ref = vm.view_model_id
+                contract_id = vm.contract_id
             elif binding.data_id:
                 envelope = envelopes.get(binding.data_id)
                 if not envelope:
@@ -98,6 +100,7 @@ class PanelDSLRenderer:
             confidence=None,
             title=node.props.get("title"),
             children=children_blocks,
+            contract_id=contract_id,
         )
 
     @staticmethod

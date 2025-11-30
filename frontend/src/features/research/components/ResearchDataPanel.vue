@@ -34,6 +34,24 @@
             </div>
             <div class="h-px flex-1 bg-border/20" />
           </div>
+          <div
+            v-if="item.panel.panel_spec?.degraded_components && item.panel.panel_spec.degraded_components.length > 0"
+            class="mb-3 rounded-lg border border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/40 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            部分组件降级展示（{{ item.panel.panel_spec.degraded_components.length }}）
+          </div>
+          <div
+            v-if="item.panel.panel_contracts && item.panel.panel_contracts.length > 0"
+            class="mb-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground/80"
+          >
+            <span
+              v-for="contract in item.panel.panel_contracts"
+              :key="contract.view_model_id || contract.contract_id || contract.component_id"
+              class="contract-chip"
+            >
+              {{ contract.component_id }} · {{ contract.contract_id || '契约' }}
+            </span>
+          </div>
 
           <!-- 渲染面板内容 -->
           <div class="panel-content space-y-4">
@@ -292,5 +310,13 @@ function formatTimestamp(timestamp: string): string {
   margin-left: 0;
   color: var(--muted-foreground);
   font-style: italic;
+}
+
+.contract-chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-weight: 500;
 }
 </style>

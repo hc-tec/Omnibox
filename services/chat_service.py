@@ -38,6 +38,7 @@ from services.panel.component_planner import (
 from services.panel.llm_component_planner import LLMComponentPlanner
 from services.panel.adapters import get_route_manifest
 from query_processor.llm_client import create_llm_client
+from pydantic import ValidationError
 
 # 导入拆分的工具函数
 from services.chat.utils import (
@@ -495,6 +496,27 @@ class ChatService:
 
         bound_panel_callback = panel_callback
 
+        def _extract_panel_bundle_from_events(events: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+            """从工具事件中解析 panel_bundle。"""
+            for payload in reversed(events):
+                bundle = payload.get("panel_bundle")
+                if not bundle:
+                    continue
+                panel_payload_raw = bundle.get("panel_payload")
+                panel_spec_raw = bundle.get("panel_spec")
+                if not panel_payload_raw or not panel_spec_raw:
+                    continue
+                try:
+                    parsed_payload = PanelPayload.model_validate(panel_payload_raw)
+                except ValidationError as exc:  # pragma: no cover - 仅做保护
+                    logger.warning("解析 panel_bundle 失败: %s", exc)
+                    continue
+                return {
+                    "payload": parsed_payload,
+                    "panel_spec": panel_spec_raw,
+                }
+            return None
+
         def capture_panel(payload: Dict[str, Any]) -> None:
             panel_events.append(payload)
             if bound_panel_callback:
@@ -575,13 +597,41 @@ class ChatService:
 
         if query_result.status == "success":
             datasets = query_result.datasets or []
-            panel_result = self._build_panel(
-                query_result=query_result,
-                datasets=datasets,
-                intent_confidence=intent_confidence,
-                user_query=user_query,
-                layout_snapshot=layout_snapshot,
-            )
+            panel_bundle_payload = _extract_panel_bundle_from_events(panel_events)
+            panel_payload_obj: PanelPayload
+            response_data_blocks: Dict[str, Any]
+            component_confidence: Dict[str, float] = {}
+            requested_components = None
+            planner_reasons = []
+            planner_engine = None
+            panel_debug_info: Dict[str, Any] = {}
+            panel_spec_metadata: Optional[Dict[str, Any]] = None
+
+            if panel_bundle_payload:
+                panel_payload_obj = panel_bundle_payload["payload"]
+                response_data_blocks = {}
+                panel_spec_metadata = panel_bundle_payload["panel_spec"]
+                panel_debug_info = {
+                    "source": "panel_bundle",
+                    "data_envelopes": list(panel_spec_metadata.get("data_envelopes", {}).keys()),
+                }
+                logger.debug("使用 panel_bundle 渲染面板，数据引用: %s", panel_debug_info["data_envelopes"])
+            else:
+                panel_result = self._build_panel(
+                    query_result=query_result,
+                    datasets=datasets,
+                    intent_confidence=intent_confidence,
+                    user_query=user_query,
+                    layout_snapshot=layout_snapshot,
+                )
+                panel_payload_obj = panel_result.payload
+                response_data_blocks = panel_result.data_blocks
+                component_confidence = panel_result.component_confidence
+                requested_components = panel_result.debug.get("requested_components")
+                planner_reasons = panel_result.debug.get("planner_reasons")
+                planner_engine = panel_result.debug.get("planner_engine")
+                panel_debug_info = panel_result.debug
+                panel_spec_metadata = build_panel_spec_metadata(panel_result)
 
             message = format_success_message(
                 datasets=datasets,
@@ -590,7 +640,7 @@ class ChatService:
             )
 
             debug_info = compose_debug_payload(
-                panel_result.debug,
+                panel_debug_info,
                 llm_debug,
                 query_result.rag_trace or None,
             )
@@ -616,10 +666,10 @@ class ChatService:
                 "cache_hit": query_result.cache_hit,
                 "intent_confidence": intent_confidence,
                 "feed_title": query_result.feed_title,
-                "component_confidence": panel_result.component_confidence,
-                "requested_components": panel_result.debug.get("requested_components"),
-                "planner_reasons": panel_result.debug.get("planner_reasons"),
-                "planner_engine": panel_result.debug.get("planner_engine"),
+                "component_confidence": component_confidence,
+                "requested_components": requested_components,
+                "planner_reasons": planner_reasons,
+                "planner_engine": planner_engine,
                 "debug": debug_info,
                 "datasets": summarize_datasets(datasets, query_result),
                 "retrieved_tools": format_retrieved_tools(query_result.retrieved_tools),
@@ -629,11 +679,11 @@ class ChatService:
             if panel_events:
                 metadata["panel_preview_events"] = panel_events
 
-            panel_spec_metadata = build_panel_spec_metadata(panel_result)
-            metadata["panel_spec"] = panel_spec_metadata
-            degraded_components = panel_spec_metadata.get("degraded_components") or []
-            if degraded_components:
+            if panel_spec_metadata:
+                metadata["panel_spec"] = panel_spec_metadata
+                degraded_components = panel_spec_metadata.get("degraded_components") or []
                 metadata["panel_degraded_components"] = degraded_components
+                metadata["panel_contracts"] = panel_spec_metadata.get("contracts_applied") or []
 
             # 提取并暴露适配器/渲染警告信息到顶层 metadata
             blocks_debug = debug_info.get("blocks", [])
@@ -671,8 +721,8 @@ class ChatService:
                 success=True,
                 intent_type=result_intent_type,
                 message=message,
-                data=panel_result.payload,
-                data_blocks=panel_result.data_blocks,
+                data=panel_payload_obj,
+                data_blocks=response_data_blocks,
                 metadata=metadata,
             )
 

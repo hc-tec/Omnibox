@@ -91,6 +91,18 @@ class DisplaySchema(BaseModel):
         "record_set",
         "custom",
     ] = Field(..., description="洞察种类")
+    component_id: Optional[str] = Field(
+        default=None,
+        description="显式渲染组件标识（契约驱动模式）",
+    )
+    contract_id: Optional[str] = Field(
+        default=None,
+        description="契约 ID，例如 StatisticCard-contract-v2",
+    )
+    contract_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="契约附加信息（layout_hint/props_mapping 等）",
+    )
     title: Optional[str] = Field(default=None, description="标题/名称")
     summary: Optional[str] = Field(default=None, description="简要说明")
     fields: Dict[str, Any] = Field(

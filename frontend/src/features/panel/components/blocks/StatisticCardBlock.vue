@@ -62,10 +62,18 @@ const props = defineProps<{
   dataBlock: DataBlock | null;
 }>();
 
-const record = (props.data ?? props.dataBlock?.records?.[0]) as Record<string, unknown> | null | undefined;
+const recordSource = computed(() => {
+  const dataset = props.data as { items?: Record<string, unknown>[] } | null | undefined;
+  if (dataset?.items && dataset.items.length > 0) {
+    return dataset.items[0];
+  }
+  return props.dataBlock?.records?.[0];
+});
+
+const record = computed(() => recordSource.value as Record<string, unknown> | null | undefined);
 
 const isEmpty = computed(() => {
-  return !record;
+  return !record.value;
 });
 
 function resolveField(propName: string, fallback: string): string {
@@ -74,33 +82,34 @@ function resolveField(propName: string, fallback: string): string {
 }
 
 const metricTitle = computed(() => {
-  if (!record) return '';
+  if (!record.value) return '';
   const titleField = resolveField('title_field', 'metric_title');
-  return String((record as Record<string, unknown>)[titleField] ?? props.block.title ?? '指标');
+  return String((record.value as Record<string, unknown>)[titleField] ?? props.block.title ?? '指标');
 });
 
 const metricValue = computed(() => {
-  if (!record) return 0;
+  if (!record.value) return 0;
   const valueField = resolveField('value_field', 'metric_value');
-  return Number((record as Record<string, unknown>)[valueField] ?? 0);
+  return Number((record.value as Record<string, unknown>)[valueField] ?? 0);
 });
 
 const metricUnit = computed(() => {
-  return record?.['metric_unit'] as string | null ?? null;
+  return record.value?.['metric_unit'] as string | null ?? null;
 });
 
 const metricDeltaText = computed(() => {
-  return record?.['metric_delta_text'] as string | null ?? null;
+  return record.value?.['metric_delta_text'] as string | null ??
+    props.block.props['metric_delta_text'] as string | null ?? null;
 });
 
 const metricTrend = computed(() => {
-  if (!record) return null;
+  if (!record.value) return null;
   const trendField = resolveField('trend_field', 'metric_trend');
-  return (record as Record<string, unknown>)[trendField] as 'up' | 'down' | 'flat' | null ?? null;
+  return (record.value as Record<string, unknown>)[trendField] as 'up' | 'down' | 'flat' | null ?? null;
 });
 
 const description = computed(() => {
-  return record?.['description'] as string | null ?? null;
+  return record.value?.['description'] as string | null ?? null;
 });
 
 const formattedValue = computed(() => {
@@ -137,7 +146,7 @@ function getTrendIcon(trend: 'up' | 'down' | 'flat' | null): string | null {
 
   const icons = {
     up: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
-      <path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
+      <path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75 .75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
     </svg>`,
     down: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
       <path fill-rule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.22 3.22V2.75A.75.75 0 0 1 8 2Z" clip-rule="evenodd" />

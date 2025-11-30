@@ -5,7 +5,7 @@ Utility to convert DisplaySchema instances into component-ready view models.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from services.panel.panel_spec import DisplaySchema
@@ -14,6 +14,7 @@ from services.panel.view_models import (
     ensure_table,
     ensure_list_panel,
     ensure_fallback,
+    validate_records,
 )
 
 
@@ -23,6 +24,7 @@ class GeneratedViewModel:
     component_id: str
     data: Dict[str, Any]
     props: Dict[str, Any]
+    contract_id: Optional[str] = None
 
 
 class ViewModelBuilder:
@@ -31,6 +33,9 @@ class ViewModelBuilder:
     """
 
     def build(self, schema: DisplaySchema) -> GeneratedViewModel:
+        if schema.component_id:
+            return self._handle_component_contract(schema)
+
         handler = getattr(self, f"_handle_{schema.kind}", None)
         if handler:
             return handler(schema)
@@ -68,6 +73,7 @@ class ViewModelBuilder:
             component_id="StatisticCard",
             data={"items": [record.model_dump() for record in validated]},
             props={"title": schema.title or "指标概览"},
+            contract_id=schema.contract_id,
         )
 
     def _handle_comparison(self, schema: DisplaySchema) -> GeneratedViewModel:
@@ -85,6 +91,7 @@ class ViewModelBuilder:
             component_id="Table",
             data={"columns": [col.model_dump() for col in table_model.columns], "rows": table_model.rows},
             props={"title": schema.title or "对比结果"},
+            contract_id=schema.contract_id,
         )
 
     def _handle_cluster(self, schema: DisplaySchema) -> GeneratedViewModel:
@@ -105,6 +112,7 @@ class ViewModelBuilder:
             component_id="ListPanel",
             data={"items": [item.model_dump() for item in validated]},
             props={"title": schema.title or "聚类结果"},
+            contract_id=schema.contract_id,
         )
 
     def _handle_record_set(self, schema: DisplaySchema) -> GeneratedViewModel:
@@ -121,6 +129,7 @@ class ViewModelBuilder:
             component_id="ListPanel",
             data={"items": [item.model_dump() for item in validated]},
             props={"title": schema.title or "数据列表"},
+            contract_id=schema.contract_id,
         )
 
     def _handle_fallback(self, schema: DisplaySchema) -> GeneratedViewModel:
@@ -134,4 +143,48 @@ class ViewModelBuilder:
             component_id="FallbackRichText",
             data={"items": [item.model_dump() for item in validated]},
             props={"title": schema.title or "洞察"},
+            contract_id=schema.contract_id,
+        )
+
+    def _handle_component_contract(self, schema: DisplaySchema) -> GeneratedViewModel:
+        component_id = schema.component_id or "FallbackRichText"
+        raw_items = schema.fields.get("items") or []
+        props = dict(schema.fields.get("props") or {})
+        candidate_items: List[Dict[str, Any]] = []
+        for idx, item in enumerate(raw_items or [], start=1):
+            record = dict(item)
+            record.setdefault("id", f"{component_id}-record-{idx}")
+            candidate_items.append(record)
+        if not candidate_items:
+            candidate_items = [{"id": f"{component_id}-record-1"}]
+        mapping = (schema.contract_metadata or {}).get("props_mapping") or {}
+        normalized_items: List[Dict[str, Any]] = []
+        for record in candidate_items:
+            normalized_item = dict(record)
+            for key, source_field in mapping.items():
+                if not key.endswith("_field"):
+                    continue
+                const_target = key.replace("_field", "")
+                if normalized_item.get(const_target) is None and source_field in normalized_item:
+                    normalized_item[const_target] = normalized_item[source_field]
+            normalized_items.append(normalized_item)
+
+        validated_items = validate_records(component_id, normalized_items)
+        normalized = validated_items
+
+        data: Dict[str, Any]
+        if component_id == "Table":
+            table_payload = normalized[0] if normalized else {"columns": [], "rows": []}
+            data = table_payload
+        else:
+            data = {"items": normalized}
+
+        props.setdefault("title", schema.title or "")
+
+        return GeneratedViewModel(
+            view_model_id=f"vm-{uuid4().hex[:8]}",
+            component_id=component_id,
+            data=data,
+            props=props,
+            contract_id=schema.contract_id,
         )

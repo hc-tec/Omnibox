@@ -206,7 +206,11 @@ async function initializeResearch() {
     store.initializeTask(props.taskId, resolvedQuery);
   }
 
+  const historicalTask = researchTaskStore.getTask(props.taskId);
   researchTaskStore.ensureTask(props.taskId, resolvedQuery);
+  if (historicalTask?.panel_previews?.length) {
+    store.applyHistoricalPanels(historicalTask.panel_previews);
+  }
 
   // 连接 WebSocket（如果已连接会复用，如果未连接会创建）
   connect();

@@ -287,6 +287,8 @@ const wsBaseUrl = ref(
         source_query: summaryData.metadata?.query || viewStore.state.query || "研究结果",
         panel_payload: payload,
         data_blocks: summaryData.data_blocks ?? {},
+        panel_spec: summaryData.panel_spec ?? null,
+        panel_contracts: summaryData.panel_spec?.contracts_applied ?? summaryData.panel_contracts ?? [],
         timestamp: message.timestamp,
       } as ResearchPanel);
     }
@@ -550,6 +552,8 @@ const wsBaseUrl = ref(
             source_query: message.source_query,
             panel_payload: message.panel_payload,
             data_blocks: message.panel_data_blocks ?? {},
+            panel_spec: message.panel_spec ?? null,
+            panel_contracts: message.panel_contracts ?? message.panel_spec?.contracts_applied ?? [],
             timestamp: message.timestamp,
           } as ResearchPanel);
           break;

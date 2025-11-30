@@ -149,6 +149,7 @@ class UIBlock(BaseModel):
     children: Optional[List["UIBlock"]] = Field(
         None, description="Nested child blocks for container components"
     )
+    contract_id: Optional[str] = Field(None, description="Applied component contract id")
 
 
 class PanelPayload(BaseModel):

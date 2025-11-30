@@ -23,6 +23,7 @@ from api.schemas.panel import LayoutNode, LayoutTree, PanelPayload
 from services.chat_service import ChatService
 from services.data_query_service import DataQueryResult, QueryDataset
 from services.panel.component_planner import PlannerDecision
+from services.panel.panel_spec_builder import build_panel_spec_from_dataset
 import services.chat_service as chat_service_module
 from langgraph_agents.sync_executor import SyncLangGraphExecutor, LangGraphExecutionResult
 from langgraph_agents.state import DataReference
@@ -207,6 +208,18 @@ def test_chat_service_ignores_empty_planner_components(monkeypatch):
 class _StubResearchService:
     def __init__(self):
         self.calls = []
+        self.last_panel_previews = [
+            {
+                "panel_payload": {
+                    "mode": "append",
+                    "layout": {"mode": "append", "nodes": []},
+                    "blocks": [],
+                },
+                "panel_spec": {"data_envelopes": {}},
+                "source_query": "demo query",
+                "timestamp": "2025-11-12T00:00:00Z",
+            }
+        ]
 
     def research(self, user_query, filter_datasource=None, task_id=None):
         self.calls.append((user_query, filter_datasource, task_id))
@@ -223,6 +236,7 @@ class _StubResearchService:
             execution_steps=[step],
             data_stash=[],
             metadata={"thread_id": "thread-1", "task_id": task_id or "task-stub"},
+             panel_previews=self.last_panel_previews,
             error=None,
         )
 
@@ -245,6 +259,7 @@ def test_chat_service_handles_research_mode():
     assert response.metadata["total_steps"] == 1
     assert response.metadata["execution_steps"][0]["step_id"] == 1
     assert response.metadata["task_id"] == client_task_id
+    assert response.metadata["panel_previews"] == research_stub.last_panel_previews
     assert response.message == "研究完成"
 
 
@@ -551,3 +566,59 @@ def test_chat_service_langgraph_integration():
     assert langgraph_meta is not None
     assert langgraph_meta["success"] is True
     assert len(langgraph_meta["execution_steps"]) == 2
+
+
+def test_chat_service_prefers_panel_bundle():
+    """确保当 LangGraph 提供 panel_bundle 时跳过 PanelGenerator。"""
+    query_result = _make_success_query_result()
+    data_service = _DummyDataQueryService(query_result)
+    chat = ChatService(data_query_service=data_service)
+
+    recording_generator = _RecordingPanelGenerator(_empty_panel_result())
+    chat.panel_generator = recording_generator
+
+    dataset_payload = {
+        "items": [
+            {"title": "示例内容", "link": "https://example.com/demo"},
+        ],
+        "metadata": {
+            "instruction": "Demo dataset",
+            "item_count": 1,
+        },
+        "feed_title": "结构化示例",
+        "generated_path": "/demo/example",
+        "source": "rsshub",
+        "summary": "结构化面板示例",
+        "type": "rss_public_data",
+    }
+    panel_bundle = build_panel_spec_from_dataset(dataset_payload, data_id="bundle-demo")
+
+    class _PanelBundleExecutor:
+        def __init__(self):
+            self.execute_calls = 0
+
+        def execute(self, user_query, filter_datasource=None, panel_callback=None):
+            self.execute_calls += 1
+            if panel_callback:
+                panel_callback({"panel_bundle": panel_bundle})
+            return LangGraphExecutionResult(
+                success=True,
+                final_report=None,
+                data_stash=[],
+                router_decision="simple_tool_call",
+                execution_steps=[],
+            )
+
+        def get_final_data(self, result):
+            return query_result
+
+    chat.langgraph_executor = _PanelBundleExecutor()
+
+    response = chat.chat("展示结构化面板", mode="simple")
+
+    assert recording_generator.block_inputs is None, "panel_bundle 场景下不应调用 PanelGenerator"
+    assert response.data is not None and response.data.blocks, "应返回 panel_bundle 生成的组件"
+    assert response.data.blocks[0].component == panel_bundle["panel_payload"]["blocks"][0]["component"]
+    assert response.data_blocks == {}
+    assert response.metadata["panel_spec"] == panel_bundle["panel_spec"]
+    assert response.metadata.get("panel_degraded_components") == []
