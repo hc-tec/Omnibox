@@ -313,4 +313,60 @@ def default_components() -> List[ComponentDefinition]:
             },
             description="热力日历，适合展示时间段内的活动密度分布。",
         ),
+        ComponentDefinition(
+            id="ServiceStatus",
+            requirements=[],  # 无强制字段，完全配置驱动
+            optional_fields=[
+                "name", "timestamp", "latency_ms", "current_status",
+                "available_count", "fluctuation_count", "unavailable_count",
+                "current_latency_ms", "last_check_time", "fluctuation_details", "history",
+                "availability_rate"
+            ],
+            options={
+                # 字段映射配置
+                "name_field": {"type": "string", "default": "name"},
+                "status_field": {"type": "string", "default": "current_status"},
+                "history_field": {"type": "string", "default": "history"},
+                "timestamp_field": {"type": "string", "default": "last_check_time"},
+                "metric_field": {"type": "string", "default": "current_latency_ms"},
+                "item_status_field": {"type": "string", "default": "status"},
+                "metric_unit": {"type": "string", "default": "ms"},
+                # 状态配置（数组，每项含 value/label/color）
+                "statuses": {"type": "array", "default": [
+                    {"value": "available", "label": "可用", "color": "success"},
+                    {"value": "fluctuation", "label": "波动", "color": "warning"},
+                    {"value": "unavailable", "label": "不可用", "color": "error"},
+                ]},
+                # 主要指标配置
+                "primary_metrics": {"type": "array", "default": [
+                    {"field": "availability_rate", "label": "可用率", "unit": "%", "decimals": 2},
+                    {"field": "latency_ms", "label": "延迟", "unit": "ms", "decimals": 0},
+                ]},
+                # 状态计数配置
+                "status_counts": {"type": "array", "default": [
+                    {"field": "available_count", "status": "available", "label": "可用", "unit": "次"},
+                    {"field": "fluctuation_count", "status": "fluctuation", "label": "波动", "unit": "次"},
+                    {"field": "unavailable_count", "status": "unavailable", "label": "不可用", "unit": "次"},
+                ]},
+                # 详情配置
+                "details_field": {"type": "string", "default": "fluctuation_details"},
+                "details_label": {"type": "string", "default": "详情细分"},
+                "detail_labels": {"type": "object", "default": {
+                    "slow_response": "响应慢", "timeout": "超时", "error": "错误"
+                }},
+                # 时间线标签
+                "timeline_start_label": {"type": "string", "default": "近24小时"},
+                "timeline_end_label": {"type": "string", "default": "现在"},
+                # 示例数据配置
+                "sample_bar_count": {"type": "number", "default": 48},
+                "sample_interval_minutes": {"type": "number", "default": 30},
+            },
+            interactions=["refresh"],
+            layout_defaults={
+                "layout_size": "half",
+                "span": 6,
+                "min_height": 280,
+            },
+            description="可配置的状态监控组件，支持自定义状态值、颜色、指标、时间线等。",
+        ),
     ]

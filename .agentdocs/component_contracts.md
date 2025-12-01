@@ -516,8 +516,144 @@
 - 调试脚本 `scripts/contract_validator.py` 将 `frontend/src/shared/componentManifest.ts` 与本文件做字段对比（TODO: TS-09）。
 - 所有测试（TS-01~TS-20）必须引用契约 ID，而不是凭空硬编码字段。
 
+### 3.17 ServiceStatus Contract（可配置状态监控）
+
+- `contract_id`: `ServiceStatus-contract-v2`
+- 适用：服务健康监控、可用性展示、延迟统计、任意状态时间线
+- **设计理念**：完全配置驱动，无硬编码字段，支持自定义状态、颜色、指标
+
+#### data_contract（示例，字段名可配置）
+```jsonc
+{
+  "items": [
+    {
+      "name": "string (服务名称，字段名可配置)",
+      "current_status": "string (当前状态值，字段名可配置)",
+      "current_latency_ms": "number (当前指标，字段名可配置)",
+      "last_check_time": "ISO string (最后检查时间，字段名可配置)",
+      "history": [
+        {
+          "status": "string (状态值，字段名可配置)",
+          "timestamp": "string (时间戳)",
+          "availability_rate": "number (主要指标1)",
+          "latency_ms": "number (主要指标2)",
+          "available_count": "number (状态计数1)",
+          "fluctuation_count": "number (状态计数2)",
+          "unavailable_count": "number (状态计数3)",
+          "fluctuation_details": "Record<string, number> (详情细分)"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### props_contract（字段映射）
+```jsonc
+{
+  "name_field": "string, default 'name'",
+  "status_field": "string, default 'current_status'",
+  "history_field": "string, default 'history'",
+  "timestamp_field": "string, default 'last_check_time'",
+  "metric_field": "string, default 'current_latency_ms'",
+  "item_status_field": "string, default 'status'",
+  "metric_unit": "string, default 'ms'"
+}
+```
+
+#### options_contract（核心配置）
+```jsonc
+{
+  // 状态定义（支持自定义状态值、标签、颜色）
+  "statuses": [
+    { "value": "available", "label": "可用", "color": "success" },
+    { "value": "fluctuation", "label": "波动", "color": "warning" },
+    { "value": "unavailable", "label": "不可用", "color": "error" }
+  ],
+
+  // 主要指标（Tooltip 顶部显示）
+  "primary_metrics": [
+    { "field": "availability_rate", "label": "可用率", "unit": "%", "decimals": 2 },
+    { "field": "latency_ms", "label": "延迟", "unit": "ms", "decimals": 0 }
+  ],
+
+  // 状态计数（Tooltip 中部显示）
+  "status_counts": [
+    { "field": "available_count", "status": "available", "label": "可用", "unit": "次" },
+    { "field": "fluctuation_count", "status": "fluctuation", "label": "波动", "unit": "次" },
+    { "field": "unavailable_count", "status": "unavailable", "label": "不可用", "unit": "次" }
+  ],
+
+  // 详情配置
+  "details_field": "string, default 'fluctuation_details'",
+  "details_label": "string, default '详情细分'",
+  "detail_labels": { "slow_response": "响应慢", "timeout": "超时", "error": "错误" },
+
+  // 时间线标签
+  "timeline_start_label": "string, default '近24小时'",
+  "timeline_end_label": "string, default '现在'",
+
+  // 示例数据配置
+  "sample_bar_count": "number, default 48",
+  "sample_interval_minutes": "number, default 30"
+}
+```
+
+#### 可用颜色键
+| 颜色键 | 背景色 | 文本色 | 适用场景 |
+|--------|--------|--------|----------|
+| `success` | emerald | emerald | 正常/可用/成功 |
+| `warning` | amber | amber | 警告/波动/降级 |
+| `error` | red | red | 错误/不可用/失败 |
+| `info` | blue | blue | 信息/待处理 |
+| `neutral` | slate | slate | 未知/中性 |
+| `purple` | purple | purple | 特殊状态 |
+| `cyan` | cyan | cyan | 特殊状态 |
+| `pink` | pink | pink | 特殊状态 |
+
+#### layout_hint
+`{ "span": 6, "min_height": 280 }`
+
+#### 使用示例
+
+**场景1：服务健康监控（默认配置）**
+```json
+{
+  "component_id": "ServiceStatus",
+  "props": {},
+  "options": {}
+}
+```
+
+**场景2：自定义状态（任务进度监控）**
+```json
+{
+  "component_id": "ServiceStatus",
+  "props": {
+    "name_field": "task_name",
+    "status_field": "task_status",
+    "metric_field": "completion_rate"
+  },
+  "options": {
+    "statuses": [
+      { "value": "completed", "label": "完成", "color": "success" },
+      { "value": "running", "label": "运行中", "color": "info" },
+      { "value": "failed", "label": "失败", "color": "error" }
+    ],
+    "primary_metrics": [
+      { "field": "completion_rate", "label": "完成率", "unit": "%", "decimals": 1 }
+    ],
+    "metric_unit": "%",
+    "timeline_start_label": "近7天",
+    "timeline_end_label": "今天"
+  }
+}
+```
+
 ---
 
 > 更新记录：
+> - v0.4（2025-12-02）——重构 ServiceStatus 为完全配置驱动组件，支持自定义状态、颜色、指标、时间线
+> - v0.3（2025-12-02）——新增 ServiceStatus 服务状态监控组件契约
 > - v0.2（2025-12-02）——新增 8 个原子化组件契约（CountCard、ProgressBar、QuoteCard、ComparisonCard、AuthorCard、TagCloud、TimelineCard、HeatmapCalendar）
 > - v0.1（2025-11-30）——整理现有 7 个核心组件 + 1 个降级组件的契约，提供 sample view_model 与 pipeline 指南，供 Phase 13 实施使用。

@@ -551,6 +551,97 @@ function sanitizeHtml(html: string): string {
 
 ---
 
+### 2.17 ServiceStatusBlock（v0.4 重构）
+
+**设计理念**：完全配置驱动，无硬编码字段，支持自定义状态、颜色、指标
+
+**核心功能**：
+- 状态时间线（可配置条数和间隔）
+- 当前状态指示器（可配置状态值、标签、颜色）
+- Tooltip 详情（可配置主要指标、状态计数、详情细分）
+- 主题适配（跟随系统主题，非固定深色）
+
+**字段映射配置**：
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `name_field` | `"name"` | 服务名称字段 |
+| `status_field` | `"current_status"` | 当前状态字段 |
+| `history_field` | `"history"` | 历史数据字段 |
+| `timestamp_field` | `"last_check_time"` | 时间戳字段 |
+| `metric_field` | `"current_latency_ms"` | 当前指标字段 |
+| `item_status_field` | `"status"` | 历史项状态字段 |
+| `metric_unit` | `"ms"` | 指标单位 |
+
+**状态配置（statuses）**：
+```typescript
+// 默认配置
+[
+  { value: 'available', label: '可用', color: 'success' },
+  { value: 'fluctuation', label: '波动', color: 'warning' },
+  { value: 'unavailable', label: '不可用', color: 'error' },
+]
+```
+
+**可用颜色键**：`success`(绿), `warning`(黄), `error`(红), `info`(蓝), `neutral`(灰), `purple`, `cyan`, `pink`
+
+**主要指标配置（primary_metrics）**：
+```typescript
+// 默认配置
+[
+  { field: 'availability_rate', label: '可用率', unit: '%', decimals: 2 },
+  { field: 'latency_ms', label: '延迟', unit: 'ms', decimals: 0 },
+]
+```
+
+**状态计数配置（status_counts）**：
+```typescript
+// 默认配置
+[
+  { field: 'available_count', status: 'available', label: '可用', unit: '次' },
+  { field: 'fluctuation_count', status: 'fluctuation', label: '波动', unit: '次' },
+  { field: 'unavailable_count', status: 'unavailable', label: '不可用', unit: '次' },
+]
+```
+
+**其他配置项**：
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `details_field` | `"fluctuation_details"` | 详情数据字段 |
+| `details_label` | `"详情细分"` | 详情区域标题 |
+| `detail_labels` | `{slow_response: '响应慢', ...}` | 详情标签映射 |
+| `timeline_start_label` | `"近24小时"` | 时间线起始标签 |
+| `timeline_end_label` | `"现在"` | 时间线结束标签 |
+| `sample_bar_count` | `48` | 示例数据条数 |
+| `sample_interval_minutes` | `30` | 示例数据间隔（分钟）|
+
+**使用示例**：
+
+```vue
+<!-- 默认服务监控 -->
+<ServiceStatusBlock :block="{ component: 'ServiceStatus' }" />
+
+<!-- 自定义任务进度监控 -->
+<ServiceStatusBlock :block="{
+  component: 'ServiceStatus',
+  props: {
+    name_field: 'task_name',
+    status_field: 'task_status',
+    metric_field: 'completion_rate'
+  },
+  options: {
+    statuses: [
+      { value: 'completed', label: '完成', color: 'success' },
+      { value: 'running', label: '运行中', color: 'info' },
+      { value: 'failed', label: '失败', color: 'error' }
+    ],
+    metric_unit: '%',
+    timeline_start_label: '近7天'
+  }
+}" />
+```
+
+---
+
 ## 3. 通用模式
 
 ### 3.1 Props 接口
@@ -757,6 +848,9 @@ npm run dev
 15. TimelineCardBlock（时间线）
 16. HeatmapCalendarBlock（热力日历）
 
+**监控组件（1个，v0.3 新增）**：
+17. ServiceStatusBlock（服务状态监控）
+
 **所有组件均**：
 - ✅ 使用 shadcn-vue + ECharts 技术栈
 - ✅ 支持 `UIBlock.children` 嵌套
@@ -765,7 +859,7 @@ npm run dev
 - ✅ 提供空状态提示
 
 **依赖安装状态**：
-- ✅ shadcn-vue 已安装（Card, Badge, Separator, Alert, Table, Button, Progress, Dialog）
+- ✅ shadcn-vue 已安装（Card, Badge, Separator, Alert, Table, Button, Progress, Dialog, Tooltip）
 - ✅ ECharts + vue-echarts 已安装
 - ✅ @tanstack/vue-table 已安装
 - ✅ marked + @tailwindcss/typography 已安装

@@ -1239,6 +1239,7 @@ const EMPTY_DATA_PROPS: Record<string, Record<string, string>> = {
   TagCloud: { name_field: 'name', count_field: 'count' },
   TimelineCard: { title_field: 'title', timestamp_field: 'timestamp' },
   HeatmapCalendar: { date_field: 'date', value_field: 'value' },
+  ServiceStatus: { name_field: 'name', availability_field: 'availability_rate' },
 };
 
 // 空数据测试
@@ -1370,6 +1371,68 @@ export interface ComponentTestCase {
   description: string;
   generator: () => { block: UIBlock; dataBlock: DataBlock };
 }
+
+// ServiceStatus 服务状态监控组件
+export function generateServiceStatusData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('service-status');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 ServiceStatus 模拟数据', { blockId, dataId });
+
+  // 生成24小时历史数据
+  const history: { time: string; status: string }[] = [];
+  for (let i = 0; i < 48; i++) {
+    const rand = Math.random();
+    let status = 'available';
+    if (rand > 0.95) status = 'unavailable';
+    else if (rand > 0.85) status = 'fluctuation';
+    history.push({ time: `${23 - Math.floor(i / 2)}:${i % 2 === 0 ? '00' : '30'}`, status });
+  }
+
+  const records = [{
+    name: 'VIP 数据服务',
+    timestamp: new Date().toISOString(),
+    availability_rate: 97.69,
+    latency_ms: 2182,
+    current_status: 'available',
+    current_latency_ms: 1550,
+    last_check_time: new Date().toISOString(),
+    available_count: 12,
+    fluctuation_count: 1,
+    unavailable_count: 0,
+    fluctuation_details: {
+      slow_response: 1,
+    },
+    history,
+  }];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'ServiceStatus',
+    data_ref: dataId,
+    title: '服务状态监控',
+    props: {
+      name_field: 'name',
+      timestamp_field: 'timestamp',
+      availability_field: 'availability_rate',
+      latency_field: 'latency_ms',
+      current_status_field: 'current_status',
+      history_field: 'history',
+    },
+    options: {
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    records,
+    stats: { total: 1 },
+  };
+
+  return { block, dataBlock };
+}
+
 
 export const allTestCases: ComponentTestCase[] = [
   {
@@ -1511,5 +1574,12 @@ export const allTestCases: ComponentTestCase[] = [
     component: 'HeatmapCalendar',
     description: '活动热力图展示',
     generator: generateHeatmapCalendarData,
+  },
+  {
+    id: 'service-status-standard',
+    name: 'ServiceStatus 标准',
+    component: 'ServiceStatus',
+    category: 'monitor',
+    generator: generateServiceStatusData,
   },
 ];

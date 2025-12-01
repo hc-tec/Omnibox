@@ -484,16 +484,17 @@
 - `media_type`无媒体时为`None`，不是空字符串
 
 ### 前端面板组件
-- **已实现 16 个组件**：
+- **已实现 17 个组件**：
   - **核心组件（8个）**：ListPanelBlock、StatisticCardBlock、LineChartBlock、BarChartBlock、PieChartBlock、TableBlock、ImageGalleryBlock、FallbackRichTextBlock
   - **原子化组件（v0.2 新增，8个）**：CountCardBlock、ProgressBarBlock、QuoteCardBlock、ComparisonCardBlock、AuthorCardBlock、TagCloudBlock、TimelineCardBlock、HeatmapCalendarBlock
+  - **监控组件（v0.4 重构，1个）**：ServiceStatusBlock（完全配置驱动，支持自定义状态、颜色、指标）
 - **技术栈铁律**：所有组件必须使用 shadcn-vue + ECharts，禁止使用 React 语法或其他 UI 库
 - **组件路径**：`frontend/src/features/panel/components/blocks/`
 - **组件注册**：通过 `DynamicBlockRenderer.vue` 动态路由，通过 `componentManifest.ts` 声明能力
 - **数据契约**：前端 TypeScript 类型必须与后端 Pydantic 模型一致（定义在 `docs/backend-panel-view-models.md`）
 - **嵌套支持**：所有组件支持 `UIBlock.children` 嵌套架构
 - **响应式图表**：ECharts 组件使用 ResizeObserver 实现响应式调整
-- **依赖状态**：shadcn-vue（8个组件）、ECharts、TanStack Table、marked 均已安装
+- **依赖状态**：shadcn-vue（9个组件：Card、Badge、Separator、Alert、Table、Button、Progress、Dialog、Tooltip）、ECharts、TanStack Table、marked 均已安装
 - **配置预设系统**：`services/panel/adapters/config_presets.py` 提供标准化尺寸预设（compact/normal/large/full），让 AI planner 灵活控制组件大小
 - **ListPanel 配置**：支持 compact 模式、max_items、show_description、show_metadata、show_categories 等配置项
 - **数据追加模式**：
@@ -540,7 +541,7 @@
   - **布局密度切换**：紧凑(compact) / 均衡(balanced) / 宽松(spacious)，与 `panelStore.sizePreset` 同步
   - **组件检查器**：点击眼睛图标查看组件的 UIBlock、DataBlock、Props、Options 完整数据
 - **Mock 数据生成器** - `frontend/src/features/dev/mockDataGenerator.ts`
-  - 为 16 种组件生成标准化测试数据（包括核心组件：ListPanel、StatisticCard、LineChart、BarChart、PieChart、Table、ImageGallery、MediaCardGrid，以及原子化组件：CountCard、ProgressBar、QuoteCard、ComparisonCard、AuthorCard、TagCloud、TimelineCard、HeatmapCalendar）
+  - 为 17 种组件生成标准化测试数据（包括核心组件：ListPanel、StatisticCard、LineChart、BarChart、PieChart、Table、ImageGallery、MediaCardGrid，以及原子化组件：CountCard、ProgressBar、QuoteCard、ComparisonCard、AuthorCard、TagCloud、TimelineCard、HeatmapCalendar，以及监控组件：ServiceStatus）
   - 包含边界情况测试（空数据、大量数据、特殊字符）
   - 内置 DevLogger 日志系统，支持 debug/info/warn/error 级别
 - **日志面板** - `frontend/src/features/dev/components/DevLogPanel.vue`

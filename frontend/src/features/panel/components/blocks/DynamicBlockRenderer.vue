@@ -83,6 +83,7 @@ import AuthorCardBlock from "./AuthorCardBlock.vue";
 import TagCloudBlock from "./TagCloudBlock.vue";
 import TimelineCardBlock from "./TimelineCardBlock.vue";
 import HeatmapCalendarBlock from "./HeatmapCalendarBlock.vue";
+import ServiceStatusBlock from "./ServiceStatusBlock.vue";
 
 defineOptions({
   name: "DynamicBlockRenderer",
@@ -156,6 +157,7 @@ const COMPONENT_LABELS: Record<string, string> = {
   TagCloud: "标签云",
   TimelineCard: "时间线",
   HeatmapCalendar: "热力日历",
+  ServiceStatus: "服务状态",
 };
 const displayTitle = computed(() => {
   const block = resolved.value.block;
@@ -200,6 +202,8 @@ const resolvedComponent = computed(() => {
       return TimelineCardBlock;
     case "HeatmapCalendar":
       return HeatmapCalendarBlock;
+    case "ServiceStatus":
+      return ServiceStatusBlock;
     case "FallbackRichText":
     default:
       return FallbackBlock;

@@ -504,7 +504,13 @@ export const PanelComponents = {
 | **TimelineCardBlock** | `features/panel/components/blocks/TimelineCardBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 时间线，状态节点可点击 |
 | **HeatmapCalendarBlock** | `features/panel/components/blocks/HeatmapCalendarBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 热力日历，GitHub 风格 |
 
-### 11.3 组件特性对照表
+### 11.3 监控组件实现状态（1个，v0.3 新增）
+
+| 组件名称 | 文件路径 | 使用技术 | 状态 | 备注 |
+|---------|---------|---------|------|------|
+| **ServiceStatusBlock** | `features/panel/components/blocks/ServiceStatusBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 服务状态监控，24小时时间线 |
+
+### 11.4 组件特性对照表
 
 | 组件 | 数据契约 | 响应式图表 | 嵌套支持 | 自定义样式 | 交互功能 |
 |-----|---------|----------|---------|-----------|---------|
@@ -517,7 +523,7 @@ export const PanelComponents = {
 | ImageGalleryBlock | ✅ `ImageGalleryRecord` | N/A | ✅ 支持 children | ✅ 列数、宽高比 | ✅ Lightbox 查看 |
 | FallbackRichTextBlock | ✅ `FallbackRichTextRecord` | N/A | ✅ 支持 children | ❌ 无需 | - |
 
-### 11.4 组件嵌套架构
+### 11.5 组件嵌套架构
 
 所有组件均支持 `UIBlock.children` 嵌套架构，可实现以下组合：
 - Card 容器包含多个 StatisticCard
@@ -526,7 +532,7 @@ export const PanelComponents = {
 
 详见 `.agentdocs/panel-nested-components-design.md`
 
-### 11.5 组件注册
+### 11.6 组件注册
 
 所有组件已在以下位置注册：
 - **前端清单**：`frontend/src/shared/componentManifest.ts`

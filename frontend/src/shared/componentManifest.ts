@@ -334,6 +334,24 @@ export const componentManifest: ComponentManifest = {
       layoutDefaults: { span: 12, minHeight: 220 },
       categories: ["chart", "calendar"],
     },
+    {
+      id: "ServiceStatus",
+      tag: "monitor",
+      props: {
+        name_field: { type: "string", required: false },
+        timestamp_field: { type: "string", required: false },
+        availability_field: { type: "string", required: false },
+        latency_field: { type: "string", required: false },
+        current_status_field: { type: "string", required: false },
+        history_field: { type: "string", required: false },
+      },
+      options: {
+        span: { type: "number", default: 6 },
+      },
+      interactions: ["refresh"],
+      layoutDefaults: { span: 6, minHeight: 280 },
+      categories: ["monitor", "status"],
+    },
   ],
 };
 
