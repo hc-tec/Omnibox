@@ -140,6 +140,22 @@ CONTRACTS: Dict[str, ComponentContract] = {
             "series_field": "series",
         },
         layout_hint={"span": 12, "min_height": 280},
+        sample_view_model={
+            "component_id": "BarChart",
+            "data": {
+                "items": [
+                    {"id": "bar-1", "category": "凌晨(0-6点)", "value": 5},
+                    {"id": "bar-2", "category": "上午(6-12点)", "value": 12},
+                    {"id": "bar-3", "category": "下午(12-18点)", "value": 8},
+                    {"id": "bar-4", "category": "晚上(18-24点)", "value": 15},
+                ]
+            },
+            "props": {
+                "x_field": "category",
+                "y_field": "value",
+                "title": "时间段分布",
+            },
+        },
     ),
     "PieChart": ComponentContract(
         component_id="PieChart",

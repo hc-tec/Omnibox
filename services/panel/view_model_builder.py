@@ -179,6 +179,10 @@ class ViewModelBuilder:
         else:
             data = {"items": normalized}
 
+        # 将契约的 props_mapping 注入到 props 中，确保前端知道字段映射关系
+        for key, value in mapping.items():
+            props.setdefault(key, value)
+
         props.setdefault("title", schema.title or "")
 
         return GeneratedViewModel(

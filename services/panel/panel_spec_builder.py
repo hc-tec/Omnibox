@@ -173,7 +173,7 @@ def _build_display_schema(dataset: Dict[str, Any], source_ref: str, max_items: i
     summary = _normalize_summary(dataset.get("summary") or dataset.get("reasoning"))
     return DisplaySchema(
         kind="record_set",
-        title=dataset.get("feed_title") or dataset.get("title") or metadata.get("instruction") or "数据列表",
+        title=dataset.get("feed_title") or dataset.get("title") or "数据列表",
         summary=summary,
         fields=fields,
         source_refs=[source_ref],
@@ -203,7 +203,8 @@ def _build_contract_display_schema(
     summary = _normalize_summary(
         dataset.get("summary") or dataset.get("reasoning") or metadata.get("instruction")
     )
-    title = dataset.get("feed_title") or dataset.get("title") or metadata.get("instruction") or contract.description
+    # 标题优先级：feed_title > title > contract.description，避免使用过长的 instruction
+    title = dataset.get("feed_title") or dataset.get("title") or contract.description or "数据分析"
     return DisplaySchema(
         kind=_infer_display_kind_for_contract(contract.component_id),
         component_id=contract.component_id,

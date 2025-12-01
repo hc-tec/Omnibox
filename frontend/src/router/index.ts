@@ -5,9 +5,13 @@
  * - / (MainView): 主界面，包含聊天和数据面板
  * - /research/:taskId (ResearchView): 专属研究视图，包含上下文面板和数据面板
  * - /subscriptions (SubscriptionsView): 订阅管理页面
+ * - /dev/components (DevComponentsView): 组件调试页面（仅开发模式）
  */
 
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
+
+// 判断是否为开发模式
+const isDev = import.meta.env.DEV;
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -35,6 +39,20 @@ const routes: Array<RouteRecordRaw> = [
       title: '我的订阅',
     },
   },
+  // 开发者组件调试页面（仅开发模式可用）
+  ...(isDev
+    ? [
+        {
+          path: '/dev/components',
+          name: 'DevComponents',
+          component: () => import('../views/DevComponentsView.vue'),
+          meta: {
+            title: '组件调试面板',
+            requiresDev: true,
+          },
+        },
+      ]
+    : []),
 ];
 
 const router = createRouter({

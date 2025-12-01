@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 """通用数据算子：使用 LLM 生成并执行 Python transform 代码。"""
 
 import json
@@ -31,7 +33,7 @@ from ..component_contracts import (
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_IMPORTS = {"datetime"}
+ALLOWED_IMPORTS = {"datetime", "collections", "re", "itertools", "functools", "json", "math", "statistics", "typing"}
 
 
 def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -42,23 +44,106 @@ def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
 
 
 SAFE_BUILTINS = {
+    # 类型构造器
+    "dict": dict,
+    "defaultdict": defaultdict,
+    "list": list,
+    "str": str,
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "tuple": tuple,
+    "set": set,
+    "frozenset": frozenset,
+    "type": type,
+    "object": object,
+    # 常用函数
     "len": len,
     "range": range,
     "min": min,
     "max": max,
     "sum": sum,
     "sorted": sorted,
+    "reversed": reversed,
     "any": any,
     "all": all,
     "abs": abs,
     "round": round,
     "enumerate": enumerate,
+    "zip": zip,
+    "map": map,
+    "filter": filter,
     "isinstance": isinstance,
+    "issubclass": issubclass,
+    "hasattr": hasattr,
+    "getattr": getattr,
+    "setattr": setattr,
+    "callable": callable,
+    "repr": repr,
+    "hash": hash,
+    "id": id,
+    "iter": iter,
+    "next": next,
+    "slice": slice,
+    "format": format,
+    "ord": ord,
+    "chr": chr,
+    "bin": bin,
+    "hex": hex,
+    "oct": oct,
+    "pow": pow,
+    "divmod": divmod,
+    # 异常类（用于 try/except）
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+    "KeyError": KeyError,
+    "IndexError": IndexError,
+    "AttributeError": AttributeError,
+    "StopIteration": StopIteration,
+    "RuntimeError": RuntimeError,
+    "ZeroDivisionError": ZeroDivisionError,
+    # 特殊常量
+    "None": None,
+    "True": True,
+    "False": False,
+    # 受限导入
     "__import__": _safe_import,
 }
 
 BANNED_PANEL_KEYS = {"panel_hint", "metric_value"}
 ALWAYS_ALLOWED_FIELDS = {"id"}
+
+# 预加载到沙盒中的模块（无需 import 即可使用）
+PRELOADED_MODULES = ["json", "math", "statistics", "datetime"]
+
+
+def _build_sandbox_description() -> str:
+    """动态生成沙盒环境说明，确保与实际配置同步。"""
+    allowed_imports = ", ".join(sorted(ALLOWED_IMPORTS))
+    builtins_list = ", ".join(sorted(k for k in SAFE_BUILTINS.keys() if not k.startswith("_")))
+    preloaded = ", ".join(PRELOADED_MODULES)
+
+    return f"""## 沙盒环境限制（重要！）
+
+代码在受限沙盒中执行，**只能使用以下资源**：
+
+### 允许导入的模块
+```
+{allowed_imports}
+```
+**禁止导入任何其他模块**（如 pandas, numpy, os, sys 等），否则会导致执行失败。
+
+### 已内置可直接使用（无需导入）
+`{builtins_list}`
+
+### 已预加载模块（可直接使用如 `json.loads()`, `math.sqrt()`）
+`{preloaded}`
+
+### 禁止操作
+- 网络请求、文件读写、系统调用
+- 导入未列出的任何模块
+"""
 
 
 class ComponentContractViolation(RuntimeError):
@@ -364,8 +449,11 @@ def _build_prompt(
         contract_lines.append("")
         contract_section = "\n".join(contract_lines)
 
+    sandbox_section = _build_sandbox_description()
+
     return (
         f"{base_prompt}\n\n"
+        f"{sandbox_section}\n"
         f"{contract_section}"
         f"{source_section}"
         f"## 转换指令\n{instruction}\n\n"
@@ -375,7 +463,6 @@ def _build_prompt(
         "- 样本仅用于理解结构，真实执行将在完整 records 上进行。\n"
         "- 如果样本字段被 __truncated__/__omitted__ 标记，请在代码中直接访问记录原字段。\n"
         "- transform(records) 必须返回 dict，如 {\"items\": [...], \"metadata\": {...}}。\n"
-        "- 禁止打印、网络请求或文件操作。\n"
     )
 
 
@@ -442,12 +529,19 @@ def _normalize_transform_result(
         normalized["generated_path"] = generated_path
         normalized.setdefault("route", generated_path)
 
-    feed_title = normalized.get("feed_title") or source_meta.get("feed_title")
-    if instruction:
-        feed_title = f"{feed_title} · {instruction}" if feed_title else f"数据算子结果：{instruction}"
+    # 生成标题：优先使用 LLM 结果中的 title（提示词已约束不超过20字）
+    result_title = normalized.get("title")
+    source_title = source_meta.get("feed_title")
+
+    if result_title:
+        feed_title = result_title
+    elif source_title:
+        feed_title = source_title
+    else:
+        feed_title = "数据分析结果"
+
     normalized["feed_title"] = feed_title
-    if feed_title:
-        normalized.setdefault("title", feed_title)
+    normalized.setdefault("title", feed_title)
 
     normalized["source"] = normalized.get("source") or source_meta.get("datasource") or "data_operator"
     normalized["cache_hit"] = False
