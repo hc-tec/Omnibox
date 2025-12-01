@@ -7,7 +7,7 @@
 
 ## 1. 组件总览
 
-### 1.1 已实现组件（8个）
+### 1.1 核心组件（8个）
 
 | 组件 | 文件 | 主要依赖 | 核心功能 |
 |------|------|----------|---------|
@@ -20,18 +20,39 @@
 | ImageGalleryBlock | `ImageGalleryBlock.vue` | shadcn-vue (Card, Dialog, Button) | 图片画廊，支持网格布局、Lightbox 灯箱预览 |
 | FallbackRichTextBlock | `FallbackRichTextBlock.vue` | shadcn-vue (Card, Alert) + marked | 兜底渲染，支持 Markdown、XSS 防护 |
 
-### 1.2 组件目录结构
+### 1.2 原子化组件（8个，v0.2 新增）
+
+| 组件 | 文件 | 主要依赖 | 核心功能 |
+|------|------|----------|---------|
+| CountCardBlock | `CountCardBlock.vue` | shadcn-vue (Card) | 单一数字指标，支持大数字格式化、颜色主题 |
+| ProgressBarBlock | `ProgressBarBlock.vue` | shadcn-vue (Card, Progress) | 进度条展示，支持百分比显示、颜色配置 |
+| QuoteCardBlock | `QuoteCardBlock.vue` | shadcn-vue (Card) | 引用卡片，适合金句、评论摘要展示 |
+| ComparisonCardBlock | `ComparisonCardBlock.vue` | shadcn-vue (Card) | 对比卡片，A vs B 并排显示，自动计算差值 |
+| AuthorCardBlock | `AuthorCardBlock.vue` | shadcn-vue (Card, Avatar, Badge) | 作者/账号卡片，支持头像、认证徽章、粉丝数 |
+| TagCloudBlock | `TagCloudBlock.vue` | shadcn-vue (Card) | 标签云，权重驱动大小和透明度 |
+| TimelineCardBlock | `TimelineCardBlock.vue` | shadcn-vue (Card) | 时间线，支持状态节点、可点击链接 |
+| HeatmapCalendarBlock | `HeatmapCalendarBlock.vue` | shadcn-vue (Card) | 热力日历，GitHub 风格活动热力图 |
+
+### 1.3 组件目录结构
 
 ```
 frontend/src/features/panel/components/blocks/
-├── ListPanelBlock.vue          # ✅ 已实现
-├── StatisticCardBlock.vue      # ✅ 已实现
-├── LineChartBlock.vue          # ✅ 已实现
-├── BarChartBlock.vue           # ✅ 已实现
-├── PieChartBlock.vue           # ✅ 已实现
-├── TableBlock.vue              # ✅ 已实现
-├── ImageGalleryBlock.vue       # ✅ 已实现
-├── FallbackRichTextBlock.vue   # ✅ 已实现
+├── ListPanelBlock.vue          # ✅ 核心组件 - 列表
+├── StatisticCardBlock.vue      # ✅ 核心组件 - 统计卡片
+├── LineChartBlock.vue          # ✅ 核心组件 - 折线图
+├── BarChartBlock.vue           # ✅ 核心组件 - 柱状图
+├── PieChartBlock.vue           # ✅ 核心组件 - 饼图
+├── TableBlock.vue              # ✅ 核心组件 - 表格
+├── ImageGalleryBlock.vue       # ✅ 核心组件 - 图片画廊
+├── FallbackRichTextBlock.vue   # ✅ 核心组件 - 兜底渲染
+├── CountCardBlock.vue          # ✅ 原子化组件 - 单数字指标
+├── ProgressBarBlock.vue        # ✅ 原子化组件 - 进度条
+├── QuoteCardBlock.vue          # ✅ 原子化组件 - 引用卡片
+├── ComparisonCardBlock.vue     # ✅ 原子化组件 - 对比卡片
+├── AuthorCardBlock.vue         # ✅ 原子化组件 - 作者卡片
+├── TagCloudBlock.vue           # ✅ 原子化组件 - 标签云
+├── TimelineCardBlock.vue       # ✅ 原子化组件 - 时间线
+├── HeatmapCalendarBlock.vue    # ✅ 原子化组件 - 热力日历
 └── DynamicBlockRenderer.vue    # 动态组件路由器
 ```
 
@@ -414,6 +435,122 @@ function sanitizeHtml(html: string): string {
 
 ---
 
+### 2.9 CountCardBlock（v0.2 新增）
+
+**数据契约**：`{ value: number, title?: string, unit?: string, description?: string }`
+
+**核心功能**：
+- 突出展示单一大数字（播放量、粉丝数等）
+- 大数字格式化（万、亿）
+- 6 种颜色主题（default/primary/success/warning/error/info）
+
+**配置项**：
+- `color`: 颜色主题（默认 `"default"`）
+
+---
+
+### 2.10 ProgressBarBlock（v0.2 新增）
+
+**数据契约**：`{ value: number, label?: string, max?: number, description?: string }`
+
+**核心功能**：
+- 进度条展示（百分比或绝对值）
+- 自动计算百分比（value/max）
+- 支持自定义颜色
+
+**配置项**：
+- `color`: 进度条颜色（默认 `"primary"`）
+- `show_percentage`: 是否显示百分比（默认 `true`）
+
+---
+
+### 2.11 QuoteCardBlock（v0.2 新增）
+
+**数据契约**：`{ content: string, author?: string, source?: string, timestamp?: string }`
+
+**核心功能**：
+- 引用样式展示（大引号装饰）
+- 支持作者、来源、时间戳
+
+**配置项**：
+- `compact`: 紧凑模式（默认 `false`）
+
+---
+
+### 2.12 ComparisonCardBlock（v0.2 新增）
+
+**数据契约**：`{ left_value: number, right_value: number, left_label?: string, right_label?: string, left_unit?: string, right_unit?: string }`
+
+**核心功能**：
+- 两个数值并排对比（A vs B）
+- 自动计算差值和变化百分比
+- 差值颜色编码（正数绿色、负数红色）
+
+**配置项**：
+- `show_diff`: 是否显示差值（默认 `true`）
+
+---
+
+### 2.13 AuthorCardBlock（v0.2 新增）
+
+**数据契约**：`{ name: string, avatar?: string, bio?: string, verified?: boolean, followers?: number, following?: number, posts?: number, link?: string }`
+
+**核心功能**：
+- 作者/账号信息卡片
+- 头像显示（缺失时显示首字母）
+- 认证徽章（蓝色勾）
+- 粉丝/关注/投稿数统计
+
+**配置项**：无
+
+---
+
+### 2.14 TagCloudBlock（v0.2 新增）
+
+**数据契约**：`{ items: Array<{ name: string, count: number }> }`
+
+**核心功能**：
+- 标签云可视化
+- 权重驱动字体大小和透明度
+- 8 种循环配色
+
+**配置项**：
+- `max_tags`: 最大标签数（默认 `30`）
+- `show_count`: 是否显示计数（默认 `false`）
+
+---
+
+### 2.15 TimelineCardBlock（v0.2 新增）
+
+**数据契约**：`{ items: Array<{ title: string, timestamp: string, description?: string, status?: string, type?: string, link?: string }> }`
+
+**核心功能**：
+- 垂直时间线展示
+- 状态节点颜色编码（completed/pending/error/active）
+- 可点击跳转
+
+**配置项**：
+- `max_items`: 最大条目数（默认 `10`）
+- `show_description`: 是否显示描述（默认 `true`）
+
+---
+
+### 2.16 HeatmapCalendarBlock（v0.2 新增）
+
+**数据契约**：`{ items: Array<{ date: string, value: number }> }`
+
+**核心功能**：
+- GitHub 风格热力日历
+- 5 级颜色强度
+- 统计信息（总计、活跃天数、最长连续）
+
+**配置项**：
+- `weeks`: 显示周数（默认 `52`）
+- `show_stats`: 是否显示统计（默认 `true`）
+- `value_unit`: 数值单位（默认 `"次"`）
+
+---
+
 ## 3. 通用模式
 
 ### 3.1 Props 接口
@@ -598,7 +735,9 @@ npm run dev
 
 ## 7. 全局记忆
 
-**已实现的 8 个组件**：
+**已实现的 16 个组件**：
+
+**核心组件（8个）**：
 1. ListPanelBlock（列表）
 2. StatisticCardBlock（指标卡片）
 3. LineChartBlock（折线图）
@@ -607,6 +746,16 @@ npm run dev
 6. TableBlock（表格）
 7. ImageGalleryBlock（图片画廊）
 8. FallbackRichTextBlock（兜底渲染）
+
+**原子化组件（8个，v0.2 新增）**：
+9. CountCardBlock（单数字指标）
+10. ProgressBarBlock（进度条）
+11. QuoteCardBlock（引用卡片）
+12. ComparisonCardBlock（对比卡片）
+13. AuthorCardBlock（作者卡片）
+14. TagCloudBlock（标签云）
+15. TimelineCardBlock（时间线）
+16. HeatmapCalendarBlock（热力日历）
 
 **所有组件均**：
 - ✅ 使用 shadcn-vue + ECharts 技术栈

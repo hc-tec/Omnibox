@@ -74,6 +74,15 @@ import PieChartBlock from "./PieChartBlock.vue";
 import TableBlock from "./TableBlock.vue";
 import ImageGalleryBlock from "./ImageGalleryBlock.vue";
 import MediaCardGridBlock from "./MediaCardGridBlock.vue";
+// 新增原子化组件
+import CountCardBlock from "./CountCardBlock.vue";
+import ProgressBarBlock from "./ProgressBarBlock.vue";
+import QuoteCardBlock from "./QuoteCardBlock.vue";
+import ComparisonCardBlock from "./ComparisonCardBlock.vue";
+import AuthorCardBlock from "./AuthorCardBlock.vue";
+import TagCloudBlock from "./TagCloudBlock.vue";
+import TimelineCardBlock from "./TimelineCardBlock.vue";
+import HeatmapCalendarBlock from "./HeatmapCalendarBlock.vue";
 
 defineOptions({
   name: "DynamicBlockRenderer",
@@ -139,6 +148,14 @@ const COMPONENT_LABELS: Record<string, string> = {
   StatisticCard: "指标卡片",
   ImageGallery: "图像画廊",
   MediaCardGrid: "媒体卡片",
+  CountCard: "数字指标",
+  ProgressBar: "进度条",
+  QuoteCard: "引用卡片",
+  ComparisonCard: "对比卡片",
+  AuthorCard: "作者卡片",
+  TagCloud: "标签云",
+  TimelineCard: "时间线",
+  HeatmapCalendar: "热力日历",
 };
 const displayTitle = computed(() => {
   const block = resolved.value.block;
@@ -167,6 +184,22 @@ const resolvedComponent = computed(() => {
       return ImageGalleryBlock;
     case "MediaCardGrid":
       return MediaCardGridBlock;
+    case "CountCard":
+      return CountCardBlock;
+    case "ProgressBar":
+      return ProgressBarBlock;
+    case "QuoteCard":
+      return QuoteCardBlock;
+    case "ComparisonCard":
+      return ComparisonCardBlock;
+    case "AuthorCard":
+      return AuthorCardBlock;
+    case "TagCloud":
+      return TagCloudBlock;
+    case "TimelineCard":
+      return TimelineCardBlock;
+    case "HeatmapCalendar":
+      return HeatmapCalendarBlock;
     case "FallbackRichText":
     default:
       return FallbackBlock;

@@ -746,6 +746,475 @@ export function generateMediaCardGridData(): { block: UIBlock; dataBlock: DataBl
   return { block, dataBlock };
 }
 
+
+
+// ============================
+// CountCard 模拟数据
+// ============================
+export function generateCountCardData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('count');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 CountCard 模拟数据', { blockId, dataId });
+
+  const records = [
+    {
+      metric_title: '总播放量',
+      metric_value: 12568423,
+      unit: '次',
+      description: '累计视频播放总量',
+    },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'CountCard',
+    data_ref: dataId,
+    title: '播放统计',
+    props: {
+      title_field: 'metric_title',
+      value_field: 'metric_value',
+      unit_field: 'unit',
+      description_field: 'description',
+    },
+    options: {
+      color: 'primary',
+      span: 4,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('analytics', '/stats/total'),
+    records,
+    stats: { item_count: 1, description: '单一数字指标展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'metric_title', type: 'string' },
+      { name: 'metric_value', type: 'number' },
+      { name: 'unit', type: 'string' },
+      { name: 'description', type: 'string' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
+// ============================
+// ProgressBar 模拟数据
+// ============================
+export function generateProgressBarData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('progress');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 ProgressBar 模拟数据', { blockId, dataId });
+
+  const records = [
+    {
+      label: '任务完成度',
+      value: 78,
+      max: 100,
+      description: '本周目标完成进度',
+    },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'ProgressBar',
+    data_ref: dataId,
+    title: '进度追踪',
+    props: {
+      label_field: 'label',
+      value_field: 'value',
+      max_field: 'max',
+      description_field: 'description',
+    },
+    options: {
+      color: 'success',
+      show_percentage: true,
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('tasks', '/progress'),
+    records,
+    stats: { item_count: 1, description: '进度条展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'label', type: 'string' },
+      { name: 'value', type: 'number' },
+      { name: 'max', type: 'number' },
+      { name: 'description', type: 'string' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
+// ============================
+// QuoteCard 模拟数据
+// ============================
+export function generateQuoteCardData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('quote');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 QuoteCard 模拟数据', { blockId, dataId });
+
+  const records = [
+    {
+      content: '代码是写给人看的，只是顺便能在机器上运行。',
+      author: 'Donald Knuth',
+      source: '计算机程序设计艺术',
+      timestamp: '1968-01-01T00:00:00Z',
+    },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'QuoteCard',
+    data_ref: dataId,
+    title: '每日金句',
+    props: {
+      content_field: 'content',
+      author_field: 'author',
+      source_field: 'source',
+      timestamp_field: 'timestamp',
+    },
+    options: {
+      compact: false,
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('quotes', '/daily'),
+    records,
+    stats: { item_count: 1, description: '引用内容展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'content', type: 'string' },
+      { name: 'author', type: 'string' },
+      { name: 'source', type: 'string' },
+      { name: 'timestamp', type: 'datetime' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
+// ============================
+// ComparisonCard 模拟数据
+// ============================
+export function generateComparisonCardData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('comparison');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 ComparisonCard 模拟数据', { blockId, dataId });
+
+  const records = [
+    {
+      left_label: '本月',
+      left_value: 125680,
+      left_unit: '元',
+      right_label: '上月',
+      right_value: 98540,
+      right_unit: '元',
+    },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'ComparisonCard',
+    data_ref: dataId,
+    title: '销售额对比',
+    props: {
+      left_label_field: 'left_label',
+      left_value_field: 'left_value',
+      left_unit_field: 'left_unit',
+      right_label_field: 'right_label',
+      right_value_field: 'right_value',
+      right_unit_field: 'right_unit',
+    },
+    options: {
+      show_diff: true,
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('sales', '/compare'),
+    records,
+    stats: { item_count: 1, description: '对比数据展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'left_label', type: 'string' },
+      { name: 'left_value', type: 'number' },
+      { name: 'right_label', type: 'string' },
+      { name: 'right_value', type: 'number' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
+// ============================
+// AuthorCard 模拟数据
+// ============================
+export function generateAuthorCardData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('author');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 AuthorCard 模拟数据', { blockId, dataId });
+
+  const records = [
+    {
+      name: '科技美学',
+      avatar: 'https://picsum.photos/seed/author1/100/100',
+      bio: '分享科技产品评测，带你了解最新科技动态。专注数码领域10年。',
+      verified: true,
+      followers: 1256000,
+      following: 128,
+      posts: 892,
+      link: 'https://space.bilibili.com/12345',
+    },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'AuthorCard',
+    data_ref: dataId,
+    title: 'UP主信息',
+    props: {
+      name_field: 'name',
+      avatar_field: 'avatar',
+      bio_field: 'bio',
+      verified_field: 'verified',
+      followers_field: 'followers',
+      following_field: 'following',
+      posts_field: 'posts',
+      link_field: 'link',
+    },
+    options: {
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('bilibili', '/user/info'),
+    records,
+    stats: { item_count: 1, description: '用户信息展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'name', type: 'string' },
+      { name: 'avatar', type: 'string' },
+      { name: 'bio', type: 'string' },
+      { name: 'verified', type: 'boolean' },
+      { name: 'followers', type: 'number' },
+      { name: 'posts', type: 'number' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
+// ============================
+// TagCloud 模拟数据
+// ============================
+export function generateTagCloudData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('tagcloud');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 TagCloud 模拟数据', { blockId, dataId });
+
+  const records = [
+    { name: 'JavaScript', count: 156 },
+    { name: 'TypeScript', count: 128 },
+    { name: 'Vue', count: 98 },
+    { name: 'React', count: 87 },
+    { name: 'Python', count: 76 },
+    { name: 'Rust', count: 65 },
+    { name: 'Go', count: 54 },
+    { name: 'AI', count: 145 },
+    { name: '前端', count: 112 },
+    { name: '后端', count: 89 },
+    { name: '云原生', count: 67 },
+    { name: 'DevOps', count: 45 },
+    { name: '数据库', count: 78 },
+    { name: '微服务', count: 56 },
+    { name: '区块链', count: 34 },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'TagCloud',
+    data_ref: dataId,
+    title: '热门标签',
+    props: {
+      name_field: 'name',
+      count_field: 'count',
+    },
+    options: {
+      max_tags: 15,
+      show_count: false,
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('analytics', '/tags/hot'),
+    records,
+    stats: { item_count: records.length, description: '标签分布展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'name', type: 'string' },
+      { name: 'count', type: 'number' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
+// ============================
+// TimelineCard 模拟数据
+// ============================
+export function generateTimelineCardData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('timeline');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 TimelineCard 模拟数据', { blockId, dataId });
+
+  const now = new Date();
+  const records = [
+    {
+      id: '1',
+      title: '发布新视频：2024年度科技盘点',
+      timestamp: new Date(now.getTime() - 2 * 3600000).toISOString(),
+      description: '回顾2024年最值得关注的科技产品和技术突破',
+      status: 'completed',
+      type: '视频',
+      link: 'https://example.com/video/1',
+    },
+    {
+      id: '2',
+      title: '直播预告：新品开箱',
+      timestamp: new Date(now.getTime() - 24 * 3600000).toISOString(),
+      description: '明天晚上8点，一起来看新品开箱',
+      status: 'pending',
+      type: '直播',
+      link: 'https://example.com/live/1',
+    },
+    {
+      id: '3',
+      title: '专栏文章更新',
+      timestamp: new Date(now.getTime() - 48 * 3600000).toISOString(),
+      description: '深度分析：AI对未来工作的影响',
+      status: 'completed',
+      type: '文章',
+      link: 'https://example.com/article/1',
+    },
+    {
+      id: '4',
+      title: '获得10万粉丝里程碑',
+      timestamp: new Date(now.getTime() - 72 * 3600000).toISOString(),
+      description: '感谢大家的支持！',
+      status: 'success',
+      type: '里程碑',
+    },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'TimelineCard',
+    data_ref: dataId,
+    title: '最近动态',
+    props: {
+      title_field: 'title',
+      timestamp_field: 'timestamp',
+      description_field: 'description',
+      status_field: 'status',
+      type_field: 'type',
+      link_field: 'link',
+    },
+    options: {
+      max_items: 10,
+      show_description: true,
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('user', '/timeline'),
+    records,
+    stats: { item_count: records.length, description: '时间线事件展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'title', type: 'string' },
+      { name: 'timestamp', type: 'datetime' },
+      { name: 'description', type: 'string' },
+      { name: 'status', type: 'string' },
+      { name: 'type', type: 'string' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
+// ============================
+// HeatmapCalendar 模拟数据
+// ============================
+export function generateHeatmapCalendarData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('heatmap');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 HeatmapCalendar 模拟数据', { blockId, dataId });
+
+  // 生成过去90天的随机活动数据
+  const records: { date: string; value: number }[] = [];
+  const today = new Date();
+  for (let i = 0; i < 90; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    // 随机生成活动值，周末概率更高
+    const dayOfWeek = date.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const value = Math.random() > (isWeekend ? 0.3 : 0.5) ? Math.floor(Math.random() * 10) + 1 : 0;
+    records.push({
+      date: date.toISOString().split('T')[0],
+      value,
+    });
+  }
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'HeatmapCalendar',
+    data_ref: dataId,
+    title: '发布活跃度',
+    props: {
+      date_field: 'date',
+      value_field: 'value',
+    },
+    options: {
+      weeks: 13,
+      show_stats: true,
+      value_unit: '篇',
+      span: 12,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('analytics', '/activity/calendar'),
+    records,
+    stats: { item_count: records.length, description: '活动热力图展示' },
+    schema_summary: createSchemaSummary([
+      { name: 'date', type: 'date' },
+      { name: 'value', type: 'number' },
+    ]),
+  };
+
+  return { block, dataBlock };
+}
+
 // ============================
 // 边界情况测试数据
 // ============================
@@ -761,6 +1230,15 @@ const EMPTY_DATA_PROPS: Record<string, Record<string, string>> = {
   MediaCardGrid: { title_field: 'title' },
   Table: {},
   FallbackRichText: { title_field: 'title' },
+  // 新增组件
+  CountCard: { value_field: 'value' },
+  ProgressBar: { value_field: 'value' },
+  QuoteCard: { content_field: 'content' },
+  ComparisonCard: { left_value_field: 'left_value', right_value_field: 'right_value' },
+  AuthorCard: { name_field: 'name' },
+  TagCloud: { name_field: 'name', count_field: 'count' },
+  TimelineCard: { title_field: 'title', timestamp_field: 'timestamp' },
+  HeatmapCalendar: { date_field: 'date', value_field: 'value' },
 };
 
 // 空数据测试
@@ -984,5 +1462,54 @@ export const allTestCases: ComponentTestCase[] = [
     component: 'ListPanel',
     description: '测试特殊字符、XSS、超长文本等边界情况',
     generator: generateSpecialCharsData,
+  },
+  // 新增组件测试
+  {
+    name: 'CountCard - 标准',
+    component: 'CountCard',
+    description: '单一数字指标展示',
+    generator: generateCountCardData,
+  },
+  {
+    name: 'ProgressBar - 标准',
+    component: 'ProgressBar',
+    description: '进度条展示',
+    generator: generateProgressBarData,
+  },
+  {
+    name: 'QuoteCard - 标准',
+    component: 'QuoteCard',
+    description: '引用内容展示',
+    generator: generateQuoteCardData,
+  },
+  {
+    name: 'ComparisonCard - 标准',
+    component: 'ComparisonCard',
+    description: '对比数据展示',
+    generator: generateComparisonCardData,
+  },
+  {
+    name: 'AuthorCard - 标准',
+    component: 'AuthorCard',
+    description: '作者/账号信息展示',
+    generator: generateAuthorCardData,
+  },
+  {
+    name: 'TagCloud - 标准',
+    component: 'TagCloud',
+    description: '标签云展示',
+    generator: generateTagCloudData,
+  },
+  {
+    name: 'TimelineCard - 标准',
+    component: 'TimelineCard',
+    description: '时间线事件展示',
+    generator: generateTimelineCardData,
+  },
+  {
+    name: 'HeatmapCalendar - 标准',
+    component: 'HeatmapCalendar',
+    description: '活动热力图展示',
+    generator: generateHeatmapCalendarData,
   },
 ];

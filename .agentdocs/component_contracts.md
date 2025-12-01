@@ -327,6 +327,177 @@
   ```
 - 仅在 panel 渲染失败时由 PanelRuntime 自动生成，Planner 不应主动使用。
 
+
+### 3.9 CountCard Contract（单一数字指标）
+
+- `contract_id`: `CountCard-contract-v1`
+- 使用场景：突出展示单个大数字（播放量、粉丝数、热度值）
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "metric_title": "string | null",
+        "metric_value": "number (必填)",
+        "unit": "string | null",
+        "description": "string | null"
+      }
+    ]
+  }
+  ```
+- `props_contract`: `{ "title_field": "metric_title", "value_field": "metric_value", "unit_field": "unit", "description_field": "description" }`
+- `options_defaults`: `{ "color": "default|primary|success|warning|error|info" }`
+- `layout_hint`: `span=4`, `min_height=140`
+
+### 3.10 ProgressBar Contract（进度条）
+
+- `contract_id`: `ProgressBar-contract-v1`
+- 使用场景：展示完成度、占比（任务进度、好评率）
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "label": "string | null",
+        "value": "number (必填，当前值)",
+        "max": "number (可选，默认100)",
+        "description": "string | null"
+      }
+    ]
+  }
+  ```
+- `props_contract`: `{ "label_field": "label", "value_field": "value", "max_field": "max", "description_field": "description" }`
+- `options_defaults`: `{ "color": "primary", "show_percentage": true }`
+
+### 3.11 QuoteCard Contract（引用卡片）
+
+- `contract_id`: `QuoteCard-contract-v1`
+- 使用场景：展示精选评论、金句、摘要
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "content": "string (必填，引用内容)",
+        "author": "string | null",
+        "source": "string | null (来源)",
+        "timestamp": "ISO string | null"
+      }
+    ]
+  }
+  ```
+- `props_contract`: `{ "content_field": "content", "author_field": "author", "source_field": "source", "timestamp_field": "timestamp" }`
+- `options_defaults`: `{ "compact": false }`
+
+### 3.12 ComparisonCard Contract（对比卡片）
+
+- `contract_id`: `ComparisonCard-contract-v1`
+- 使用场景：同比环比、两个指标的并排对比
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "left_label": "string | null",
+        "left_value": "number (必填)",
+        "left_unit": "string | null",
+        "right_label": "string | null",
+        "right_value": "number (必填)",
+        "right_unit": "string | null"
+      }
+    ]
+  }
+  ```
+- `props_contract`: `{ "left_label_field", "left_value_field", "left_unit_field", "right_label_field", "right_value_field", "right_unit_field" }`
+- `options_defaults`: `{ "show_diff": true }`
+
+### 3.13 AuthorCard Contract（作者卡片）
+
+- `contract_id`: `AuthorCard-contract-v1`
+- 使用场景：展示UP主、博主等用户信息
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "name": "string (必填)",
+        "avatar": "string | null (头像URL)",
+        "bio": "string | null (简介)",
+        "verified": "boolean | null (认证)",
+        "followers": "number | null (粉丝数)",
+        "following": "number | null (关注数)",
+        "posts": "number | null (作品数)",
+        "link": "string | null (主页链接)"
+      }
+    ]
+  }
+  ```
+- `props_contract`: 所有字段对应 `*_field` 映射
+- `layout_hint`: `span=6`, `min_height=140`
+
+### 3.14 TagCloud Contract（标签云）
+
+- `contract_id`: `TagCloud-contract-v1`
+- 使用场景：展示分类/标签的频率分布
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "name": "string (必填，标签名)",
+        "count": "number (必填，频次)"
+      }
+    ]
+  }
+  ```
+- `props_contract`: `{ "name_field": "name", "count_field": "count" }`
+- `options_defaults`: `{ "max_tags": 30, "show_count": false }`
+- `pipeline_guidance`: 使用 `group_count` 按字段分组计数
+
+### 3.15 TimelineCard Contract（时间线）
+
+- `contract_id`: `TimelineCard-contract-v1`
+- 使用场景：展示有序事件序列（动态历史、操作记录）
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "title": "string (必填)",
+        "timestamp": "ISO string (必填)",
+        "description": "string | null",
+        "status": "string | null (completed|pending|error|active)",
+        "type": "string | null (事件类型标签)",
+        "link": "string | null"
+      }
+    ]
+  }
+  ```
+- `props_contract`: 所有字段对应 `*_field` 映射
+- `options_defaults`: `{ "max_items": 10, "show_description": true }`
+- `layout_hint`: `span=6`, `min_height=280`
+
+### 3.16 HeatmapCalendar Contract（热力日历）
+
+- `contract_id`: `HeatmapCalendar-contract-v1`
+- 使用场景：展示时间段内的活动密度（发布频率、提交记录）
+- `data_contract`
+  ```jsonc
+  {
+    "items": [
+      {
+        "date": "string (必填，YYYY-MM-DD格式)",
+        "value": "number (必填，活动值)"
+      }
+    ]
+  }
+  ```
+- `props_contract`: `{ "date_field": "date", "value_field": "value" }`
+- `options_defaults`: `{ "weeks": 52, "show_stats": true, "value_unit": "次" }`
+- `layout_hint`: `span=12`, `min_height=220`
+- `pipeline_guidance`: 使用 `aggregate_by_date` 按日期聚合
+
+
 ## 4. 契约引用方式
 
 1. **Planner**
@@ -347,4 +518,6 @@
 
 ---
 
-> 更新记录：v0.1（2025-11-30）——整理现有 7 个核心组件 + 1 个降级组件的契约，提供 sample view_model 与 pipeline 指南，供 Phase 13 实施使用。
+> 更新记录：
+> - v0.2（2025-12-02）——新增 8 个原子化组件契约（CountCard、ProgressBar、QuoteCard、ComparisonCard、AuthorCard、TagCloud、TimelineCard、HeatmapCalendar）
+> - v0.1（2025-11-30）——整理现有 7 个核心组件 + 1 个降级组件的契约，提供 sample view_model 与 pipeline 指南，供 Phase 13 实施使用。

@@ -478,7 +478,7 @@ export const PanelComponents = {
 
 ## 11. 已实现组件清单
 
-### 11.1 面板组件实现状态
+### 11.1 核心组件实现状态（8个）
 
 | 组件名称 | 文件路径 | 使用技术 | 状态 | 备注 |
 |---------|---------|---------|------|------|
@@ -491,7 +491,20 @@ export const PanelComponents = {
 | **ImageGalleryBlock** | `features/panel/components/blocks/ImageGalleryBlock.vue` | shadcn-vue (Card, Dialog, Button) | ✅ 已实现 | 图片画廊，支持网格布局、Lightbox 灯箱 |
 | **FallbackRichTextBlock** | `features/panel/components/blocks/FallbackRichTextBlock.vue` | shadcn-vue (Card, Alert) + marked | ✅ 已实现 | 兜底渲染，支持 Markdown、XSS 防护 |
 
-### 11.2 组件特性对照表
+### 11.2 原子化组件实现状态（8个，v0.2 新增）
+
+| 组件名称 | 文件路径 | 使用技术 | 状态 | 备注 |
+|---------|---------|---------|------|------|
+| **CountCardBlock** | `features/panel/components/blocks/CountCardBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 单一数字指标，大数字格式化 |
+| **ProgressBarBlock** | `features/panel/components/blocks/ProgressBarBlock.vue` | shadcn-vue (Card, Progress) | ✅ 已实现 | 进度条，支持百分比显示 |
+| **QuoteCardBlock** | `features/panel/components/blocks/QuoteCardBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 引用卡片，金句/评论展示 |
+| **ComparisonCardBlock** | `features/panel/components/blocks/ComparisonCardBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 对比卡片，自动差值计算 |
+| **AuthorCardBlock** | `features/panel/components/blocks/AuthorCardBlock.vue` | shadcn-vue (Card, Avatar, Badge) | ✅ 已实现 | 作者卡片，头像/认证/粉丝 |
+| **TagCloudBlock** | `features/panel/components/blocks/TagCloudBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 标签云，权重驱动大小 |
+| **TimelineCardBlock** | `features/panel/components/blocks/TimelineCardBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 时间线，状态节点可点击 |
+| **HeatmapCalendarBlock** | `features/panel/components/blocks/HeatmapCalendarBlock.vue` | shadcn-vue (Card) | ✅ 已实现 | 热力日历，GitHub 风格 |
+
+### 11.3 组件特性对照表
 
 | 组件 | 数据契约 | 响应式图表 | 嵌套支持 | 自定义样式 | 交互功能 |
 |-----|---------|----------|---------|-----------|---------|
@@ -504,7 +517,7 @@ export const PanelComponents = {
 | ImageGalleryBlock | ✅ `ImageGalleryRecord` | N/A | ✅ 支持 children | ✅ 列数、宽高比 | ✅ Lightbox 查看 |
 | FallbackRichTextBlock | ✅ `FallbackRichTextRecord` | N/A | ✅ 支持 children | ❌ 无需 | - |
 
-### 11.3 组件嵌套架构
+### 11.4 组件嵌套架构
 
 所有组件均支持 `UIBlock.children` 嵌套架构，可实现以下组合：
 - Card 容器包含多个 StatisticCard
@@ -513,7 +526,7 @@ export const PanelComponents = {
 
 详见 `.agentdocs/panel-nested-components-design.md`
 
-### 11.4 组件注册
+### 11.5 组件注册
 
 所有组件已在以下位置注册：
 - **前端清单**：`frontend/src/shared/componentManifest.ts`

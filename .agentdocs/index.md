@@ -484,7 +484,9 @@
 - `media_type`无媒体时为`None`，不是空字符串
 
 ### 前端面板组件
-- **已实现 8 个组件**：ListPanelBlock、StatisticCardBlock、LineChartBlock、BarChartBlock、PieChartBlock、TableBlock、ImageGalleryBlock、FallbackRichTextBlock
+- **已实现 16 个组件**：
+  - **核心组件（8个）**：ListPanelBlock、StatisticCardBlock、LineChartBlock、BarChartBlock、PieChartBlock、TableBlock、ImageGalleryBlock、FallbackRichTextBlock
+  - **原子化组件（v0.2 新增，8个）**：CountCardBlock、ProgressBarBlock、QuoteCardBlock、ComparisonCardBlock、AuthorCardBlock、TagCloudBlock、TimelineCardBlock、HeatmapCalendarBlock
 - **技术栈铁律**：所有组件必须使用 shadcn-vue + ECharts，禁止使用 React 语法或其他 UI 库
 - **组件路径**：`frontend/src/features/panel/components/blocks/`
 - **组件注册**：通过 `DynamicBlockRenderer.vue` 动态路由，通过 `componentManifest.ts` 声明能力
@@ -538,7 +540,7 @@
   - **布局密度切换**：紧凑(compact) / 均衡(balanced) / 宽松(spacious)，与 `panelStore.sizePreset` 同步
   - **组件检查器**：点击眼睛图标查看组件的 UIBlock、DataBlock、Props、Options 完整数据
 - **Mock 数据生成器** - `frontend/src/features/dev/mockDataGenerator.ts`
-  - 为 8 种组件生成标准化测试数据（ListPanel、StatisticCard、LineChart、BarChart、PieChart、Table、ImageGallery、MediaCardGrid）
+  - 为 16 种组件生成标准化测试数据（包括核心组件：ListPanel、StatisticCard、LineChart、BarChart、PieChart、Table、ImageGallery、MediaCardGrid，以及原子化组件：CountCard、ProgressBar、QuoteCard、ComparisonCard、AuthorCard、TagCloud、TimelineCard、HeatmapCalendar）
   - 包含边界情况测试（空数据、大量数据、特殊字符）
   - 内置 DevLogger 日志系统，支持 debug/info/warn/error 级别
 - **日志面板** - `frontend/src/features/dev/components/DevLogPanel.vue`
