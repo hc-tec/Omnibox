@@ -12,7 +12,7 @@
         暂无数据
       </div>
 
-      <div v-else class="chart-container h-[320px] w-full">
+      <div v-else class="chart-container" style="height: 320px; min-height: 320px; width: 100%; min-width: 280px;">
         <VChart
           v-if="isReady"
           ref="chartRef"
@@ -20,7 +20,7 @@
           :option="chartOption"
           :update-options="{ notMerge: true }"
           :init-options="{ renderer: 'canvas' }"
-          class="h-full w-full"
+          style="height: 100%; width: 100%;"
           autoresize
         />
       </div>
@@ -101,8 +101,21 @@ const showLabel = computed(() => {
   return (props.block.options?.showLabel ?? props.block.options?.['show_label'] ?? true) as boolean;
 });
 
+// 默认饼图颜色调色板
+const DEFAULT_PIE_COLORS = [
+  '#5470c6', // 蓝色
+  '#91cc75', // 绿色
+  '#fac858', // 黄色
+  '#ee6666', // 红色
+  '#73c0de', // 浅蓝
+  '#3ba272', // 深绿
+  '#fc8452', // 橙色
+  '#9a60b4', // 紫色
+  '#ea7ccc', // 粉色
+];
+
 const colors = computed(() => {
-  return (props.block.options?.colors ?? props.block.options?.['colors'] ?? null) as string[] | null;
+  return (props.block.options?.colors ?? props.block.options?.['colors'] ?? DEFAULT_PIE_COLORS) as string[];
 });
 
 const chartOption = computed<EChartsOption>(() => {
@@ -122,7 +135,7 @@ const chartOption = computed<EChartsOption>(() => {
   pieData.sort((a, b) => b.value - a.value);
 
   return {
-    color: colors.value || undefined,
+    color: colors.value,
     tooltip: {
       trigger: 'item',
       formatter: (params: any) => {
@@ -131,9 +144,9 @@ const chartOption = computed<EChartsOption>(() => {
       },
     },
     legend: {
-      orient: 'vertical',
-      right: '5%',
-      top: 'center',
+      orient: 'horizontal',
+      bottom: '5%',
+      left: 'center',
       type: 'scroll', // 支持滚动，避免图例过多时溢出
       formatter: (name: string) => {
         const item = pieData.find((d) => d.name === name);
@@ -147,6 +160,7 @@ const chartOption = computed<EChartsOption>(() => {
       {
         type: 'pie',
         radius: radius.value,
+        center: ['50%', '45%'], // 居中，稍微上移给底部图例留空间
         roseType: roseType.value || undefined,
         data: pieData,
         emphasis: {
@@ -158,10 +172,7 @@ const chartOption = computed<EChartsOption>(() => {
         },
         label: {
           show: showLabel.value,
-          formatter: (params: any) => {
-            const percent = params.percent.toFixed(1);
-            return `{b}: {d}%`;
-          },
+          formatter: '{b}: {d}%',
         },
         labelLine: {
           show: showLabel.value,

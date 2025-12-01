@@ -215,6 +215,66 @@ export function generateListPanelData(): { block: UIBlock; dataBlock: DataBlock 
 }
 
 // ============================
+// ListPanel 热榜模式模拟数据
+// ============================
+export function generateHotListData(): { block: UIBlock; dataBlock: DataBlock } {
+  const blockId = generateId('hotlist');
+  const dataId = generateId('data');
+
+  devLogger.info('MockGenerator', '生成 ListPanel 热榜模式模拟数据', { blockId, dataId });
+
+  const records = [
+    { title: '2024年诺贝尔物理学奖揭晓', link: 'https://example.com/hot/1', hot: 9876543 },
+    { title: 'iPhone 16 Pro Max 首发评测', link: 'https://example.com/hot/2', hot: 8234567 },
+    { title: '国庆假期出行人数创历史新高', link: 'https://example.com/hot/3', hot: 7654321 },
+    { title: 'Claude 3.5 发布：性能全面超越GPT-4', link: 'https://example.com/hot/4', hot: 6543210 },
+    { title: '比亚迪销量首次超越特斯拉', link: 'https://example.com/hot/5', hot: 5432109 },
+    { title: '房贷利率再次下调', link: 'https://example.com/hot/6', hot: 4321098 },
+    { title: '马斯克宣布火星计划最新进展', link: 'https://example.com/hot/7', hot: 3210987 },
+    { title: 'A股市场迎来重大利好', link: 'https://example.com/hot/8', hot: 2109876 },
+    { title: '教育部发布新规：减轻学生课业负担', link: 'https://example.com/hot/9', hot: 1098765 },
+    { title: '新能源汽车补贴政策延长', link: 'https://example.com/hot/10', hot: 987654 },
+  ];
+
+  const block: UIBlock = {
+    id: blockId,
+    component: 'ListPanel',
+    data_ref: dataId,
+    title: '今日热榜',
+    props: {
+      title_field: 'title',
+      link_field: 'link',
+      hot_field: 'hot',
+    },
+    options: {
+      variant: 'minimal',
+      show_rank: true,
+      max_items: 10,
+      span: 6,
+    },
+  };
+
+  const dataBlock: DataBlock = {
+    id: dataId,
+    source_info: createSourceInfo('weibo', '/hot/search'),
+    records,
+    stats: {
+      item_count: records.length,
+      description: '实时热搜榜单',
+    },
+    schema_summary: createSchemaSummary([
+      { name: 'title', type: 'string' },
+      { name: 'link', type: 'string' },
+      { name: 'hot', type: 'number' },
+    ]),
+  };
+
+  devLogger.debug('MockGenerator', 'ListPanel 热榜数据生成完成', { records: records.length });
+
+  return { block, dataBlock };
+}
+
+// ============================
 // StatisticCard 模拟数据
 // ============================
 export function generateStatisticCardData(): { block: UIBlock; dataBlock: DataBlock } {
@@ -390,7 +450,8 @@ export function generateBarChartData(): { block: UIBlock; dataBlock: DataBlock }
     },
     schema_summary: createSchemaSummary([
       { name: 'category', type: 'string' },
-      { name: 'value', type: 'number' },
+      { name: 'link', type: 'string' },
+      { name: 'description', type: 'string' },
       { name: 'series', type: 'string' },
     ]),
   };
@@ -444,7 +505,8 @@ export function generatePieChartData(): { block: UIBlock; dataBlock: DataBlock }
     },
     schema_summary: createSchemaSummary([
       { name: 'name', type: 'string' },
-      { name: 'value', type: 'number' },
+      { name: 'link', type: 'string' },
+      { name: 'description', type: 'string' },
     ]),
   };
 
@@ -530,12 +592,12 @@ export function generateImageGalleryData(): { block: UIBlock; dataBlock: DataBlo
 
   // 使用 picsum.photos 作为占位图
   const records = [
-    { imageUrl: 'https://picsum.photos/seed/1/400/300', title: '山间日出', description: '清晨的山峰被阳光染成金色' },
-    { imageUrl: 'https://picsum.photos/seed/2/400/300', title: '城市夜景', description: '繁华都市的霓虹灯光' },
-    { imageUrl: 'https://picsum.photos/seed/3/400/300', title: '海边落日', description: '温暖的夕阳洒在海面上' },
-    { imageUrl: 'https://picsum.photos/seed/4/400/300', title: '森林小径', description: '幽静的林间步道' },
-    { imageUrl: 'https://picsum.photos/seed/5/400/300', title: '雪山风光', description: '壮丽的雪山景色' },
-    { imageUrl: 'https://picsum.photos/seed/6/400/300', title: '田园风光', description: '宁静的乡村田野' },
+    { url: 'https://picsum.photos/seed/1/400/300', title: '山间日出', description: '清晨的山峰被阳光染成金色' },
+    { url: 'https://picsum.photos/seed/2/400/300', title: '城市夜景', description: '繁华都市的霓虹灯光' },
+    { url: 'https://picsum.photos/seed/3/400/300', title: '海边落日', description: '温暖的夕阳洒在海面上' },
+    { url: 'https://picsum.photos/seed/4/400/300', title: '森林小径', description: '幽静的林间步道' },
+    { url: 'https://picsum.photos/seed/5/400/300', title: '雪山风光', description: '壮丽的雪山景色' },
+    { url: 'https://picsum.photos/seed/6/400/300', title: '田园风光', description: '宁静的乡村田野' },
   ];
 
   const block: UIBlock = {
@@ -544,14 +606,12 @@ export function generateImageGalleryData(): { block: UIBlock; dataBlock: DataBlo
     data_ref: dataId,
     title: '风景图集',
     props: {
-      image_field: 'imageUrl',
+      url_field: 'url',
       title_field: 'title',
       description_field: 'description',
     },
     options: {
       columns: 3,
-      aspect_ratio: '4/3',
-      show_title: true,
       span: 12,
     },
   };
@@ -565,7 +625,7 @@ export function generateImageGalleryData(): { block: UIBlock; dataBlock: DataBlo
       description: '自然风景摄影作品集',
     },
     schema_summary: createSchemaSummary([
-      { name: 'imageUrl', type: 'string' },
+      { name: 'url', type: 'string' },
       { name: 'title', type: 'string' },
       { name: 'description', type: 'string' },
     ]),
@@ -690,6 +750,19 @@ export function generateMediaCardGridData(): { block: UIBlock; dataBlock: DataBl
 // 边界情况测试数据
 // ============================
 
+// 各组件的必需 props 默认值
+const EMPTY_DATA_PROPS: Record<string, Record<string, string>> = {
+  ListPanel: { title_field: 'title', link_field: 'link' },
+  LineChart: { x_field: 'x', y_field: 'y' },
+  BarChart: { x_field: 'x', y_field: 'y' },
+  PieChart: { name_field: 'name', value_field: 'value' },
+  StatisticCard: { title_field: 'title', value_field: 'value' },
+  ImageGallery: { url_field: 'url' },
+  MediaCardGrid: { title_field: 'title' },
+  Table: {},
+  FallbackRichText: { title_field: 'title' },
+};
+
 // 空数据测试
 export function generateEmptyData(component: string): { block: UIBlock; dataBlock: DataBlock } {
   const blockId = generateId('empty');
@@ -702,7 +775,7 @@ export function generateEmptyData(component: string): { block: UIBlock; dataBloc
     component,
     data_ref: dataId,
     title: `${component} - 空数据测试`,
-    props: {},
+    props: EMPTY_DATA_PROPS[component] ?? {},
     options: { span: 6 },
   };
 
@@ -740,8 +813,11 @@ export function generateLargeDataset(component: string, count: number): { block:
     component,
     data_ref: dataId,
     title: `${component} - 大量数据测试 (${count}条)`,
-    props: {},
-    options: { span: 12 },
+    props: EMPTY_DATA_PROPS[component] ?? {},
+    options: {
+      show_description: true,
+      span: 12,
+    },
   };
 
   const dataBlock: DataBlock = {
@@ -752,7 +828,8 @@ export function generateLargeDataset(component: string, count: number): { block:
     schema_summary: createSchemaSummary([
       { name: 'id', type: 'number' },
       { name: 'title', type: 'string' },
-      { name: 'value', type: 'number' },
+      { name: 'link', type: 'string' },
+      { name: 'description', type: 'string' },
       { name: 'category', type: 'string' },
       { name: 'date', type: 'datetime' },
     ]),
@@ -769,12 +846,12 @@ export function generateSpecialCharsData(): { block: UIBlock; dataBlock: DataBlo
   devLogger.info('MockGenerator', '生成特殊字符测试数据', { blockId });
 
   const records = [
-    { title: '<script>alert("XSS")</script>', value: 100 },
-    { title: '包含"引号"和\'单引号\'', value: 200 },
-    { title: '特殊符号：&amp; &lt; &gt; &nbsp;', value: 300 },
-    { title: '超长文本'.repeat(50), value: 400 },
-    { title: '中文、日本語、한국어、العربية', value: 500 },
-    { title: '表情符号：😀🎉🚀💻', value: 600 },
+    { title: '<script>alert("XSS")</script>', link: '#xss-test', description: 'XSS 注入测试' },
+    { title: '包含\"引号\"和\'单引号\'', link: '#quotes-test', description: '引号转义测试' },
+    { title: '特殊符号：&amp; &lt; &gt; &nbsp;', link: '#entities-test', description: 'HTML 实体测试' },
+    { title: '超长文本测试：' + '这是一段很长的文字'.repeat(10), link: '#long-text', description: '超长文本截断测试' },
+    { title: '中文、日本語、한국어、العربية', link: '#i18n-test', description: '多语言字符测试' },
+    { title: '表情符号：😀🎉🚀💻🔥✨', link: '#emoji-test', description: 'Emoji 渲染测试' },
   ];
 
   const block: UIBlock = {
@@ -783,9 +860,14 @@ export function generateSpecialCharsData(): { block: UIBlock; dataBlock: DataBlo
     data_ref: dataId,
     title: '特殊字符测试',
     props: {
-      titleField: 'title',
+      title_field: 'title',
+      link_field: 'link',
+      description_field: 'description',
     },
-    options: { span: 12 },
+    options: {
+      show_description: true,
+      span: 12,
+    },
   };
 
   const dataBlock: DataBlock = {
@@ -795,7 +877,8 @@ export function generateSpecialCharsData(): { block: UIBlock; dataBlock: DataBlo
     stats: { item_count: records.length, description: '测试各种特殊字符的渲染' },
     schema_summary: createSchemaSummary([
       { name: 'title', type: 'string' },
-      { name: 'value', type: 'number' },
+      { name: 'link', type: 'string' },
+      { name: 'description', type: 'string' },
     ]),
   };
 
@@ -817,6 +900,13 @@ export const allTestCases: ComponentTestCase[] = [
     description: '标准列表展示，包含标题、描述、作者、日期等',
     generator: generateListPanelData,
   },
+  {
+    name: 'ListPanel - 热榜模式',
+    component: 'ListPanel',
+    description: '极简模式，适合热搜/排行榜，紧凑显示排名和标题',
+    generator: generateHotListData,
+  },
+  
   {
     name: 'StatisticCard - 标准',
     component: 'StatisticCard',

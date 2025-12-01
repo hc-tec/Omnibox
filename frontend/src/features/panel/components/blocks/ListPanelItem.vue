@@ -1,8 +1,34 @@
 <template>
-  <div class="space-y-1">
+  <!-- 极简模式：热榜/排行榜样式 -->
+  <div v-if="variant === 'minimal'" class="flex items-center gap-3">
+    <span
+      v-if="showRank"
+      class="flex-shrink-0 w-5 text-center font-semibold"
+      :class="rankClass"
+      :style="{ fontSize: rankSize }"
+    >
+      {{ rank }}
+    </span>
+    <span
+      class="flex-1 min-w-0 truncate"
+      :style="{ fontSize: minimalTitleSize }"
+    >
+      {{ title }}
+    </span>
+    <span
+      v-if="hotValue"
+      class="flex-shrink-0 text-muted-foreground"
+      :style="{ fontSize: metaSize }"
+    >
+      {{ hotValue }}
+    </span>
+  </div>
+
+  <!-- 标准模式：完整信息展示 -->
+  <div v-else class="space-y-1">
     <div :class="compact ? 'mb-0.5' : 'mb-1.5'">
       <h3
-        :class="compact ? 'font-semibold leading-tight' : 'font-semibold leading-snug'"
+        :class="[titleClampClass, compact ? 'font-semibold leading-tight' : 'font-semibold leading-snug']"
         :style="{ fontSize: titleSize }"
       >
         {{ title }}
@@ -48,8 +74,8 @@
 
     <div v-if="showCategories && categories.length" class="flex flex-wrap gap-1 text-muted-foreground">
       <Badge
-        v-for="(category, index) in visibleCategories"
-        :key="index"
+        v-for="(category, idx) in visibleCategories"
+        :key="idx"
         variant="secondary"
         class="text-[10px]"
         :style="{ fontSize: badgeFontSize }"
@@ -73,7 +99,9 @@ import { computed } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
-const props = defineProps<{
+export type ListVariant = 'minimal' | 'standard';
+
+const props = withDefaults(defineProps<{
   item: Record<string, unknown>;
   compact: boolean;
   showDescription: boolean;
@@ -84,7 +112,16 @@ const props = defineProps<{
   authorKey: string;
   pubDateKey: string;
   categoriesKey: string;
-}>();
+  variant?: ListVariant;
+  index?: number;
+  showRank?: boolean;
+  hotKey?: string;
+}>(), {
+  variant: 'standard',
+  index: 0,
+  showRank: false,
+  hotKey: 'hot',
+});
 
 const title = computed(() => getString(props.titleKey) ?? '');
 const summary = computed(() => getString(props.descriptionKey));
@@ -94,15 +131,39 @@ const categories = computed(() => {
   const raw = props.item[props.categoriesKey];
   return Array.isArray(raw) ? raw.map(String) : [];
 });
+
+// 排名相关
+const rank = computed(() => props.index + 1);
+const rankClass = computed(() => {
+  if (rank.value <= 3) return 'text-orange-500';
+  return 'text-muted-foreground';
+});
+const rankSize = computed(() => `calc(var(--panel-heading-size, 16px) * 0.9)`);
+
+// 热度值（可选）
+const hotValue = computed(() => {
+  const value = props.item[props.hotKey];
+  if (value == null) return null;
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  if (num >= 10000) return `${(num / 10000).toFixed(1)}万`;
+  return String(num);
+});
+
+// 标准模式样式
 const titleSize = computed(() =>
   props.compact ? `calc(var(--panel-heading-size, 16px) * 0.82)` : `var(--panel-heading-size, 16px)`
 );
 const summarySize = computed(() => `calc(0.9rem * var(--panel-font-scale, 1))`);
 const metaSize = computed(() => `calc(var(--panel-meta-size, 12px) * 0.95)`);
 const badgeFontSize = computed(() => `calc(0.8 * var(--panel-meta-size, 12px))`);
-const summaryClampClass = computed(() => (props.compact ? "line-clamp-1" : "line-clamp-2"));
-const metaGapClass = computed(() => (props.compact ? "gap-1" : "gap-2"));
+const titleClampClass = computed(() => (props.compact ? 'line-clamp-1' : 'line-clamp-2'));
+const summaryClampClass = computed(() => (props.compact ? 'line-clamp-1' : 'line-clamp-2'));
+const metaGapClass = computed(() => (props.compact ? 'gap-1' : 'gap-2'));
 const visibleCategories = computed(() => categories.value.slice(0, props.compact ? 2 : 3));
+
+// 极简模式样式
+const minimalTitleSize = computed(() => `calc(var(--panel-heading-size, 16px) * 0.88)`);
 
 function getString(key: string): string | null {
   const value = props.item[key];

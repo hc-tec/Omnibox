@@ -41,12 +41,16 @@ export const componentManifest: ComponentManifest = {
         link_field: { type: "string", required: true },
         description_field: { type: "string", required: false },
         pub_date_field: { type: "string", required: false },
+        hot_field: { type: "string", required: false },
       },
       options: {
+        variant: { type: "string", default: "standard" }, // 'minimal' | 'standard'
         show_description: { type: "boolean", default: true },
         show_metadata: { type: "boolean", default: true },
         show_categories: { type: "boolean", default: true },
+        show_rank: { type: "boolean", default: false },
         compact: { type: "boolean", default: false },
+        max_items: { type: "number", default: 10 },
         span: { type: "number", default: 12 },
       },
       interactions: ["open_link", "refresh"],
@@ -168,6 +172,22 @@ export const componentManifest: ComponentManifest = {
       interactions: ["open_link"],
       layoutDefaults: { span: 6, minHeight: 260 },
       categories: ["media", "card"],
+    },
+    {
+      id: "ImageGallery",
+      tag: "gallery",
+      props: {
+        url_field: { type: "string", required: true },
+        title_field: { type: "string", required: false },
+        description_field: { type: "string", required: false },
+      },
+      options: {
+        columns: { type: "number", default: 3 },
+        span: { type: "number", default: 12 },
+      },
+      interactions: ["open_lightbox"],
+      layoutDefaults: { span: 12, minHeight: 280 },
+      categories: ["media", "gallery"],
     },
   ],
 };

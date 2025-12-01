@@ -80,8 +80,8 @@
 
 ### 3.2 ListPanel Contract
 
-- `contract_id`: `ListPanel-contract-v3`
-- 使用场景：新闻/热搜/帖子/任意记录型结果。
+- `contract_id`: `ListPanel-contract-v4`
+- 使用场景：新闻/热搜/帖子/任意记录型结果。支持标准模式（资讯）和极简模式（热榜/排行榜）。
 - `data_contract`
   ```jsonc
   {
@@ -93,7 +93,8 @@
         "summary": "string | null",
         "author": "string | null",
         "published_at": "ISO string | null",
-        "categories": "string[] | null"
+        "categories": "string[] | null",
+        "hot": "number | string | null (热度值，极简模式下显示)"
       }
     ],
     "stats": {
@@ -110,10 +111,25 @@
     "description_field": "summary",
     "author_field": "author",
     "pub_date_field": "published_at",
-    "categories_field": "categories"
+    "categories_field": "categories",
+    "hot_field": "hot"
   }
   ```
-- `options_defaults`: `{ "show_description": true, "show_metadata": true, "show_categories": true, "compact": false, "max_items": 25 }`.
+- `options_contract`
+  ```jsonc
+  {
+    "variant": "string, 'standard' | 'minimal', default 'standard'",
+    "show_description": "boolean, default true (standard 模式)",
+    "show_metadata": "boolean, default true (standard 模式)",
+    "show_categories": "boolean, default true (standard 模式)",
+    "show_rank": "boolean, default false (minimal 模式建议 true)",
+    "compact": "boolean, default false",
+    "max_items": "number, default 10"
+  }
+  ```
+- `variant` 模式说明：
+  - `standard`（默认）：标准资讯模式，显示标题、描述、作者、日期、分类等完整信息
+  - `minimal`：极简模式，仅显示排名 + 标题 + 热度值，适用于热搜/排行榜场景
 - `pipeline_guidance`
   - 若需 Top-N：`sort_by` → `head`.
   - 多平台合并时必须补 `platform` 字段，并在 `title` 中加入平台前缀或 `categories`.

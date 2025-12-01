@@ -529,8 +529,22 @@
   - `cleanupAllConnections()` - 清理所有连接（应用级）
 - **验证方式** - 查看控制台日志：首次连接显示"创建新连接"+"首次发送研究请求"，后续打开显示"复用现有连接"+"研究请求已发送，跳过"
 
-### 开发者模式与组件调试（2025-11-16 新增）
+### 开发者模式与组件调试（2025-12-02 更新）
 - **开发者模式 Store** - `frontend/src/store/devModeStore.ts` 提供全局开发者模式状态管理，支持 localStorage 持久化
+- **组件调试页面** - `/dev/components` 路由（仅开发模式可访问）
+  - **入口**：`frontend/src/views/DevComponentsView.vue`
+  - **功能**：展示所有面板组件在模拟数据下的渲染效果，用于发现和调试组件问题
+  - **布局**：三栏设计（左侧测试用例列表 / 中间组件展示区 / 右侧日志面板）
+  - **布局密度切换**：紧凑(compact) / 均衡(balanced) / 宽松(spacious)，与 `panelStore.sizePreset` 同步
+  - **组件检查器**：点击眼睛图标查看组件的 UIBlock、DataBlock、Props、Options 完整数据
+- **Mock 数据生成器** - `frontend/src/features/dev/mockDataGenerator.ts`
+  - 为 8 种组件生成标准化测试数据（ListPanel、StatisticCard、LineChart、BarChart、PieChart、Table、ImageGallery、MediaCardGrid）
+  - 包含边界情况测试（空数据、大量数据、特殊字符）
+  - 内置 DevLogger 日志系统，支持 debug/info/warn/error 级别
+- **日志面板** - `frontend/src/features/dev/components/DevLogPanel.vue`
+  - 实时显示组件加载、渲染过程的调试日志
+  - 支持按级别过滤、自动滚动、展开详情
+- **Props 命名规范**：所有 mock 数据使用 snake_case（如 `title_field`、`value_field`），与 `componentManifest.ts` 保持一致
 - **ComponentInspector** - `frontend/src/features/panel/components/ComponentInspector.vue` 用于显示组件调试信息
   - **设计规范**：完全遵循 QueryCard 的设计语言（`bg-background/95`、`border-border/30`、shadcn-vue 组件）
   - **展示内容**：组件基础信息（类型、ID、标题、置信度）、数据块信息（数据源、记录数、路由）、数据字段 Schema、Props/Options/Raw JSON
@@ -538,5 +552,3 @@
 - **组件点击支持** - `DynamicBlockRenderer.vue` 在开发者模式下支持点击组件 header 触发 `inspect-component` 事件
   - 事件传递链：DynamicBlockRenderer → PanelBoard → PanelWorkspace → MainView
   - 开发者模式视觉反馈：显示"🔧 DEV"徽章、边框高亮（`border-primary/30`）、悬停发光效果
-- **⚠️ 当前状态**：QueryCard Inspector 已删除（不再支持查询卡片点击查看调试信息），MainView 中的开发者模式按钮已删除（暂无 UI 入口启用开发者模式）
-- **未来扩展**：可考虑通过设置页面、快捷键（如 `Ctrl+Shift+D`）或命令面板来启用开发者模式

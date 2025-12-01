@@ -22,7 +22,7 @@
             :style="{ gap: horizontalGap }"
           >
             <div
-              v-for="item in displayItems"
+              v-for="(item, idx) in displayItems"
               :key="itemKey(item)"
               :style="[horizontalWidthStyle, itemContainerStyle(true)]"
               :class="itemContainerClasses(linkField(item), true)"
@@ -39,6 +39,10 @@
                 :author-key="authorKey"
                 :pub-date-key="pubDateKey"
                 :categories-key="categoriesKey"
+                :variant="variant"
+                :index="idx"
+                :show-rank="showRank"
+                :hot-key="hotKey"
               />
             </div>
           </div>
@@ -49,7 +53,7 @@
             :style="verticalListStyle"
           >
             <div
-              v-for="item in displayItems"
+              v-for="(item, idx) in displayItems"
               :key="itemKey(item)"
               :class="itemContainerClasses(linkField(item))"
               :style="itemContainerStyle()"
@@ -66,6 +70,10 @@
                 :author-key="authorKey"
                 :pub-date-key="pubDateKey"
                 :categories-key="categoriesKey"
+                :variant="variant"
+                :index="idx"
+                :show-rank="showRank"
+                :hot-key="hotKey"
               />
             </div>
           </div>
@@ -86,7 +94,7 @@ import {
 } from '@/components/ui/card';
 import type { UIBlock, DataBlock } from '@/shared/types/panel';
 import type { ComponentAbility } from '@/shared/componentManifest';
-import ListPanelItem from './ListPanelItem.vue';
+import ListPanelItem, { type ListVariant } from './ListPanelItem.vue';
 import { usePanelSizePreset } from '@/composables/usePanelSizePreset';
 
 const props = defineProps<{
@@ -112,13 +120,18 @@ function getOption<T>(key: string, fallback: T): T {
   return fallback;
 }
 
+// 列表变体：minimal（热榜）或 standard（资讯）
+const variant = getOption<ListVariant>('variant', 'standard');
+const isMinimal = variant === 'minimal';
+
 const compact = getOption('compact', false);
 const maxItemsOption = getOption('max_items', undefined as number | undefined);
 const maxItems =
   typeof maxItemsOption === 'number' && maxItemsOption > 0 ? maxItemsOption : Number.POSITIVE_INFINITY;
-const showDescription = getOption('show_description', getOption('showDescription', true));
-const showMetadata = getOption('show_metadata', getOption('showMetadata', true));
-const showCategories = getOption('show_categories', getOption('showCategories', true));
+const showDescription = isMinimal ? false : getOption('show_description', getOption('showDescription', true));
+const showMetadata = isMinimal ? false : getOption('show_metadata', getOption('showMetadata', true));
+const showCategories = isMinimal ? false : getOption('show_categories', getOption('showCategories', true));
+const showRank = getOption('show_rank', isMinimal);
 const horizontalScroll = getOption('horizontal_scroll', getOption('horizontalScroll', false));
 const horizontalItemWidthOption = Number(getOption('item_min_width', getOption('itemMinWidth', 0)));
 
@@ -128,6 +141,7 @@ const descriptionKey = getProp('description_field', 'summary');
 const pubDateKey = getProp('pub_date_field', 'published_at');
 const authorKey = getProp('author_field', 'author');
 const categoriesKey = getProp('categories_field', 'categories');
+const hotKey = getProp('hot_field', 'hot');
 
 const displayItems = computed(() =>
   items.slice(0, Math.min(items.length, Number.isFinite(maxItems) ? maxItems : items.length))
@@ -146,12 +160,18 @@ const horizontalWidthStyle = computed(() => ({
 const horizontalGap = computed(() => `${0.5 * sizePreset.value.spacingScale}rem`);
 const verticalListStyle = computed(() => ({
   maxHeight: verticalMaxHeight.value,
-  gap: `${(compact ? 0.18 : 0.4) * sizePreset.value.spacingScale}rem`,
-  paddingBottom: compact ? "0.25rem" : "0.4rem",
+  gap: isMinimal ? `${0.12 * sizePreset.value.spacingScale}rem` : `${(compact ? 0.18 : 0.4) * sizePreset.value.spacingScale}rem`,
+  paddingBottom: isMinimal ? '0.15rem' : (compact ? '0.25rem' : '0.4rem'),
 }));
-const itemPadding = computed(() => `${Math.max(6, Math.round(sizePreset.value.cardPadding * (compact ? 0.45 : 0.65)))}px`);
-const itemRadius = computed(() => `${Math.max(8, sizePreset.value.cardRadius - (compact ? 6 : 2))}px`);
-const itemMinHeight = computed(() => `${Math.round(sizePreset.value.listRowHeight * (compact ? 0.7 : 0.9))}px`);
+const itemPadding = computed(() => {
+  if (isMinimal) return `${Math.max(4, Math.round(sizePreset.value.cardPadding * 0.35))}px ${Math.max(6, Math.round(sizePreset.value.cardPadding * 0.5))}px`;
+  return `${Math.max(6, Math.round(sizePreset.value.cardPadding * (compact ? 0.45 : 0.65)))}px`;
+});
+const itemRadius = computed(() => `${Math.max(6, sizePreset.value.cardRadius - (isMinimal ? 10 : (compact ? 6 : 2)))}px`);
+const itemMinHeight = computed(() => {
+  if (isMinimal) return `${Math.round(sizePreset.value.listRowHeight * 0.42)}px`;
+  return `${Math.round(sizePreset.value.listRowHeight * (compact ? 0.7 : 0.9))}px`;
+});
 
 function linkField(item: Record<string, unknown>): string | null {
   const value = item[linkKey];

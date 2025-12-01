@@ -51,15 +51,23 @@ def default_components() -> List[ComponentDefinition]:
         ComponentDefinition(
             id="ListPanel",
             requirements=["title", "link"],
-            optional_fields=["description", "pubDate", "author"],
-            options={"show_description": {"type": "boolean", "default": True}},
-            interactions=["open_link"],
+            optional_fields=["description", "pubDate", "author", "hot"],
+            options={
+                "variant": {"type": "string", "default": "standard"},  # 'minimal' | 'standard'
+                "show_description": {"type": "boolean", "default": True},
+                "show_metadata": {"type": "boolean", "default": True},
+                "show_categories": {"type": "boolean", "default": True},
+                "show_rank": {"type": "boolean", "default": False},
+                "compact": {"type": "boolean", "default": False},
+                "max_items": {"type": "number", "default": 10},
+            },
+            interactions=["open_link", "refresh"],
             layout_defaults={
                 "layout_size": "third",
                 "span": 12,
                 "min_height": 320,
             },
-            description="适用于文本类数据源的通用列表组件。",
+            description="适用于文本类数据源的通用列表组件。支持标准模式（资讯）和极简模式（热榜）。",
         ),
         ComponentDefinition(
             id="LineChart",
