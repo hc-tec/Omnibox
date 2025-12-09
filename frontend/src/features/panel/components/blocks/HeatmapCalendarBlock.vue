@@ -7,49 +7,74 @@
       <div v-if="isEmpty" class="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
         暂无数据
       </div>
-      <div v-else class="overflow-x-auto">
-        <!-- 月份标签 -->
-        <div class="mb-2 flex" :style="{ paddingLeft: '28px' }">
-          <div
-            v-for="month in monthLabels"
+      <div v-else ref="containerRef" class="w-full overflow-x-auto">
+        <!-- 月份标签（定位到每月第一周上方） -->
+        <div class="mb-1 relative" :style="{ paddingLeft: `${labelWidth}px`, height: '16px' }">
+          <span
+            v-for="month in monthPositions"
             :key="month.key"
-            class="text-xs text-muted-foreground"
-            :style="{ width: `${month.width * (cellSize + cellGap)}px` }"
+            class="absolute text-xs text-muted-foreground"
+            :style="{ left: `${labelWidth + month.offset}px` }"
           >
             {{ month.label }}
-          </div>
+          </span>
         </div>
 
         <!-- 热力图主体 -->
         <div class="flex">
-          <!-- 星期标签 -->
-          <div class="mr-1 flex flex-col justify-around" :style="{ width: '24px' }">
-            <span class="text-xs text-muted-foreground">一</span>
-            <span class="text-xs text-muted-foreground">三</span>
-            <span class="text-xs text-muted-foreground">五</span>
-            <span class="text-xs text-muted-foreground">日</span>
+          <!-- 星期标签（7行，对应周一到周日） -->
+          <div
+            class="shrink-0 flex flex-col mr-1"
+            :style="{ width: `${labelWidth - 4}px` }"
+          >
+            <div
+              v-for="(label, idx) in weekdayLabels"
+              :key="idx"
+              class="flex items-center justify-end pr-1 text-xs text-muted-foreground"
+              :style="{ height: `${dynamicCellSize + cellGap}px` }"
+            >
+              {{ label }}
+            </div>
           </div>
 
           <!-- 日期格子 -->
-          <div class="flex gap-[2px]">
-            <div
-              v-for="(week, weekIndex) in calendarWeeks"
-              :key="weekIndex"
-              class="flex flex-col gap-[2px]"
-            >
+          <TooltipProvider :delay-duration="100">
+            <div class="flex" :style="{ gap: `${cellGap}px` }">
               <div
-                v-for="(day, dayIndex) in week"
-                :key="dayIndex"
-                class="rounded-sm transition-all"
-                :class="[
-                  day.isEmpty ? 'bg-transparent' : getLevelClass(day.level),
-                  day.isEmpty ? '' : 'cursor-pointer hover:ring-2 hover:ring-primary/50',
-                ]"
-                :style="{ width: `${cellSize}px`, height: `${cellSize}px` }"
-                :title="day.isEmpty ? '' : `${day.date}: ${day.value} ${valueUnit}`"
-              />
+                v-for="(week, weekIndex) in calendarWeeks"
+                :key="weekIndex"
+                class="flex flex-col"
+                :style="{ gap: `${cellGap}px` }"
+              >
+                <template v-for="(day, dayIndex) in week" :key="dayIndex">
+                  <!-- 空白格子不需要 Tooltip -->
+                  <div
+                    v-if="day.isEmpty"
+                    class="rounded-sm bg-transparent"
+                    :style="{ width: `${dynamicCellSize}px`, height: `${dynamicCellSize}px` }"
+                  />
+                  <!-- 有数据的格子使用 Tooltip -->
+                  <Tooltip v-else>
+                    <TooltipTrigger as-child>
+                      <div
+                        class="rounded-sm transition-all cursor-pointer hover:ring-2 hover:ring-primary/50"
+                        :class="getLevelClass(day.level)"
+                        :style="{ width: `${dynamicCellSize}px`, height: `${dynamicCellSize}px` }"
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      :side-offset="4"
+                      class="!bg-[var(--background)] border-border shadow-md"
+                    >
+                      <span class="font-medium">{{ formatDate(day.date) }}</span>
+                      <span class="text-muted-foreground ml-2">{{ day.value }} {{ valueUnit }}</span>
+                    </TooltipContent>
+                  </Tooltip>
+                </template>
+              </div>
             </div>
-          </div>
+          </TooltipProvider>
         </div>
 
         <!-- 图例 -->
@@ -60,7 +85,7 @@
             :key="level"
             class="rounded-sm"
             :class="getLevelClass(level - 1)"
-            :style="{ width: `${cellSize}px`, height: `${cellSize}px` }"
+            :style="{ width: `${Math.min(dynamicCellSize, 14)}px`, height: `${Math.min(dynamicCellSize, 14)}px` }"
           />
           <span>多</span>
         </div>
@@ -86,8 +111,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UIBlock, DataBlock } from '@/shared/types/panel';
 import type { ComponentAbility } from '@/shared/componentManifest';
 
@@ -97,6 +123,28 @@ const props = defineProps<{
   data: Record<string, unknown> | null;
   dataBlock: DataBlock | null;
 }>();
+
+// 容器引用和响应式尺寸
+const containerRef = ref<HTMLElement | null>(null);
+const containerWidth = ref(0);
+
+let resizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  if (containerRef.value) {
+    containerWidth.value = containerRef.value.clientWidth;
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        containerWidth.value = entry.contentRect.width;
+      }
+    });
+    resizeObserver.observe(containerRef.value);
+  }
+});
+
+onUnmounted(() => {
+  resizeObserver?.disconnect();
+});
 
 // 数据源
 const items = computed(() => {
@@ -125,8 +173,22 @@ const showStats = getOption<boolean>('show_stats', true);
 const weeksToShow = getOption<number>('weeks', 52);
 const valueUnit = getOption<string>('value_unit', '次');
 
-const cellSize = 12;
 const cellGap = 2;
+const labelWidth = 28; // 左侧星期标签宽度
+
+// 星期标签（7行：周一到周日）
+const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
+
+// 动态计算格子大小以填满容器
+const dynamicCellSize = computed(() => {
+  const weekCount = calendarWeeks.value.length || 52;
+  const availableWidth = containerWidth.value - labelWidth;
+  if (availableWidth <= 0) return 12; // 默认值
+  // 计算每个格子的宽度：(可用宽度 - 间隙总数) / 周数
+  const size = (availableWidth - (weekCount - 1) * cellGap) / weekCount;
+  // 限制在合理范围内 [8, 20]
+  return Math.max(8, Math.min(20, Math.floor(size)));
+});
 
 // 构建日期到值的映射
 const dateValueMap = computed(() => {
@@ -204,51 +266,48 @@ const calendarWeeks = computed<CalendarDay[][]>(() => {
   return weeks;
 });
 
-// 月份标签
-const monthLabels = computed(() => {
-  const labels: { key: string; label: string; width: number }[] = [];
+// 月份标签位置（基于每月第一周的索引定位）
+const monthPositions = computed(() => {
+  const positions: { key: string; label: string; offset: number }[] = [];
   const weeks = calendarWeeks.value;
 
-  if (weeks.length === 0) return labels;
+  if (weeks.length === 0) return positions;
 
-  let currentMonth = '';
-  let weekCount = 0;
+  let lastMonth = '';
 
-  for (const week of weeks) {
-    const firstValidDay = week.find((d) => !d.isEmpty && d.date);
-    if (firstValidDay) {
-      const month = firstValidDay.date.substring(0, 7);
-      if (month !== currentMonth) {
-        if (currentMonth && weekCount > 0) {
-          labels.push({
-            key: currentMonth,
-            label: getMonthLabel(currentMonth),
-            width: weekCount,
+  for (let weekIndex = 0; weekIndex < weeks.length; weekIndex++) {
+    const week = weeks[weekIndex];
+    // 找到这一周中属于新月份的第一天
+    for (const day of week) {
+      if (!day.isEmpty && day.date) {
+        const month = day.date.substring(0, 7);
+        if (month !== lastMonth) {
+          // 新月份开始，记录位置
+          positions.push({
+            key: month,
+            label: getMonthLabel(month),
+            offset: weekIndex * (dynamicCellSize.value + cellGap),
           });
+          lastMonth = month;
         }
-        currentMonth = month;
-        weekCount = 1;
-      } else {
-        weekCount++;
+        break; // 只检查每周的第一个有效天
       }
     }
   }
 
-  if (currentMonth && weekCount > 0) {
-    labels.push({
-      key: currentMonth,
-      label: getMonthLabel(currentMonth),
-      width: weekCount,
-    });
-  }
-
-  return labels;
+  return positions;
 });
 
 function getMonthLabel(yearMonth: string): string {
   const [, month] = yearMonth.split('-');
   const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
   return monthNames[parseInt(month, 10) - 1] || '';
+}
+
+// 格式化日期为友好格式（如 "2024-12-02" -> "12月2日"）
+function formatDate(dateStr: string): string {
+  const [, month, day] = dateStr.split('-');
+  return `${parseInt(month, 10)}月${parseInt(day, 10)}日`;
 }
 
 // 等级颜色

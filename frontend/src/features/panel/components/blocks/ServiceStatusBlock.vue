@@ -50,7 +50,7 @@
               <TooltipContent
                 side="top"
                 :side-offset="8"
-                class="max-w-xs p-3 space-y-2"
+                class="max-w-xs p-3 space-y-2 !bg-[var(--background)] border-border shadow-md"
               >
                 <!-- Tooltip 头部：时间戳 -->
                 <div class="space-y-0.5">
