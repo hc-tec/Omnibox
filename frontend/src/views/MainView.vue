@@ -33,6 +33,12 @@
               {{ option.label }}
             </button>
           </div>
+          <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="navigateToWorkspace">
+            工作台
+          </button>
+          <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="navigateToDashboard">
+            仪表盘
+          </button>
           <button class="rounded-xl px-3 py-2 text-muted-foreground transition hover:text-foreground" @click="navigateToSubscriptions">
             订阅管理
           </button>
@@ -212,6 +218,14 @@ const focusCommandBar = () => {
 
 const navigateToSubscriptions = async () => {
   await router.push({ path: '/subscriptions' });
+};
+
+const navigateToWorkspace = async () => {
+  await router.push({ path: '/workspace' });
+};
+
+const navigateToDashboard = async () => {
+  await router.push({ path: '/dashboard' });
 };
 
 const handleReset = () => {

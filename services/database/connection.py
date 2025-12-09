@@ -85,7 +85,11 @@ class DatabaseConnection:
         注意：这个方法仅用于开发环境快速创建表。
         生产环境应该使用 Alembic 进行版本控制的迁移。
         """
-        from .models import Subscription, SubscriptionEmbedding
+        # 导入所有模型以注册到 SQLModel 元数据
+        from .models import Subscription, SubscriptionEmbedding  # noqa: F401
+        from services.workflow.models import Workflow, WorkflowRun  # noqa: F401
+        from services.data_artifact.models import DataArtifact  # noqa: F401
+        from services.dashboard.models import DashboardCard, Notification  # noqa: F401
 
         logger.info("创建数据库表...")
         SQLModel.metadata.create_all(self._engine)

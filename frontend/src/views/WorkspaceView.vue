@@ -30,9 +30,8 @@ onMounted(async () => {
 
   // 如果 URL 中有 runId，加载执行状态
   const runId = route.params.runId as string
-  if (runId) {
-    // TODO: 加载执行状态
-    console.log('加载执行状态:', runId)
+  if (runId && workflowId) {
+    await store.loadRun(workflowId, runId)
   }
 })
 

@@ -16,8 +16,10 @@ import type {
   TemplateStatsResponse,
   ImportTemplateRequest,
 } from '../types/template'
+import { resolveHttpBase } from '@/shared/networkBase'
 
-const API_BASE = '/api/v1/templates'
+const API_BASE = resolveHttpBase(import.meta.env.VITE_API_BASE, '/api/v1')
+const TEMPLATES_URL = `${API_BASE}/templates`
 
 /**
  * 获取模板列表
@@ -34,7 +36,7 @@ export async function listTemplates(
   if (query.limit) params.set('limit', String(query.limit))
   if (query.offset) params.set('offset', String(query.offset))
 
-  const url = params.toString() ? `${API_BASE}?${params}` : API_BASE
+  const url = params.toString() ? `${TEMPLATES_URL}?${params}` : TEMPLATES_URL
   const response = await fetch(url)
 
   if (!response.ok) {
@@ -48,7 +50,7 @@ export async function listTemplates(
  * 获取模板详情
  */
 export async function getTemplate(templateId: string): Promise<TemplateResponse> {
-  const response = await fetch(`${API_BASE}/${templateId}`)
+  const response = await fetch(`${TEMPLATES_URL}/${templateId}`)
 
   if (!response.ok) {
     throw new Error(`获取模板详情失败: ${response.statusText}`)
@@ -61,7 +63,7 @@ export async function getTemplate(templateId: string): Promise<TemplateResponse>
  * 获取分类列表
  */
 export async function listCategories(): Promise<CategoryStats[]> {
-  const response = await fetch(`${API_BASE}/categories`)
+  const response = await fetch(`${TEMPLATES_URL}/categories`)
 
   if (!response.ok) {
     throw new Error(`获取分类列表失败: ${response.statusText}`)
@@ -74,7 +76,7 @@ export async function listCategories(): Promise<CategoryStats[]> {
  * 获取模板市场统计
  */
 export async function getTemplateStats(): Promise<TemplateStatsResponse> {
-  const response = await fetch(`${API_BASE}/stats`)
+  const response = await fetch(`${TEMPLATES_URL}/stats`)
 
   if (!response.ok) {
     throw new Error(`获取模板统计失败: ${response.statusText}`)
@@ -89,7 +91,7 @@ export async function getTemplateStats(): Promise<TemplateStatsResponse> {
 export async function createTemplate(
   request: CreateTemplateRequest
 ): Promise<TemplateResponse> {
-  const response = await fetch(API_BASE, {
+  const response = await fetch(TEMPLATES_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -110,7 +112,7 @@ export async function instantiateTemplate(
   templateId: string,
   request: InstantiateRequest
 ): Promise<InstantiateResponse> {
-  const response = await fetch(`${API_BASE}/${templateId}/instantiate`, {
+  const response = await fetch(`${TEMPLATES_URL}/${templateId}/instantiate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -131,7 +133,7 @@ export async function validateVariables(
   templateId: string,
   variableValues: Record<string, unknown>
 ): Promise<ValidateVariablesResponse> {
-  const response = await fetch(`${API_BASE}/${templateId}/validate`, {
+  const response = await fetch(`${TEMPLATES_URL}/${templateId}/validate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ variable_values: variableValues }),
@@ -150,7 +152,7 @@ export async function validateVariables(
 export async function exportTemplate(
   templateId: string
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(`${API_BASE}/${templateId}/export`)
+  const response = await fetch(`${TEMPLATES_URL}/${templateId}/export`)
 
   if (!response.ok) {
     throw new Error(`导出模板失败: ${response.statusText}`)
@@ -165,7 +167,7 @@ export async function exportTemplate(
 export async function importTemplate(
   request: ImportTemplateRequest
 ): Promise<TemplateResponse> {
-  const response = await fetch(`${API_BASE}/import`, {
+  const response = await fetch(`${TEMPLATES_URL}/import`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),

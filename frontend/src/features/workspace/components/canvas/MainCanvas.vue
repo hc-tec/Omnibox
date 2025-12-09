@@ -107,6 +107,7 @@ import PanelBoard from '@/features/panel/components/PanelBoard.vue'
 import ChatInteractionArea from './ChatInteractionArea.vue'
 import CanvasEmptyState from './CanvasEmptyState.vue'
 import type { CanvasView } from '../../types/workspace'
+import type { LayoutTree, UIBlock, DataBlock } from '@/shared/types/panel'
 
 // ========== Store ==========
 const store = useWorkspaceStore()
@@ -132,9 +133,90 @@ const hasContent = computed(() => {
   return currentStepOutput.value || selectedArtifact.value
 })
 
+// 定义返回类型
+interface PanelDataResult {
+  layout: LayoutTree | null
+  blocks: UIBlock[]
+  dataBlocks: Record<string, DataBlock>
+}
+
 // 从产物或步骤输出构建面板数据
-const panelData = computed(() => {
-  // TODO: 根据 selectedArtifact 或 currentStepOutput 构建面板数据
+const panelData = computed((): PanelDataResult => {
+  const artifact = selectedArtifact.value
+  const stepOutput = currentStepOutput.value
+
+  // 优先使用步骤输出数据
+  if (stepOutput?.data) {
+    const data = stepOutput.data as Record<string, unknown>
+    if (data.layout && data.blocks) {
+      return {
+        layout: data.layout as LayoutTree,
+        blocks: data.blocks as UIBlock[],
+        dataBlocks: (data.dataBlocks || data.data_blocks || {}) as Record<string, DataBlock>,
+      }
+    }
+  }
+
+  // 使用产物数据构建面板
+  if (artifact) {
+    // 如果产物有建议的视图，使用第一个
+    if (artifact.suggested_views && artifact.suggested_views.length > 0) {
+      const view = artifact.suggested_views[0]
+      const blockId = `block-${artifact.artifact_id}`
+
+      // 构建符合 LayoutTree 类型的布局
+      const layout: LayoutTree = {
+        mode: 'replace',
+        nodes: [
+          {
+            type: 'cell',
+            id: blockId,
+            children: [],
+            props: {
+              grid: { x: 0, y: 0, w: 12, h: 6 },
+            },
+          },
+        ],
+      }
+
+      // 构建符合 UIBlock 类型的块
+      const blocks: UIBlock[] = [
+        {
+          id: blockId,
+          component: view.component,
+          data_ref: artifact.artifact_id,
+          props: view.props || {},
+          options: {},
+        },
+      ]
+
+      // 构建符合 DataBlock 类型的数据块
+      const dataBlocks: Record<string, DataBlock> = {
+        [artifact.artifact_id]: {
+          id: artifact.artifact_id,
+          source_info: {
+            datasource: 'workspace',
+            route: 'artifact',
+            params: { artifact_id: artifact.artifact_id },
+          },
+          records: [],
+          stats: artifact.statistics || {},
+          schema_summary: {
+            fields: artifact.schema_info?.fields?.map(f => ({
+              name: f.name,
+              type: f.type,
+              sample: f.sample_values || [],
+            })) || [],
+            stats: {},
+            schema_digest: '',
+          },
+        },
+      }
+
+      return { layout, blocks, dataBlocks }
+    }
+  }
+
   return {
     layout: null,
     blocks: [],

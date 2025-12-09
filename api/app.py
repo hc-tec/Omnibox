@@ -19,6 +19,7 @@ from api.controllers.research_controller import router as research_router
 from api.controllers.subscription_controller import router as subscription_router
 from api.controllers.workflow_controller import router as workflow_router
 from api.controllers.template_controller import router as template_router
+from api.controllers.dashboard_controller import router as dashboard_router
 from api.middleware.exception_handlers import (
     exception_handler_middleware,
     http_exception_handler,
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(subscription_router)  # 订阅管理接口
     app.include_router(workflow_router)  # 工作流管理接口
     app.include_router(template_router)  # 模板市场接口
+    app.include_router(dashboard_router)  # 仪表盘接口
 
     # ========== 启动和关闭事件 ==========
     @app.on_event("startup")

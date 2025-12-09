@@ -89,6 +89,8 @@ import {
   Pin,
 } from 'lucide-vue-next'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { useDashboardStore } from '../../../dashboard/stores/dashboardStore'
+import * as workspaceApi from '../../services/workspaceApi'
 import ArtifactListItem from './ArtifactListItem.vue'
 import ArtifactPreview from './ArtifactPreview.vue'
 import type { Artifact } from '../../types/workspace'
@@ -100,11 +102,13 @@ defineEmits<{
 
 // ========== Store ==========
 const store = useWorkspaceStore()
+const dashboardStore = useDashboardStore()
 const {
   artifacts,
   selectedArtifactId,
   selectedArtifact,
   loading,
+  currentWorkflowId,
 } = storeToRefs(store)
 
 const { selectArtifact } = store
@@ -116,16 +120,47 @@ function handlePreview(artifact: Artifact) {
   selectArtifact(artifact.artifact_id)
 }
 
-function handleExport() {
-  if (!selectedArtifact.value) return
-  console.log('导出产物:', selectedArtifact.value.artifact_id)
-  // TODO: 实现导出功能
+async function handleExport() {
+  if (!selectedArtifact.value || !currentWorkflowId.value) return
+
+  try {
+    // 获取完整的产物数据
+    const artifact = await workspaceApi.getArtifact(
+      currentWorkflowId.value,
+      selectedArtifact.value.artifact_id
+    )
+
+    // 创建下载
+    const blob = new Blob([JSON.stringify(artifact, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selectedArtifact.value.name || 'artifact'}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('导出失败:', e)
+  }
 }
 
-function handlePin() {
+async function handlePin() {
   if (!selectedArtifact.value) return
-  console.log('Pin 到仪表盘:', selectedArtifact.value.artifact_id)
-  // TODO: 实现 Pin 功能
+
+  try {
+    await dashboardStore.pinArtifact({
+      artifact_id: selectedArtifact.value.artifact_id,
+      name: selectedArtifact.value.name,
+      refresh_interval: 'manual',
+    })
+    alert('已 Pin 到仪表盘')
+  } catch (e) {
+    console.error('Pin 失败:', e)
+    alert('Pin 失败，请稍后重试')
+  }
 }
 </script>
 

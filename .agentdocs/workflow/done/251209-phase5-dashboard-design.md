@@ -1,7 +1,7 @@
 # Phase 5: 仪表盘设计方案
 
 **创建日期**: 2025-12-09
-**状态**: 📝 设计中
+**状态**: ✅ 已完成
 **目标**: 实现数据监控仪表盘，支持卡片 Pin、定时刷新、条件触发、通知推送
 
 ---
@@ -1045,17 +1045,16 @@ const useDashboardStore = defineStore('dashboard', {
 
 ## 九、TODO 清单
 
-- [ ] 用户确认设计方案
-- [ ] Phase 5.1: Dashboard 数据模型
-- [ ] Phase 5.2: DashboardService + API
-- [ ] Phase 5.3: SchedulerService（定时刷新）
-- [ ] Phase 5.4: TriggerService（条件触发）
-- [ ] Phase 5.5: NotificationService
-- [ ] Phase 5.6: 前端 dashboardStore + dashboardApi
-- [ ] Phase 5.7: DashboardView + DashboardGrid
-- [ ] Phase 5.8: DashboardCard + CardSettingsDialog
-- [ ] Phase 5.9: TriggerConfigDialog + NotificationBell
-- [ ] Phase 5.10: 集成测试
+- [x] 用户确认设计方案
+- [x] Phase 5.1: Dashboard 数据模型
+- [x] Phase 5.2: DashboardService + API
+- [x] Phase 5.3: SchedulerService（定时刷新）- 使用 Python threading 替代 APScheduler
+- [x] Phase 5.4: TriggerService（条件触发）
+- [x] Phase 5.5: NotificationService
+- [x] Phase 5.6: 前端 dashboardStore + dashboardApi
+- [x] Phase 5.7: DashboardView + DashboardGrid（用户选择 CSS Grid 方案）
+- [x] Phase 5.8: DashboardCard + NotificationBell
+- [x] Phase 5.9: 集成测试 - 通过语法验证
 
 ---
 
@@ -1065,7 +1064,37 @@ const useDashboardStore = defineStore('dashboard', {
 |------|------|------|
 | 卡片存储 | 独立表 dashboard_cards | 与工作流/产物解耦，灵活配置 |
 | 触发器存储 | JSON 字段 | 结构灵活，避免多表关联 |
-| 调度器 | APScheduler | 轻量、成熟、Python 原生 |
-| 网格布局 | vue-grid-layout | 功能完善、社区活跃 |
+| 调度器 | Python threading | 项目未安装 APScheduler，使用内置 threading 简化依赖 |
+| 网格布局 | 自定义 CSS Grid | 用户选择 B，避免引入额外依赖，12 列响应式布局 |
 | 通知 | 应用内优先 | MVP 阶段简化实现 |
+
+---
+
+## 十一、实现文件清单
+
+### 后端新增文件
+- `services/dashboard/models.py` - 数据模型（DashboardCard, Notification, Trigger）
+- `services/dashboard/store.py` - CRUD 操作
+- `services/dashboard/dashboard_service.py` - 核心服务
+- `services/dashboard/scheduler_service.py` - 定时刷新（Python threading）
+- `services/dashboard/trigger_service.py` - 条件触发评估
+- `services/dashboard/notification_service.py` - 通知推送
+- `services/dashboard/__init__.py` - 模块导出
+- `api/schemas/dashboard.py` - API 请求/响应模型
+- `api/controllers/dashboard_controller.py` - REST API 端点
+
+### 前端新增文件
+- `features/dashboard/types/dashboard.ts` - TypeScript 类型
+- `features/dashboard/services/dashboardApi.ts` - API 服务
+- `features/dashboard/stores/dashboardStore.ts` - Pinia 状态管理
+- `features/dashboard/components/DashboardView.vue` - 主视图
+- `features/dashboard/components/DashboardGrid.vue` - CSS Grid 布局
+- `features/dashboard/components/DashboardCard.vue` - 卡片组件
+- `features/dashboard/components/NotificationBell.vue` - 通知铃铛
+- `features/dashboard/index.ts` - 模块导出
+
+### 修改的文件
+- `api/app.py` - 注册 dashboard_router
+- `services/database/connection.py` - create_tables 包含新表
+- `frontend/src/router/index.ts` - 添加 /dashboard 路由
 

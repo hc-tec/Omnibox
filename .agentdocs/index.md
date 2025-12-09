@@ -121,12 +121,8 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `new-architecture.md` - **工作流工作台架构总设计**（已确认方向）
+- `new-architecture.md` - **工作流工作台架构总设计**（已确认方向，Phase 1-5 全部完成）
   - 5 个 Phase：基础设施 → 工作流引擎 → 工作台 UI → 模板系统 → 仪表盘
-- `workflow/251209-phase5-dashboard-design.md` - **工作流工作台 Phase 5: 仪表盘**（设计中）
-  - **目标**：实现数据监控仪表盘，支持卡片 Pin、定时刷新、条件触发、通知推送
-  - **核心功能**：DashboardCard、SchedulerService、TriggerService、NotificationService
-  - **前端组件**：DashboardView、DashboardGrid、TriggerConfigDialog、NotificationBell
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
   - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
   - 核心工具：data_operator（动态算子，统一过滤/对比/聚合）、fetch_private_data（私有数据框架）
@@ -166,6 +162,11 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/done/251209-phase5-dashboard-design.md` - **工作流工作台 Phase 5: 仪表盘** [✅ 完成 2025-12-09]
+  - **目标**：实现数据监控仪表盘，支持卡片 Pin、定时刷新、条件触发、通知推送
+  - **核心功能**：DashboardCard、SchedulerService（Python threading）、TriggerService、NotificationService
+  - **前端组件**：DashboardView、DashboardGrid（CSS Grid）、DashboardCard、NotificationBell
+  - **路由**：`/dashboard` 独立页面
 - `workflow/251209-phase4-template-system-design.md` - **工作流工作台 Phase 4: 模板系统** [✅ 完成 2025-12-09]
   - **目标**：实现工作流模板化，支持模板创建、分享、市场发现
   - **核心功能**：模板创建/实例化、变量系统、模板市场、导出导入

@@ -19,7 +19,7 @@ import type {
 } from '../types/workspace'
 import * as api from '../services/workspaceApi'
 
-export const useWorkspaceStore = defineStore('workspace', () => {
+export const useWorkspaceStore = defineStore('workflow-workspace', () => {
   // ========== 工作流管理 ==========
   const workflows = ref<Workflow[]>([])
   const currentWorkflowId = ref<string | null>(null)
@@ -42,6 +42,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const rightPanelCollapsed = ref(false)
   const leftPanelWidth = ref(240)
   const rightPanelWidth = ref(280)
+  const showCreateWorkflowDialog = ref(false)
 
   // ========== 加载状态 ==========
   const loading = ref(false)
@@ -130,18 +131,70 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /**
    * 选择产物
    */
-  function selectArtifact(artifactId: string) {
+  async function selectArtifact(artifactId: string) {
     selectedArtifactId.value = artifactId
 
     // 加载产物数据到画布
     const artifact = artifacts.value.find(a => a.artifact_id === artifactId)
-    if (artifact) {
+    if (artifact && currentWorkflowId.value) {
       currentStepOutput.value = {
         stepId: artifact.source.step_id || 0,
         stepName: artifact.name,
         artifactId: artifact.artifact_id,
-        data: null, // TODO: 加载完整数据
+        data: null,
       }
+
+      // 加载产物完整数据
+      try {
+        const artifactData = await api.getArtifactData(
+          currentWorkflowId.value,
+          artifactId
+        )
+        if (currentStepOutput.value?.artifactId === artifactId) {
+          currentStepOutput.value.data = artifactData.data
+        }
+      } catch (e) {
+        console.error('加载产物数据失败:', e)
+      }
+    }
+  }
+
+  /**
+   * 加载执行状态
+   */
+  async function loadRun(workflowId: string, runId: string) {
+    loading.value = true
+    error.value = null
+
+    try {
+      const run = await api.getRun(workflowId, runId)
+      currentRun.value = run
+      currentRunId.value = run.run_id
+
+      // 初始化步骤状态
+      stepStatuses.value = {}
+      currentWorkflowSteps.value.forEach(step => {
+        // 根据 run 的 completed_step_ids 设置状态
+        if (run.completed_step_ids?.includes(step.step_id)) {
+          stepStatuses.value[step.step_id] = 'completed'
+        } else if (run.current_step_id === step.step_id) {
+          stepStatuses.value[step.step_id] = run.status === 'running' ? 'running' : 'pending'
+        } else {
+          stepStatuses.value[step.step_id] = 'pending'
+        }
+      })
+
+      // 如果执行正在进行中，连接 WebSocket
+      if (run.status === 'running') {
+        connectProgressWebSocket(workflowId, runId)
+      }
+
+      // 加载关联的产物
+      await loadArtifacts(workflowId)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : '加载执行状态失败'
+    } finally {
+      loading.value = false
     }
   }
 
@@ -353,6 +406,32 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   /**
+   * 打开创建工作流对话框
+   */
+  function openCreateWorkflowDialog() {
+    showCreateWorkflowDialog.value = true
+  }
+
+  /**
+   * 关闭创建工作流对话框
+   */
+  function closeCreateWorkflowDialog() {
+    showCreateWorkflowDialog.value = false
+  }
+
+  /**
+   * 选择步骤并在画布中显示
+   */
+  function selectStep(step: WorkflowStep) {
+    currentStepOutput.value = {
+      stepId: step.step_id,
+      stepName: step.name,
+      artifactId: undefined,
+      data: null,
+    }
+  }
+
+  /**
    * 设置 WebSocket 连接状态
    */
   function setWsConnected(connected: boolean) {
@@ -407,6 +486,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     rightPanelCollapsed,
     leftPanelWidth,
     rightPanelWidth,
+    showCreateWorkflowDialog,
     loading,
     error,
     wsConnected,
@@ -428,6 +508,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     selectWorkflow,
     loadArtifacts,
     selectArtifact,
+    selectStep,
+    loadRun,
     startRun,
     pauseRun,
     resumeRun,
@@ -437,6 +519,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     setCanvasView,
     toggleLeftPanel,
     toggleRightPanel,
+    openCreateWorkflowDialog,
+    closeCreateWorkflowDialog,
     setWsConnected,
     reset,
     cleanup,

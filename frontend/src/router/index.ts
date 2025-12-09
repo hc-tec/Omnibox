@@ -6,6 +6,7 @@
  * - /research/:taskId (ResearchView): 专属研究视图，包含上下文面板和数据面板
  * - /workspace (WorkspaceView): 工作流工作台，三栏布局
  * - /workspace/templates (TemplateMarket): 模板市场页面
+ * - /dashboard (DashboardView): 监控仪表盘
  * - /subscriptions (SubscriptionsView): 订阅管理页面
  * - /dev/components (DevComponentsView): 组件调试页面（仅开发模式）
  */
@@ -72,6 +73,15 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('../views/WorkspaceView.vue'),
     meta: {
       title: '工作台',
+    },
+  },
+  // 监控仪表盘
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('../features/dashboard/components/DashboardView.vue'),
+    meta: {
+      title: '监控仪表盘',
     },
   },
   // 开发者组件调试页面（仅开发模式可用）

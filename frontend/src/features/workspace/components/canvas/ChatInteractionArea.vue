@@ -85,21 +85,29 @@ const sendButtonClass = computed(() => ({
 
 // ========== Methods ==========
 
-function handleSend() {
+async function handleSend() {
   if (!canSend.value) return
 
   const text = inputText.value.trim()
-  console.log('发送指令:', text)
-
-  // TODO: 调用后端 API 处理指令
   loading.value = true
 
-  // 模拟处理
-  setTimeout(() => {
-    loading.value = false
+  try {
+    // 注：此处需要后端实现 chat API 或集成现有 chat 服务
+    // 目前仅模拟处理，实际应调用：
+    // const response = await chatApi.sendWorkspaceCommand(text, { context: currentContext })
+    console.log('发送指令:', text)
+
+    // 模拟处理延迟
+    await new Promise(resolve => setTimeout(resolve, 800))
+
+    // 清空输入
     inputText.value = ''
     resetTextareaHeight()
-  }, 1000)
+  } catch (e) {
+    console.error('指令处理失败:', e)
+  } finally {
+    loading.value = false
+  }
 }
 
 function handleQuickAction(action: { label: string; action: string }) {

@@ -173,18 +173,24 @@ const {
   progressPercentage,
 } = storeToRefs(store)
 
-const { selectWorkflow, startRun, pauseRun, resumeRun, cancelRun } = store
+const {
+  selectWorkflow,
+  selectStep,
+  startRun,
+  pauseRun,
+  resumeRun,
+  cancelRun,
+  openCreateWorkflowDialog,
+} = store
 
 // ========== Methods ==========
 
 function handleCreate() {
-  // TODO: 打开创建工作流对话框
-  console.log('创建工作流')
+  openCreateWorkflowDialog()
 }
 
 function handleStepClick(step: WorkflowStep) {
-  // TODO: 在画布中显示步骤详情/输出
-  console.log('点击步骤:', step)
+  selectStep(step)
 }
 </script>
 
