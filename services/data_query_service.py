@@ -166,6 +166,17 @@ class DataQueryService:
                     retrieved_tools=retrieved_tools,
                     rag_trace=rag_trace,
                 )
+            # 低置信度：RAG 检索到了结果但相似度不够高，提示用户确认或重新描述
+            if status == "low_confidence":
+                return DataQueryResult(
+                    status="low_confidence",
+                    items=[],
+                    reasoning=rag_result.get("reasoning", "RAG 检索置信度不足"),
+                    clarification_question=rag_result.get("clarification_question"),
+                    cache_hit=rag_cache_hit,
+                    retrieved_tools=retrieved_tools,
+                    rag_trace=rag_trace,
+                )
             if status != "success":
                 return DataQueryResult(
                     status="error",

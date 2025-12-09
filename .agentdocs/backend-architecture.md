@@ -348,7 +348,7 @@ with DataQueryService(rag_in_action) as service:
 6. **RAG 检索透明化** - 返回 retrieved_tools 字段，前端可展示 AI 推理过程（2025-11 新增）
 
 **DataQueryResult 核心字段**:
-- `status` - 查询状态（success/error/not_found/needs_clarification）
+- `status` - 查询状态（success/error/not_found/needs_clarification/**low_confidence**）
 - `items` - 主数据集的数据项列表（兼容旧版）
 - `datasets` - 多数据集列表（QueryDataset 类型），每个数据集对应一张前端卡片
 - `retrieved_tools` - RAG 检索到的候选工具列表（包含 route_id、name、score 等）
@@ -356,7 +356,55 @@ with DataQueryService(rag_in_action) as service:
 - `reasoning` - 推理过程或错误信息
 
 **流程**:
-1. 检查RAG缓存 → 2. 调用RAGInAction → 3. 缓存RAG结果 → 4. 多路由规划 → 5. 并行拉取数据 → 6. 返回多数据集结果
+1. 检查RAG缓存 → 2. 调用RAGInAction → 3. **低置信度检测** → 4. 缓存RAG结果 → 5. 多路由规划 → 6. 并行拉取数据 → 7. 返回多数据集结果
+
+### RAG 低置信度检测（2025-12 新增）
+
+**背景问题**：
+当用户查询与 RAG 库中的内容不匹配时，系统之前会盲目使用第一个检索结果调用 LLM，导致：
+1. 浪费 LLM 调用成本和时间
+2. 可能返回完全不相关的结果
+3. 用户体验差（"明明查的是天气，为什么返回虎扑帖子？"）
+
+**解决方案**：
+在 RAG 检索后、LLM 解析前增加"低置信度检测"环节：
+
+```
+RAG 检索结果
+    │
+    ├─ 最高分 < 0.5（最低阈值）→ 返回 not_found
+    │
+    ├─ 最高分 ∈ [0.5, 0.7)    → 返回 low_confidence（不调用 LLM）
+    │                            提供候选工具列表供用户参考
+    │
+    └─ 最高分 >= 0.7（高置信度阈值）→ 正常继续 LLM 解析
+```
+
+**配置项**（`rag_system/config.py`）：
+```python
+RETRIEVAL_CONFIG = {
+    "top_k": 5,                        # 返回 top5 结果
+    "score_threshold": 0.5,            # 最低阈值（低于此值直接过滤）
+    "high_confidence_threshold": 0.7,  # 高置信度阈值（高于此值才调用 LLM）
+}
+```
+
+**`low_confidence` 状态响应**：
+```json
+{
+  "status": "low_confidence",
+  "reasoning": "RAG 检索到的最相关结果相似度仅为 55%，低于置信度阈值 70%。",
+  "clarification_question": "我没有找到与您的查询非常匹配的数据源。\n以下是可能相关的数据源：\n1. 【hupu】虎扑社区（匹配度: 55%）\n...",
+  "retrieved_tools": [...],
+  "top_score": 0.55
+}
+```
+
+**关键收益**：
+1. **节省成本** - 低置信度时不调用 LLM
+2. **快速反馈** - 用户立即知道"没找到匹配的数据源"
+3. **透明候选** - 提供可能相关的数据源列表供用户选择
+4. **可配置** - 阈值可根据实际效果调整
 
 ### ChatService - 统一对话服务
 **位置**: `services/chat_service.py`

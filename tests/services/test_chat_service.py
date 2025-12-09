@@ -9,6 +9,15 @@ if "rag_system" not in sys.modules:
     rag_system_stub.__path__ = []
     sys.modules["rag_system"] = rag_system_stub
 
+if "rag_system.config" not in sys.modules:
+    config_stub = types.ModuleType("rag_system.config")
+    config_stub.RETRIEVAL_CONFIG = {
+        "top_k": 5,
+        "score_threshold": 0.5,
+        "high_confidence_threshold": 0.7,
+    }
+    sys.modules["rag_system.config"] = config_stub
+
 if "rag_system.rag_pipeline" not in sys.modules:
     rag_pipeline_stub = types.ModuleType("rag_system.rag_pipeline")
 

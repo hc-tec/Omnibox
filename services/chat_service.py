@@ -772,6 +772,29 @@ class ChatService:
                 metadata=metadata,
             )
 
+        # 低置信度：RAG 检索到了结果但相似度不够高
+        if query_result.status == "low_confidence":
+            debug_payload = compose_debug_payload(
+                None,
+                llm_debug,
+                query_result.rag_trace or None,
+            )
+            metadata = {
+                "status": "low_confidence",
+                "reasoning": query_result.reasoning,
+                "intent_confidence": intent_confidence,
+                "retrieved_tools": formatted_tools,
+                "debug": debug_payload,
+            }
+            if langgraph_debug:
+                metadata["langgraph"] = langgraph_debug
+            return ChatResponse(
+                success=False,
+                intent_type="data_query",
+                message=query_result.clarification_question or "没有找到非常匹配的数据源，请尝试更具体地描述您的需求。",
+                metadata=metadata,
+            )
+
         debug_payload = compose_debug_payload(None, llm_debug, query_result.rag_trace or None)
         metadata = {
             "status": "error",

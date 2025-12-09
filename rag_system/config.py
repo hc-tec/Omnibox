@@ -64,10 +64,11 @@ CHROMA_CONFIG = {
     "distance_metric": "cosine",  # 浣欏鸡鐩镐技搴?
 }
 
-# 妫€绱㈤厤缃?
+# 检索配置
 RETRIEVAL_CONFIG = {
-    "top_k": 5,  # 杩斿洖top5缁撴灉
-    "score_threshold": 0.5,  # 鐩镐技搴﹂槇鍊硷紙0-1涔嬮棿锛?
+    "top_k": 5,  # 返回 top5 结果
+    "score_threshold": 0.5,  # 相似度最低阈值（低于此值的结果会被过滤）
+    "high_confidence_threshold": 0.7,  # 高置信度阈值（高于此值才进入 LLM 解析流程）
 }
 
 # 鏃ュ織閰嶇疆
