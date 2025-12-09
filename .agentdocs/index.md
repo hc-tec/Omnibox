@@ -121,6 +121,12 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251209-phase3-workspace-ui-design.md` - **工作流工作台 Phase 3: 工作台 UI**（🔄 进行中）
+  - **目标**：实现三栏式工作台界面，支持工作流可视化、数据产物管理、实时交互
+  - **核心组件**：WorkspaceLayout、WorkflowPanel、MainCanvas、ArtifactPanel、ChatInteractionArea
+  - **复用现有组件**：PanelBoard、DynamicBlockRenderer、UI 组件库
+- `new-architecture.md` - **工作流工作台架构总设计**（已确认方向）
+  - 5 个 Phase：基础设施 → 工作流引擎 → 工作台 UI → 模板系统 → 仪表盘
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
   - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
   - 核心工具：data_operator（动态算子，统一过滤/对比/聚合）、fetch_private_data（私有数据框架）
@@ -160,6 +166,16 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/done/251209-phase2-workflow-engine-design.md` - **工作流工作台 Phase 2: Workflow Engine** [✅ 完成 2025-12-09]
+  - **目标**：建立工作流引擎层，支持多步骤 DAG 执行、进度追踪、中断/恢复
+  - **核心内容**：Workflow/WorkflowRun 模型、WorkflowStore、WorkflowEngine、变量系统
+  - **复用现有组件**：DatabaseConnection、DataArtifact、ArtifactStore
+  - **测试覆盖**：54 个单元测试全部通过
+- `workflow/done/251209-phase1-data-artifact-design.md` - **工作流工作台 Phase 1: DataArtifact 基础设施** [✅ 完成 2025-12-09]
+  - **目标**：建立"数据产物"核心模型，作为工作流工作台的基础
+  - **核心内容**：DataArtifact 模型、ArtifactStore 存储层、ViewSpec 推断器、LangGraph 集成
+  - **复用现有组件**：ResearchDataStore、EnhancedDataReference、DatabaseConnection
+  - **测试覆盖**：24 个单元测试全部通过
 - `workflow/done/251128-single-agent-architecture-proposal.md` - **V6.0 单Agent架构重构** [✅ 完成 2025-11-28]
   - **核心改进**：融合 Planner + Reflector + Synthesizer 为单一 ResearchAgent
   - **保留 Router**：作为前置分流，减少简单查询的开销
