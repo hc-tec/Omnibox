@@ -153,7 +153,7 @@ class SyncLangGraphExecutor:
             "configurable": {"thread_id": normalized_thread_id},
         }
 
-        logger.info("开始执行 LangGraph 工作流: %s", user_query[:50])
+        logger.info("开始执行 LangGraph 工作流: query='%s' recursion_limit=%d", user_query[:50], recursion_limit)
 
         tool_context = getattr(self.runtime, "tool_context", None)
         extras = getattr(tool_context, "extras", None)
@@ -191,6 +191,15 @@ class SyncLangGraphExecutor:
         router_decision = state.get("router_decision")
         final_report = state.get("final_report")
         last_error = state.get("last_error")
+
+        # 调试日志：输出最终状态的关键字段
+        logger.info(
+            "LangGraph 执行完成: router=%s, data_stash=%d, final_report=%s, error=%s",
+            router_decision.route if router_decision else "None",
+            len(data_stash),
+            final_report[:100] if final_report else "None",
+            last_error
+        )
 
         # 构建执行步骤摘要
         execution_steps = []

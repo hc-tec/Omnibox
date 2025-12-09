@@ -54,6 +54,13 @@ export interface SessionChatResponse {
   final_report: string | null
   data: unknown | null
   data_blocks: Record<string, unknown>
+  // 面板预览列表（emit_panel_preview 推送的完整面板数据）
+  panel_previews: Array<{
+    layout?: unknown
+    blocks?: unknown[]
+    data_blocks?: Record<string, unknown>
+    [key: string]: unknown
+  }>
   session_summary: {
     data_stash_count: number
     chat_history_count: number

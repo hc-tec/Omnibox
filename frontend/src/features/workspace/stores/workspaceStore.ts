@@ -385,6 +385,101 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
   }
 
   /**
+   * 从 Session data_stash 添加产物
+   *
+   * 将后端返回的 DataReference 转换为前端 Artifact 格式
+   */
+  function addArtifactFromDataRef(dataRef: {
+    step_id: number
+    tool_name: string
+    data_id?: string | null
+    summary: string
+    status: string
+    error_message?: string | null
+  }) {
+    // 仅处理成功状态且有 data_id 的数据
+    if (dataRef.status !== 'success' || !dataRef.data_id) {
+      return
+    }
+
+    // 生成 artifact_id（使用 data_id）
+    const artifactId = dataRef.data_id
+
+    // 检查是否已存在
+    const existing = artifacts.value.findIndex(a => a.artifact_id === artifactId)
+    if (existing >= 0) {
+      return // 已存在则不重复添加
+    }
+
+    // 根据工具名推断 artifact_type
+    const toolToType: Record<string, Artifact['artifact_type']> = {
+      fetch_rss: 'dataset',
+      fetch_feed: 'dataset',
+      fetch_api: 'dataset',
+      data_query: 'dataset',
+      data_operator: 'dataset',
+      data_filter: 'dataset',
+      data_sort: 'dataset',
+      data_aggregate: 'dataset',
+      analyze: 'analysis',
+      compare: 'analysis',
+      summarize: 'insight',
+      generate_insight: 'insight',
+      generate_report: 'document',
+      emit_panel_preview: 'document',
+    }
+    const artifactType = toolToType[dataRef.tool_name] || 'dataset'
+
+    // 创建 Artifact
+    const artifact: Artifact = {
+      artifact_id: artifactId,
+      name: `${dataRef.tool_name} #${dataRef.step_id}`,
+      artifact_type: artifactType,
+      description: dataRef.summary,
+      source: {
+        step_id: dataRef.step_id,
+        tool_name: dataRef.tool_name,
+        created_at: new Date().toISOString(),
+      },
+      schema_info: {
+        fields: [],
+        total_count: 0,
+      },
+      suggested_views: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    artifacts.value.push(artifact)
+  }
+
+  /**
+   * 批量从 data_stash 添加产物
+   */
+  function addArtifactsFromDataStash(
+    dataStash: Array<{
+      step_id: number
+      tool_name: string
+      data_id?: string | null
+      summary: string
+      status: string
+      error_message?: string | null
+    }>
+  ) {
+    for (const ref of dataStash) {
+      addArtifactFromDataRef(ref)
+    }
+  }
+
+  /**
+   * 清空产物列表
+   */
+  function clearArtifacts() {
+    artifacts.value = []
+    selectedArtifactId.value = null
+  }
+
+  /**
    * 切换画布视图
    */
   function setCanvasView(view: CanvasView) {
@@ -516,6 +611,9 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     cancelRun,
     handleProgressEvent,
     loadArtifactById,
+    addArtifactFromDataRef,
+    addArtifactsFromDataStash,
+    clearArtifacts,
     setCanvasView,
     toggleLeftPanel,
     toggleRightPanel,

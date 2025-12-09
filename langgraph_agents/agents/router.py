@@ -36,6 +36,7 @@ def create_router_node(runtime: LangGraphRuntime):
             response = call_llm()
             data = parse_json_payload(response)
             decision = RouterDecision(route=data["route"], reasoning=data.get("reasoning", ""))
+            logger.info("RouterAgent 决策: route=%s, reasoning=%s", decision.route, decision.reasoning[:100] if decision.reasoning else "")
         except Exception as exc:
             # 仅捕获解析错误，LLM调用错误由重试机制处理
             logger.warning("RouterAgent 解析失败，回退至 complex_research: %s", exc)

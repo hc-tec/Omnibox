@@ -241,6 +241,7 @@ class ToolExecutionWrapper:
         "aggregate_data": 30.0,
         "compare_data": 45.0,  # 可能涉及 LLM 调用
         "extract_insights": 60.0,  # LLM 调用
+        "data_operator": 120.0,  # LLM 代码生成 + 执行，需要较长时间
         "ask_user_clarification": 5.0,  # 快速返回
         "discover_sources": 30.0,
     }
@@ -253,6 +254,7 @@ class ToolExecutionWrapper:
         "aggregate_data": 0,
         "compare_data": 1,
         "extract_insights": 2,
+        "data_operator": 2,  # LLM 调用可能偶发失败
         "ask_user_clarification": 0,
         "discover_sources": 2,
     }

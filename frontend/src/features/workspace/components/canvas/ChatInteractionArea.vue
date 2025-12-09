@@ -172,13 +172,23 @@ async function handleSend() {
     // 使用 Session API 执行查询
     const result = await sessionStore.chat(text, context)
 
-    // 更新 workspace store 的当前步骤输出
-    if (result.data) {
-      store.currentStepOutput = {
-        stepId: 0,
-        stepName: '指令结果',
-        artifactId: undefined,
-        data: result.data,
+    // 将 data_stash 转换为 artifacts 显示在产物面板
+    if (result.data && Array.isArray(result.data)) {
+      store.addArtifactsFromDataStash(result.data)
+    }
+
+    // panel_previews 是 emit_panel_preview 工具推送的面板数据
+    // Planner 会自己决定何时调用该工具
+    if (result.panel_previews && result.panel_previews.length > 0) {
+      // emit_panel_preview 可能被调用多次，每次都是一个面板
+      // 这里使用所有面板数据
+      for (const preview of result.panel_previews) {
+        store.currentStepOutput = {
+          stepId: 0,
+          stepName: '查询结果',
+          artifactId: undefined,
+          data: preview,
+        }
       }
     }
 

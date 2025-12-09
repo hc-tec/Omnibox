@@ -67,6 +67,12 @@ class SessionChatResponse(BaseModel):
         description="数据块字典"
     )
 
+    # 面板预览列表（emit_panel_preview 推送的完整面板数据）
+    panel_previews: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="面板预览列表（包含 layout、blocks、data_blocks 等）"
+    )
+
     # Session 状态摘要
     session_summary: Optional[Dict[str, Any]] = Field(
         None,

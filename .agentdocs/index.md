@@ -35,6 +35,13 @@
 ## 测试与验证
 - `../docs/langgraph-agent-test-plan.md` - LangGraph V5 Agent 全量测试方案（覆盖前端查询→LangGraph→工具层→面板渲染的测试用例、执行顺序与度量）
 
+### 工作台架构（必读）
+- `workspace-core-concepts.md` - **工作台核心概念与架构规范**（开发工作台功能时必读）✨NEW
+  - **核心概念区分**：数据产物（幕后）vs 面板（前台主角）vs 步骤信息 vs 思考信息
+  - **设计原则**：面板是第一公民、数据产物是幕后英雄、透明度是信任的基础
+  - **当前问题清单**：画布空、数据产物被当主角、步骤/思考信息缺失、Pin 放错对象
+  - **与研究视图关系**：复用设计模式，增加 Session 持续性
+
 ### 前端架构（必读）
 - rontend-design-guidelines.md - 前端界面/组件设计规范（布局、shadcn 使用、MediaCardGrid 等，2025-11 已补充 `layout_size` 语义＆ Electron 调试/打包说明）
 - `frontend-architecture.md` - 前端架构与技术约束，修改任何前端代码时必读
@@ -121,6 +128,10 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251210-workspace-panel-improvement.md` - **工作台面板展示改进**（待确认方案）
+  - **目标**：将工作台从"数据产物为主角"改为"面板为主角"
+  - **核心改进**：画布中央展示 Panel、右侧面板重构为 ContextPanel、Pin 功能迁移到面板
+  - **3 个 Phase**：面板存储与展示 → 右侧面板重构 → Pin 功能迁移
 - `new-architecture.md` - **工作流工作台架构总设计**（已确认方向，Phase 1-6 全部完成）
   - 6 个 Phase：基础设施 → 工作流引擎 → 工作台 UI → 模板系统 → 仪表盘 → Session Runtime
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅

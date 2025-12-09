@@ -8,7 +8,7 @@
 """
 
 import logging
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Dict
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.concurrency import run_in_threadpool
 
@@ -182,12 +182,20 @@ async def session_chat(
 ) -> SessionChatResponse:
     """在 Session 内执行查询"""
     try:
-        # 执行查询
+        # 收集面板预览数据
+        panel_previews: List[Dict[str, Any]] = []
+
+        def panel_callback(payload: Dict[str, Any]) -> None:
+            """收集 emit_panel_preview 推送的面板数据"""
+            panel_previews.append(payload)
+
+        # 执行查询（传入 panel_callback）
         result = await run_in_threadpool(
             runtime_manager.execute_in_session,
             session_id=session_id,
             query=request.query,
-            context=request.context
+            context=request.context,
+            panel_callback=panel_callback,
         )
 
         # 获取更新后的 Session 状态
@@ -204,13 +212,22 @@ async def session_chat(
                 "recorded_steps_count": len(state.recorded_steps),
             }
 
+        # 合并面板数据：如果有多个预览，使用最后一个的完整数据
+        merged_data_blocks: Dict[str, Any] = {}
+        for preview in panel_previews:
+            if "data_blocks" in preview:
+                merged_data_blocks.update(preview["data_blocks"])
+
         return SessionChatResponse(
             success=True,
             message="执行成功",
             final_report=result.final_report,
             # 将 data_stash 转换为可序列化的格式
             data=[ref.model_dump() if hasattr(ref, 'model_dump') else ref for ref in result.data_stash],
-            data_blocks={},  # LangGraphExecutionResult 不包含 data_blocks
+            # 返回收集到的面板数据
+            data_blocks=merged_data_blocks,
+            # 返回完整面板预览列表（包含 layout、blocks 等）
+            panel_previews=panel_previews,
             session_summary=session_summary,
             execution_steps=result.execution_steps,
         )
