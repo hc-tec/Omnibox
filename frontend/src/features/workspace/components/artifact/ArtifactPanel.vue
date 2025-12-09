@@ -59,6 +59,15 @@
       v-if="selectedArtifact"
       class="border-t border-border/20 p-3"
     >
+      <!-- 消息提示 -->
+      <div
+        v-if="message"
+        class="mb-2 rounded-lg px-3 py-2 text-xs"
+        :class="messageClass"
+      >
+        {{ message }}
+      </div>
+
       <div class="flex gap-2">
         <button
           class="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border/40 bg-background/50 px-3 py-2 text-xs font-medium text-foreground transition hover:bg-background"
@@ -69,9 +78,11 @@
         </button>
         <button
           class="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border/40 bg-background/50 px-3 py-2 text-xs font-medium text-foreground transition hover:bg-background"
+          :disabled="pinning"
           @click="handlePin"
         >
-          <Pin class="h-3.5 w-3.5" />
+          <Loader2 v-if="pinning" class="h-3.5 w-3.5 animate-spin" />
+          <Pin v-else class="h-3.5 w-3.5" />
           Pin
         </button>
       </div>
@@ -80,6 +91,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   PanelRightClose,
@@ -113,7 +125,27 @@ const {
 
 const { selectArtifact } = store
 
+// ========== State ==========
+const message = ref('')
+const messageType = ref<'success' | 'error'>('success')
+const pinning = ref(false)
+
+// ========== Computed ==========
+const messageClass = computed(() => ({
+  'bg-green-500/10 text-green-400 border border-green-500/20': messageType.value === 'success',
+  'bg-red-500/10 text-red-400 border border-red-500/20': messageType.value === 'error',
+}))
+
 // ========== Methods ==========
+
+function showMessage(text: string, type: 'success' | 'error' = 'success') {
+  message.value = text
+  messageType.value = type
+  // 3秒后自动清除消息
+  setTimeout(() => {
+    message.value = ''
+  }, 3000)
+}
 
 function handlePreview(artifact: Artifact) {
   // 在画布中预览
@@ -142,24 +174,29 @@ async function handleExport() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    showMessage('导出成功', 'success')
   } catch (e) {
     console.error('导出失败:', e)
+    showMessage('导出失败，请稍后重试', 'error')
   }
 }
 
 async function handlePin() {
   if (!selectedArtifact.value) return
 
+  pinning.value = true
   try {
     await dashboardStore.pinArtifact({
       artifact_id: selectedArtifact.value.artifact_id,
       name: selectedArtifact.value.name,
       refresh_interval: 'manual',
     })
-    alert('已 Pin 到仪表盘')
+    showMessage('已 Pin 到仪表盘', 'success')
   } catch (e) {
     console.error('Pin 失败:', e)
-    alert('Pin 失败，请稍后重试')
+    showMessage('Pin 失败，请稍后重试', 'error')
+  } finally {
+    pinning.value = false
   }
 }
 </script>

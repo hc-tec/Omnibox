@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 """通用数据算子：使用 LLM 生成并执行 Python transform 代码。"""
@@ -46,6 +47,7 @@ def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
 SAFE_BUILTINS = {
     # 类型构造器
     "dict": dict,
+    "re": re,
     "defaultdict": defaultdict,
     "list": list,
     "str": str,

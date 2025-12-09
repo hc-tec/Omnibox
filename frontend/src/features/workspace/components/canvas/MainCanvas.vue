@@ -58,17 +58,67 @@
         </div>
 
         <!-- 表格视图 -->
-        <div v-else-if="canvasView === 'table'" class="h-full">
-          <div class="rounded-lg border border-border/40 bg-background/50 p-4">
-            <p class="text-sm text-muted-foreground">表格视图 - 待实现</p>
+        <div v-else-if="canvasView === 'table'" class="h-full overflow-auto">
+          <div v-if="tableData.rows.length > 0" class="rounded-lg border border-border/40 bg-background/50">
+            <table class="w-full text-sm">
+              <thead class="border-b border-border/40 bg-muted/30">
+                <tr>
+                  <th
+                    v-for="col in tableData.columns"
+                    :key="col"
+                    class="px-4 py-2 text-left font-medium text-muted-foreground"
+                  >
+                    {{ col }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(row, idx) in tableData.rows"
+                  :key="idx"
+                  class="border-b border-border/20 hover:bg-muted/10"
+                >
+                  <td
+                    v-for="col in tableData.columns"
+                    :key="col"
+                    class="px-4 py-2 text-foreground"
+                  >
+                    {{ row[col] ?? '-' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+          <CanvasEmptyState v-else message="暂无表格数据" />
         </div>
 
         <!-- 文本视图 -->
-        <div v-else-if="canvasView === 'text'" class="h-full">
-          <div class="rounded-lg border border-border/40 bg-background/50 p-4">
-            <p class="text-sm text-muted-foreground">文本视图 - 待实现</p>
+        <div v-else-if="canvasView === 'text'" class="h-full overflow-auto">
+          <div v-if="textContent" class="rounded-lg border border-border/40 bg-background/50 p-4">
+            <div class="prose prose-sm prose-invert max-w-none">
+              <div v-if="selectedArtifact" class="mb-4">
+                <h3 class="text-lg font-semibold text-foreground">{{ selectedArtifact.name }}</h3>
+                <p class="text-muted-foreground">{{ selectedArtifact.description || '暂无描述' }}</p>
+              </div>
+              <div v-if="selectedArtifact?.schema_info" class="mb-4">
+                <h4 class="text-sm font-medium text-foreground mb-2">数据结构</h4>
+                <ul class="text-sm text-muted-foreground space-y-1">
+                  <li v-for="field in selectedArtifact.schema_info.fields" :key="field.name">
+                    <span class="font-mono text-primary">{{ field.name }}</span>
+                    <span class="text-muted-foreground/70"> ({{ field.type }})</span>
+                  </li>
+                </ul>
+                <p class="text-xs text-muted-foreground mt-2">
+                  共 {{ selectedArtifact.schema_info.total_count }} 条记录
+                </p>
+              </div>
+              <div v-if="selectedArtifact?.statistics" class="mb-4">
+                <h4 class="text-sm font-medium text-foreground mb-2">统计信息</h4>
+                <pre class="text-xs bg-muted/20 rounded p-2 overflow-auto">{{ JSON.stringify(selectedArtifact.statistics, null, 2) }}</pre>
+              </div>
+            </div>
           </div>
+          <CanvasEmptyState v-else message="暂无文本内容" />
         </div>
 
         <!-- 原始视图 -->
@@ -93,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw } from 'vue'
+import { computed, markRaw, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   BarChart3,
@@ -103,6 +153,7 @@ import {
   Database,
 } from 'lucide-vue-next'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { usePanelStore } from '@/store/panelStore'
 import PanelBoard from '@/features/panel/components/PanelBoard.vue'
 import ChatInteractionArea from './ChatInteractionArea.vue'
 import CanvasEmptyState from './CanvasEmptyState.vue'
@@ -111,6 +162,7 @@ import type { LayoutTree, UIBlock, DataBlock } from '@/shared/types/panel'
 
 // ========== Store ==========
 const store = useWorkspaceStore()
+const panelStore = usePanelStore()
 const {
   canvasView,
   currentStepOutput,
@@ -118,6 +170,11 @@ const {
 } = storeToRefs(store)
 
 const { setCanvasView } = store
+
+// ========== 初始化：workspace 使用紧凑模式 ==========
+onMounted(() => {
+  panelStore.state.sizePreset = 'compact'
+})
 
 // ========== 视图配置 ==========
 const views = [
@@ -149,8 +206,27 @@ const panelData = computed((): PanelDataResult => {
   if (stepOutput?.data) {
     const data = stepOutput.data as Record<string, unknown>
     if (data.layout && data.blocks) {
+      // 在 workspace 中强制使用全宽布局，避免卡片过窄
+      const originalLayout = data.layout as LayoutTree
+      const adaptedLayout: LayoutTree = {
+        ...originalLayout,
+        nodes: originalLayout.nodes.map(node => {
+          const existingGrid = node.props?.grid || { x: 0, y: 0, w: 12, h: 6 }
+          return {
+            ...node,
+            props: {
+              ...node.props,
+              grid: {
+                ...existingGrid,
+                w: 12, // 强制全宽
+                size: 'full',
+              },
+            },
+          }
+        }),
+      }
       return {
-        layout: data.layout as LayoutTree,
+        layout: adaptedLayout,
         blocks: data.blocks as UIBlock[],
         dataBlocks: (data.dataBlocks || data.data_blocks || {}) as Record<string, DataBlock>,
       }
@@ -222,6 +298,51 @@ const panelData = computed((): PanelDataResult => {
     blocks: [],
     dataBlocks: {},
   }
+})
+
+// 表格数据：从产物或步骤输出提取
+const tableData = computed(() => {
+  const artifact = selectedArtifact.value
+  const stepOutput = currentStepOutput.value
+
+  // 从步骤输出数据中提取表格
+  if (stepOutput?.data) {
+    const data = stepOutput.data as Record<string, unknown>
+    // 如果数据中有 records 数组
+    if (Array.isArray(data.records) && data.records.length > 0) {
+      const rows = data.records as Record<string, unknown>[]
+      const columns = Object.keys(rows[0])
+      return { columns, rows }
+    }
+    // 如果数据块中有数据
+    const dataBlocks = (data.dataBlocks || data.data_blocks) as Record<string, { records?: unknown[] }> | undefined
+    if (dataBlocks) {
+      const firstBlock = Object.values(dataBlocks)[0]
+      if (firstBlock?.records && Array.isArray(firstBlock.records) && firstBlock.records.length > 0) {
+        const rows = firstBlock.records as Record<string, unknown>[]
+        const columns = Object.keys(rows[0])
+        return { columns, rows }
+      }
+    }
+  }
+
+  // 从产物 schema 构建示例表格
+  if (artifact?.schema_info?.fields) {
+    const columns = artifact.schema_info.fields.map(f => f.name)
+    // 使用 sample_values 构建示例行
+    const sampleRow: Record<string, unknown> = {}
+    artifact.schema_info.fields.forEach(f => {
+      sampleRow[f.name] = f.sample_values?.[0] ?? '-'
+    })
+    return { columns, rows: [sampleRow] }
+  }
+
+  return { columns: [], rows: [] }
+})
+
+// 文本内容：判断是否有可显示的文本
+const textContent = computed(() => {
+  return selectedArtifact.value || currentStepOutput.value
 })
 
 // ========== Methods ==========

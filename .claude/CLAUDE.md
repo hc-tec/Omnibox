@@ -50,6 +50,38 @@ records.append({"raw": raw})  # 绝对禁止！
 - `DataReference.summary`: 是 LLM 推理的唯一数据来源
 - `DataStore.load()`: 仅在前端展示、工具处理时调用，禁止在 Agent 节点中调用
 
+### ⚠️ 前端必须复用现有架构（铁律）
+
+**历史教训**：多次在新模块中直接调用底层 API（如 `requestPanel`），而非复用已有的 composables（如 `usePanelActions`），导致：
+- 功能重复实现，产生两套不一致的逻辑
+- WebSocket 连接管理混乱
+- 研究模式/简单模式的判断逻辑不统一
+- 后续维护时需要同步修改多处
+
+**强制要求**：
+1. **前端 API 调用必须复用已有的 composables/services，禁止直接调用底层 API**
+2. **新增功能前必须先检查是否有可复用的现有实现**
+3. **如需扩展功能，应修改现有 composable 而非新建**
+
+**核心复用模块**：
+```typescript
+// ✅ 正确：使用现有 composables
+import { usePanelActions } from '@/features/panel/usePanelActions'
+import { useResearchWebSocketManager } from '@/composables/useResearchWebSocketManager'
+
+const { submit, isBusy, state } = usePanelActions()
+await submit({ query, mode: 'simple' })
+
+// ❌ 错误：直接调用底层 API
+import { requestPanel } from '@/services/panelApi'
+const response = await requestPanel({ query, mode: 'simple' })  // 绝对禁止！
+```
+
+**架构层级**：
+- `usePanelActions` / `useResearchWebSocketManager`: 业务层 composables，封装完整的业务逻辑
+- `panelStore` / `researchStore`: 状态管理层
+- `panelApi.ts` / WebSocket 类: 底层通信层，仅供上层 composables 调用
+
 ### 质量要求
 - 只改动必要的部分，优先复用现有成熟代码，避免重复造轮子。
 - 架构设计时让边界情况自然融入常规逻辑，而不是单独打补丁。

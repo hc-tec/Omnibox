@@ -219,7 +219,13 @@ class SyncLangGraphExecutor:
         if human_in_loop:
             needs_clarification = True
             if not clarification_question:
-                clarification_question = human_in_loop.get("question", "需要更多信息")
+                # human_in_loop 可能是 dict 或 string
+                if isinstance(human_in_loop, dict):
+                    clarification_question = human_in_loop.get("question", "需要更多信息")
+                elif isinstance(human_in_loop, str):
+                    clarification_question = human_in_loop
+                else:
+                    clarification_question = "需要更多信息"
 
         # 判断成功与否：需要澄清不算成功
         has_successful_data = any(ref.status == "success" for ref in data_stash)

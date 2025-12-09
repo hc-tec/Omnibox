@@ -66,6 +66,9 @@
         <ArtifactPanel @collapse="toggleRightPanel" />
       </div>
     </aside>
+
+    <!-- 创建工作流对话框 -->
+    <CreateWorkflowDialog />
   </div>
 </template>
 
@@ -79,6 +82,7 @@ import {
 } from 'lucide-vue-next'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import WorkflowPanel from './components/workflow/WorkflowPanel.vue'
+import CreateWorkflowDialog from './components/workflow/CreateWorkflowDialog.vue'
 import MainCanvas from './components/canvas/MainCanvas.vue'
 import ArtifactPanel from './components/artifact/ArtifactPanel.vue'
 

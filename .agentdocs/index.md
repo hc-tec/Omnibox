@@ -121,8 +121,8 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `new-architecture.md` - **工作流工作台架构总设计**（已确认方向，Phase 1-5 全部完成）
-  - 5 个 Phase：基础设施 → 工作流引擎 → 工作台 UI → 模板系统 → 仪表盘
+- `new-architecture.md` - **工作流工作台架构总设计**（已确认方向，Phase 1-6 全部完成）
+  - 6 个 Phase：基础设施 → 工作流引擎 → 工作台 UI → 模板系统 → 仪表盘 → Session Runtime
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
   - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
   - 核心工具：data_operator（动态算子，统一过滤/对比/聚合）、fetch_private_data（私有数据框架）
@@ -162,6 +162,12 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/done/251209-session-runtime-unified-architecture.md` - **工作流工作台 Phase 6: Session Runtime** [✅ 完成 2025-12-09]
+  - **目标**：实现 Session Runtime 统一架构，解决每次请求创建新 LangGraph workflow 导致上下文丢失的问题
+  - **核心功能**：SessionRuntimeManager、跨请求上下文保持（data_stash/chat_history/working_memory）、RecordedStep 记录、保存为模板
+  - **后端实现**：services/session 模块（models.py/store.py/runtime_manager.py/workflow_extractor.py）+ session_controller.py API
+  - **前端实现**：sessionStore + sessionApi + ChatInteractionArea 集成
+  - **关键修复**：chat_history 格式转换（Dict→str）、LangGraphExecutionResult.data_stash 适配
 - `workflow/done/251209-phase5-dashboard-design.md` - **工作流工作台 Phase 5: 仪表盘** [✅ 完成 2025-12-09]
   - **目标**：实现数据监控仪表盘，支持卡片 Pin、定时刷新、条件触发、通知推送
   - **核心功能**：DashboardCard、SchedulerService（Python threading）、TriggerService、NotificationService

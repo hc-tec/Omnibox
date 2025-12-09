@@ -20,6 +20,11 @@ from api.controllers.subscription_controller import router as subscription_route
 from api.controllers.workflow_controller import router as workflow_router
 from api.controllers.template_controller import router as template_router
 from api.controllers.dashboard_controller import router as dashboard_router
+from api.controllers.session_controller import (
+    router as session_router,
+    initialize_session_services,
+    shutdown_session_services,
+)
 from api.middleware.exception_handlers import (
     exception_handler_middleware,
     http_exception_handler,
@@ -84,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(workflow_router)  # 工作流管理接口
     app.include_router(template_router)  # 模板市场接口
     app.include_router(dashboard_router)  # 仪表盘接口
+    app.include_router(session_router)  # Session 管理接口
 
     # ========== 启动和关闭事件 ==========
     @app.on_event("startup")
@@ -92,6 +98,20 @@ def create_app() -> FastAPI:
         logger.info("应用启动中...")
         try:
             initialize_services()
+            # 初始化 Session 服务（需要 LLM 和 DataQueryService）
+            try:
+                from api.controllers.chat_controller import _chat_service
+                if _chat_service and hasattr(_chat_service, 'data_query_service'):
+                    # ChatService 存储 LLM 为 _llm_client（私有属性）
+                    llm_client = getattr(_chat_service, '_llm_client', None)
+                    data_query_service = getattr(_chat_service, 'data_query_service', None)
+                    initialize_session_services(
+                        llm_client=llm_client,
+                        data_query_service=data_query_service
+                    )
+                    logger.info("✓ Session 服务初始化完成")
+            except Exception as session_exc:
+                logger.warning(f"Session 服务初始化失败（非致命）: {session_exc}")
             logger.info("✓ 应用启动完成")
         except Exception as e:
             logger.error(f"应用启动失败: {e}", exc_info=True)
@@ -102,6 +122,7 @@ def create_app() -> FastAPI:
         """应用关闭事件"""
         logger.info("应用关闭中...")
         try:
+            shutdown_session_services()
             shutdown_services()
             logger.info("✓ 应用已关闭")
         except Exception as e:

@@ -90,6 +90,7 @@ class DatabaseConnection:
         from services.workflow.models import Workflow, WorkflowRun  # noqa: F401
         from services.data_artifact.models import DataArtifact  # noqa: F401
         from services.dashboard.models import DashboardCard, Notification  # noqa: F401
+        from services.session.models import Session  # noqa: F401
 
         logger.info("创建数据库表...")
         SQLModel.metadata.create_all(self._engine)

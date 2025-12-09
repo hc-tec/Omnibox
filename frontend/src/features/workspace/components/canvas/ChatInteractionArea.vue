@@ -1,5 +1,22 @@
 <template>
   <div class="chat-interaction px-4 py-3">
+    <!-- Session 状态指示器 -->
+    <div
+      v-if="sessionStore.hasSession"
+      class="mb-2 flex items-center gap-2 text-[10px] text-muted-foreground"
+    >
+      <span class="flex items-center gap-1">
+        <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+        Session 活跃
+      </span>
+      <span>|</span>
+      <span>数据: {{ sessionStore.dataStashCount }}</span>
+      <span>|</span>
+      <span>对话: {{ sessionStore.chatHistoryCount }}</span>
+      <span>|</span>
+      <span>步骤: {{ sessionStore.stepsCount }}</span>
+    </div>
+
     <!-- 输入区域 -->
     <div class="flex items-end gap-2">
       <div class="relative flex-1">
@@ -44,12 +61,31 @@
         <component :is="action.icon" class="h-3 w-3" />
         {{ action.label }}
       </button>
+
+      <!-- 保存为模板按钮 -->
+      <button
+        v-if="sessionStore.canSaveAsTemplate"
+        class="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] text-primary transition hover:bg-primary/10"
+        @click="showSaveDialog = true"
+      >
+        <Save class="h-3 w-3" />
+        保存为模板
+      </button>
     </div>
+
+    <!-- 保存为模板对话框 -->
+    <SaveAsTemplateDialog
+      v-model:open="showSaveDialog"
+      :session-id="sessionStore.sessionId"
+      :steps-count="sessionStore.stepsCount"
+      @saved="handleTemplateSaved"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, markRaw, nextTick } from 'vue'
+import { ref, computed, markRaw, nextTick, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import {
   Send,
   Loader2,
@@ -57,12 +93,27 @@ import {
   BarChart3,
   Download,
   Sparkles,
+  Save,
 } from 'lucide-vue-next'
+import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { useSessionStore } from '../../stores/sessionStore'
+import SaveAsTemplateDialog from './SaveAsTemplateDialog.vue'
+
+// ========== Store ==========
+const store = useWorkspaceStore()
+const sessionStore = useSessionStore()
+const { selectedArtifact, currentStepOutput } = storeToRefs(store)
+
+// ========== Emits ==========
+const emit = defineEmits<{
+  result: [data: unknown, message: string]
+  error: [message: string]
+}>()
 
 // ========== State ==========
 const inputText = ref('')
-const loading = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const showSaveDialog = ref(false)
 
 // ========== 快捷操作配置 ==========
 const quickActions = [
@@ -74,6 +125,8 @@ const quickActions = [
 
 // ========== Computed ==========
 
+const loading = computed(() => sessionStore.executing)
+
 const canSend = computed(() => {
   return inputText.value.trim().length > 0 && !loading.value
 })
@@ -83,36 +136,64 @@ const sendButtonClass = computed(() => ({
   'bg-muted text-muted-foreground cursor-not-allowed': !canSend.value,
 }))
 
+// ========== Lifecycle ==========
+
+onMounted(async () => {
+  // 确保有活跃的 Session
+  try {
+    await sessionStore.ensureSession()
+  } catch (e) {
+    console.error('创建 Session 失败:', e)
+  }
+})
+
+onUnmounted(() => {
+  // 组件卸载时不关闭 Session，让其保持活跃
+  // 如果需要关闭，可以调用 sessionStore.closeSession()
+})
+
 // ========== Methods ==========
 
 async function handleSend() {
   if (!canSend.value) return
 
   const text = inputText.value.trim()
-  loading.value = true
 
   try {
-    // 注：此处需要后端实现 chat API 或集成现有 chat 服务
-    // 目前仅模拟处理，实际应调用：
-    // const response = await chatApi.sendWorkspaceCommand(text, { context: currentContext })
-    console.log('发送指令:', text)
+    // 确保有活跃的 Session
+    await sessionStore.ensureSession()
 
-    // 模拟处理延迟
-    await new Promise(resolve => setTimeout(resolve, 800))
+    // 构建上下文
+    const context: Record<string, unknown> = {}
+    if (selectedArtifact.value) {
+      context.artifact_refs = [selectedArtifact.value.artifact_id]
+    }
+
+    // 使用 Session API 执行查询
+    const result = await sessionStore.chat(text, context)
+
+    // 更新 workspace store 的当前步骤输出
+    if (result.data) {
+      store.currentStepOutput = {
+        stepId: 0,
+        stepName: '指令结果',
+        artifactId: undefined,
+        data: result.data,
+      }
+    }
+
+    emit('result', result.data, result.final_report || result.message)
 
     // 清空输入
     inputText.value = ''
     resetTextareaHeight()
   } catch (e) {
     console.error('指令处理失败:', e)
-  } finally {
-    loading.value = false
+    emit('error', e instanceof Error ? e.message : '未知错误')
   }
 }
 
 function handleQuickAction(action: { label: string; action: string }) {
-  console.log('快捷操作:', action.action)
-
   // 根据操作类型填充输入框
   const prompts: Record<string, string> = {
     summary: '请为当前数据生成摘要',
@@ -125,6 +206,13 @@ function handleQuickAction(action: { label: string; action: string }) {
   nextTick(() => {
     textareaRef.value?.focus()
   })
+}
+
+function handleTemplateSaved(result: {
+  workflowId: string
+  workflowName: string
+}) {
+  emit('result', null, `已保存为模板：${result.workflowName}`)
 }
 
 function autoResize() {
