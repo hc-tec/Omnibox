@@ -13,6 +13,7 @@ import type {
   Trigger,
   PinArtifactRequest,
   PinWorkflowRequest,
+  PinPanelRequest,
   UpdateCardRequest,
   Position,
 } from '../types/dashboard'
@@ -124,6 +125,26 @@ export const useDashboardStore = defineStore('dashboard', () => {
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Pin 失败'
       console.error('Pin 工作流失败:', e)
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Pin 面板到仪表盘
+   */
+  async function pinPanel(request: PinPanelRequest): Promise<DashboardCard | null> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const card = await dashboardApi.pinPanel(request)
+      cards.value.push(card)
+      return card
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Pin 面板失败'
+      console.error('Pin 面板失败:', e)
       return null
     } finally {
       loading.value = false
@@ -423,6 +444,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     loadCards,
     pinArtifact,
     pinWorkflow,
+    pinPanel,
     updateCard,
     deleteCard,
     refreshCard,

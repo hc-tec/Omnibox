@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-interaction px-4 py-3">
+  <div class="px-4 py-3">
     <!-- Session 状态指示器 -->
     <div
       v-if="sessionStore.hasSession"
@@ -24,7 +24,7 @@
           ref="textareaRef"
           v-model="inputText"
           placeholder="输入指令，如：把数据做成对比表格..."
-          class="w-full resize-none rounded-xl border border-border/40 bg-background/50 px-4 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20"
+          class="flex min-h-[40px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 pr-10 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           rows="1"
           @keydown.enter.exact.prevent="handleSend"
           @input="autoResize"
@@ -39,38 +39,42 @@
       </div>
 
       <!-- 发送按钮 -->
-      <button
-        class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl transition"
-        :class="sendButtonClass"
+      <Button
+        size="icon"
+        class="h-10 w-10 flex-shrink-0"
         :disabled="!canSend"
         @click="handleSend"
       >
         <Loader2 v-if="loading" class="h-4 w-4 animate-spin" />
         <Send v-else class="h-4 w-4" />
-      </button>
+      </Button>
     </div>
 
     <!-- 快捷操作 -->
     <div class="mt-2 flex flex-wrap items-center gap-2">
-      <button
+      <Button
         v-for="action in quickActions"
         :key="action.label"
-        class="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-background/50 px-2.5 py-1 text-[11px] text-muted-foreground transition hover:border-border/60 hover:bg-background hover:text-foreground"
+        variant="outline"
+        size="sm"
+        class="h-7 gap-1 text-[11px]"
         @click="handleQuickAction(action)"
       >
         <component :is="action.icon" class="h-3 w-3" />
         {{ action.label }}
-      </button>
+      </Button>
 
       <!-- 保存为模板按钮 -->
-      <button
+      <Button
         v-if="sessionStore.canSaveAsTemplate"
-        class="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] text-primary transition hover:bg-primary/10"
+        variant="outline"
+        size="sm"
+        class="h-7 gap-1 border-primary/40 bg-primary/5 text-[11px] text-primary hover:bg-primary/10"
         @click="showSaveDialog = true"
       >
         <Save class="h-3 w-3" />
         保存为模板
-      </button>
+      </Button>
     </div>
 
     <!-- 保存为模板对话框 -->
@@ -95,8 +99,10 @@ import {
   Sparkles,
   Save,
 } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useSessionWebSocket } from '../../composables/useSessionWebSocket'
 import SaveAsTemplateDialog from './SaveAsTemplateDialog.vue'
 
 // ========== Store ==========
@@ -114,6 +120,24 @@ const emit = defineEmits<{
 const inputText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const showSaveDialog = ref(false)
+const wsExecuting = ref(false)
+
+// ========== WebSocket ==========
+let sessionWs: ReturnType<typeof useSessionWebSocket> | null = null
+
+function createWebSocket(sessionId: string) {
+  return useSessionWebSocket({
+    sessionId,
+    onComplete: (success, message) => {
+      wsExecuting.value = false
+      emit('result', null, message)
+    },
+    onError: (errorMsg) => {
+      wsExecuting.value = false
+      emit('error', errorMsg)
+    },
+  })
+}
 
 // ========== 快捷操作配置 ==========
 const quickActions = [
@@ -125,16 +149,11 @@ const quickActions = [
 
 // ========== Computed ==========
 
-const loading = computed(() => sessionStore.executing)
+const loading = computed(() => sessionStore.executing || wsExecuting.value)
 
 const canSend = computed(() => {
   return inputText.value.trim().length > 0 && !loading.value
 })
-
-const sendButtonClass = computed(() => ({
-  'bg-primary text-primary-foreground hover:bg-primary/90': canSend.value,
-  'bg-muted text-muted-foreground cursor-not-allowed': !canSend.value,
-}))
 
 // ========== Lifecycle ==========
 
@@ -148,8 +167,12 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // 断开 WebSocket 连接
+  if (sessionWs) {
+    sessionWs.disconnect()
+    sessionWs = null
+  }
   // 组件卸载时不关闭 Session，让其保持活跃
-  // 如果需要关闭，可以调用 sessionStore.closeSession()
 })
 
 // ========== Methods ==========
@@ -159,9 +182,21 @@ async function handleSend() {
 
   const text = inputText.value.trim()
 
+  // 1. 添加用户查询到时间线
+  store.addUserQueryEntry(text)
+
+  // 清空输入（提前清空，让用户感觉更流畅）
+  inputText.value = ''
+  resetTextareaHeight()
+
   try {
     // 确保有活跃的 Session
     await sessionStore.ensureSession()
+
+    const sessionId = sessionStore.sessionId
+    if (!sessionId) {
+      throw new Error('Session 未创建')
+    }
 
     // 构建上下文
     const context: Record<string, unknown> = {}
@@ -169,37 +204,31 @@ async function handleSend() {
       context.artifact_refs = [selectedArtifact.value.artifact_id]
     }
 
-    // 使用 Session API 执行查询
-    const result = await sessionStore.chat(text, context)
+    // 2. 添加思考条目（表示开始处理）
+    store.addThinkingEntry('分析查询并规划执行步骤...')
 
-    // 将 data_stash 转换为 artifacts 显示在产物面板
-    if (result.data && Array.isArray(result.data)) {
-      store.addArtifactsFromDataStash(result.data)
-    }
+    // 使用 WebSocket 流式执行
+    wsExecuting.value = true
 
-    // panel_previews 是 emit_panel_preview 工具推送的面板数据
-    // Planner 会自己决定何时调用该工具
-    if (result.panel_previews && result.panel_previews.length > 0) {
-      // emit_panel_preview 可能被调用多次，每次都是一个面板
-      // 这里使用所有面板数据
-      for (const preview of result.panel_previews) {
-        store.currentStepOutput = {
-          stepId: 0,
-          stepName: '查询结果',
-          artifactId: undefined,
-          data: preview,
-        }
-      }
-    }
+    // 创建新的 WebSocket 连接
+    sessionWs = createWebSocket(sessionId)
 
-    emit('result', result.data, result.final_report || result.message)
+    // 连接并发送查询
+    await sessionWs.connect()
+    sessionWs.sendQuery(text, context)
 
-    // 清空输入
-    inputText.value = ''
-    resetTextareaHeight()
+    // WebSocket 的消息处理在 useSessionWebSocket 中完成
+    // 执行完成时会通过 onComplete/onError 回调更新 wsExecuting
   } catch (e) {
     console.error('指令处理失败:', e)
-    emit('error', e instanceof Error ? e.message : '未知错误')
+    const errorMsg = e instanceof Error ? e.message : '未知错误'
+
+    wsExecuting.value = false
+
+    // 添加错误条目到时间线
+    store.addErrorEntry(errorMsg)
+
+    emit('error', errorMsg)
   }
 }
 

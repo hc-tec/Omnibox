@@ -127,6 +127,44 @@ class DashboardService:
 
         return self._store.create_card(card)
 
+    def pin_panel(
+        self,
+        title: str,
+        layout: Dict[str, Any],
+        blocks: List[Dict[str, Any]],
+        data_blocks: Dict[str, Any],
+        description: str = "",
+        position: Optional[Dict[str, int]] = None
+    ) -> DashboardCard:
+        """
+        将面板 Pin 到仪表盘
+
+        面板数据直接存储，无需后端数据源刷新。
+        适用于 emit_panel_preview 产出的可视化面板。
+
+        Args:
+            title: 面板标题
+            layout: 布局信息（LayoutTree）
+            blocks: UI 块列表
+            data_blocks: 数据块映射
+            description: 卡片描述
+            position: 布局位置 {x, y, width, height}
+
+        Returns:
+            创建的卡片
+        """
+        card = DashboardCard.create_panel_card(
+            name=title,
+            layout=layout,
+            blocks=blocks,
+            data_blocks=data_blocks,
+            description=description,
+            refresh_interval=RefreshInterval.MANUAL.value,
+            position=position
+        )
+
+        return self._store.create_card(card)
+
     # ============ 卡片管理 ============
 
     def get_card(self, card_id: str) -> Optional[DashboardCard]:

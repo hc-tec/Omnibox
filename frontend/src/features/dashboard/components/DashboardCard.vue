@@ -2,16 +2,19 @@
 /**
  * 仪表盘卡片组件
  */
-import { ref, computed } from 'vue'
-import { RefreshCw, MoreVertical, Settings, Trash2, Bell, X } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { RefreshCw, MoreVertical, Settings, Trash2, Bell } from 'lucide-vue-next'
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { DashboardCard as DashboardCardType, CardData } from '../types/dashboard'
 import { REFRESH_INTERVAL_LABELS } from '../types/dashboard'
-
-// 下拉菜单状态
-const menuOpen = ref(false)
 
 interface Props {
   card: DashboardCardType
@@ -105,35 +108,23 @@ const cardTypeLabel = computed(() => {
           </Button>
 
           <!-- 更多操作 -->
-          <div class="relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-7 w-7"
-              @click="menuOpen = !menuOpen"
-            >
-              <MoreVertical class="w-3.5 h-3.5" />
-            </Button>
-            <div
-              v-if="menuOpen"
-              class="absolute right-0 top-8 z-50 min-w-[120px] rounded-md border bg-popover p-1 shadow-md"
-            >
-              <button
-                class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-                @click="emit('settings'); menuOpen = false"
-              >
-                <Settings class="w-4 h-4" />
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" size="icon" class="h-7 w-7">
+                <MoreVertical class="w-3.5 h-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem @click="emit('settings')">
+                <Settings class="w-4 h-4 mr-2" />
                 设置
-              </button>
-              <button
-                class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-accent"
-                @click="emit('delete'); menuOpen = false"
-              >
-                <Trash2 class="w-4 h-4" />
+              </DropdownMenuItem>
+              <DropdownMenuItem class="text-destructive focus:text-destructive" @click="emit('delete')">
+                <Trash2 class="w-4 h-4 mr-2" />
                 删除
-              </button>
-            </div>
-          </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </CardHeader>

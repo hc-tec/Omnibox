@@ -36,9 +36,9 @@
       <MainCanvas />
     </main>
 
-    <!-- 右侧：数据产物面板 -->
+    <!-- 右侧：执行上下文面板 -->
     <aside
-      class="artifact-panel-container flex-shrink-0 border-l border-border/20 bg-background/50 transition-all duration-200"
+      class="context-panel-container flex-shrink-0 border-l border-border/20 bg-background/50 transition-all duration-200"
       :style="{ width: rightPanelCollapsed ? '48px' : `${rightPanelWidth}px` }"
     >
       <!-- 折叠状态：只显示图标按钮 -->
@@ -48,22 +48,22 @@
       >
         <button
           class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-background hover:text-foreground"
-          title="展开数据面板"
+          title="展开上下文面板"
           @click="toggleRightPanel"
         >
           <PanelRightOpen class="h-4 w-4" />
         </button>
         <button
           class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-background hover:text-foreground"
-          title="数据产物"
+          title="执行上下文"
         >
-          <Database class="h-4 w-4" />
+          <Activity class="h-4 w-4" />
         </button>
       </div>
 
       <!-- 展开状态：完整面板 -->
       <div v-else class="flex h-full flex-col">
-        <ArtifactPanel @collapse="toggleRightPanel" />
+        <ContextPanel @collapse="toggleRightPanel" />
       </div>
     </aside>
 
@@ -78,13 +78,13 @@ import {
   PanelLeftOpen,
   PanelRightOpen,
   Workflow,
-  Database,
+  Activity,
 } from 'lucide-vue-next'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import WorkflowPanel from './components/workflow/WorkflowPanel.vue'
 import CreateWorkflowDialog from './components/workflow/CreateWorkflowDialog.vue'
 import MainCanvas from './components/canvas/MainCanvas.vue'
-import ArtifactPanel from './components/artifact/ArtifactPanel.vue'
+import ContextPanel from './components/context/ContextPanel.vue'
 
 // ========== Store ==========
 const store = useWorkspaceStore()
@@ -109,7 +109,7 @@ const { toggleLeftPanel, toggleRightPanel } = store
 
 /* 面板可调整大小的手柄（未来可添加） */
 .workflow-panel-container,
-.artifact-panel-container {
+.context-panel-container {
   position: relative;
 }
 </style>

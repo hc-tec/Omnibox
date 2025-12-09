@@ -152,10 +152,12 @@ async function handleLayoutChange(layouts: Array<{ card_id: string; x: number; y
     <!-- 错误提示 -->
     <div
       v-if="store.error"
-      class="fixed bottom-4 right-4 bg-destructive text-destructive-foreground px-4 py-2 rounded-lg shadow-lg"
+      class="fixed bottom-4 right-4 bg-destructive text-destructive-foreground px-4 py-2 rounded-lg shadow-lg flex items-center gap-2"
     >
-      {{ store.error }}
-      <button class="ml-2 underline" @click="store.clearError">关闭</button>
+      <span>{{ store.error }}</span>
+      <Button variant="ghost" size="sm" class="h-6 px-2 text-destructive-foreground hover:bg-destructive-foreground/20" @click="store.clearError">
+        关闭
+      </Button>
     </div>
 
     <!-- 对话框 -->

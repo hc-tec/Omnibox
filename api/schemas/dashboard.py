@@ -52,6 +52,21 @@ class PinWorkflowRequest(BaseModel):
     position: Optional[PositionSchema] = Field(default=None, description="布局位置")
 
 
+class PinPanelRequest(BaseModel):
+    """
+    Pin 面板请求
+
+    面板数据来自 emit_panel_preview，包含完整的布局和数据块信息。
+    这类卡片不需要后端刷新，数据直接存储在卡片中。
+    """
+    title: str = Field(..., description="面板标题")
+    layout: Dict[str, Any] = Field(..., description="布局信息（LayoutTree）")
+    blocks: List[Dict[str, Any]] = Field(..., description="UI 块列表")
+    data_blocks: Dict[str, Any] = Field(..., description="数据块映射")
+    description: str = Field(default="", description="卡片描述")
+    position: Optional[PositionSchema] = Field(default=None, description="布局位置")
+
+
 class UpdateCardRequest(BaseModel):
     """更新卡片请求"""
     name: Optional[str] = Field(default=None, description="卡片名称")

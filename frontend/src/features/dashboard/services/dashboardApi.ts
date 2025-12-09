@@ -10,6 +10,7 @@ import type {
   CardListResponse,
   PinArtifactRequest,
   PinWorkflowRequest,
+  PinPanelRequest,
   UpdateCardRequest,
   UpdateLayoutRequest,
   UpdateTriggersRequest,
@@ -92,6 +93,25 @@ export async function pinWorkflow(
 
   if (!response.ok) {
     throw new Error(`Pin 工作流失败: ${response.statusText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Pin 面板到仪表盘
+ */
+export async function pinPanel(
+  request: PinPanelRequest
+): Promise<DashboardCard> {
+  const response = await fetch(`${DASHBOARD_URL}/pin/panel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Pin 面板失败: ${response.statusText}`)
   }
 
   return response.json()

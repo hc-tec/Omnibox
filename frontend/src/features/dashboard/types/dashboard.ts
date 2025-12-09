@@ -140,6 +140,15 @@ export interface PinWorkflowRequest {
   position?: Position
 }
 
+export interface PinPanelRequest {
+  title: string
+  layout: Record<string, unknown>
+  blocks: Array<Record<string, unknown>>
+  data_blocks: Record<string, unknown>
+  description?: string
+  position?: Position
+}
+
 export interface UpdateCardRequest {
   name?: string
   description?: string

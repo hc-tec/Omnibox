@@ -177,3 +177,94 @@ export interface ArtifactListResponse {
   artifacts: Artifact[]
   total: number
 }
+
+/**
+ * 面板预览（来自 emit_panel_preview 工具）
+ *
+ * 这是用户真正看到的可视化内容，区别于数据产物（幕后中间数据）
+ */
+export interface PanelPreview {
+  /** 唯一标识 */
+  id: string
+  /** 面板标题 */
+  title: string
+  /** 布局信息 */
+  layout: unknown
+  /** UI 块列表 */
+  blocks: unknown[]
+  /** 数据块字典 */
+  dataBlocks: Record<string, unknown>
+  /** 创建时间 */
+  createdAt: string
+  /** 触发查询 */
+  sourceQuery?: string
+  /** 关联的时间线条目 ID（用于导航） */
+  timelineEntryId?: string
+}
+
+// ========== Manus 风格流式时间线类型 ==========
+
+/**
+ * 时间线条目类型
+ */
+export type TimelineEntryType = 'user_query' | 'thinking' | 'tool_call' | 'panel' | 'error' | 'message'
+
+/**
+ * 工具调用状态
+ */
+export type ToolCallStatus = 'pending' | 'running' | 'success' | 'error'
+
+/**
+ * 时间线条目 - 流式展示执行过程的基本单元
+ *
+ * 每个条目代表执行流程中的一个事件：用户查询、思考、工具调用、面板产出等
+ */
+export interface TimelineEntry {
+  /** 唯一标识 */
+  id: string
+  /** 条目类型 */
+  type: TimelineEntryType
+  /** 时间戳 */
+  timestamp: string
+
+  /** 用户查询信息 */
+  userQuery?: {
+    query: string
+  }
+
+  /** 思考信息（Agent 推理过程） */
+  thinking?: {
+    content: string
+  }
+
+  /** 工具调用信息 */
+  toolCall?: {
+    tool_name: string
+    tool_id: string
+    parameters?: Record<string, unknown>
+    status: ToolCallStatus
+    result_summary?: string
+    data_id?: string
+    error?: string
+  }
+
+  /** 面板信息（可视化结果） */
+  panel?: {
+    title: string
+    layout: unknown
+    blocks: unknown[]
+    dataBlocks: Record<string, unknown>
+  }
+
+  /** 错误信息 */
+  error?: {
+    message: string
+    details?: string
+  }
+
+  /** 普通消息（如系统提示） */
+  message?: {
+    content: string
+    level: 'info' | 'warning' | 'success'
+  }
+}

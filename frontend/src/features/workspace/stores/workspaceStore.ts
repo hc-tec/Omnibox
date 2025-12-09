@@ -16,6 +16,10 @@ import type {
   StepOutput,
   ProgressEvent,
   RunStatus,
+  PanelPreview,
+  TimelineEntry,
+  TimelineEntryType,
+  ToolCallStatus,
 } from '../types/workspace'
 import * as api from '../services/workspaceApi'
 
@@ -36,6 +40,15 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
   // ========== 画布状态 ==========
   const canvasView = ref<CanvasView>('chart')
   const currentStepOutput = ref<StepOutput | null>(null)
+
+  // ========== 面板预览（emit_panel_preview 产出的可视化内容）==========
+  const panelPreviews = ref<PanelPreview[]>([])
+  const selectedPanelId = ref<string | null>(null)
+
+  // ========== 时间线（Manus 风格流式视图）==========
+  const timelineEntries = ref<TimelineEntry[]>([])
+  /** 需要滚动到的时间线条目 ID（用于导航） */
+  const scrollToEntryId = ref<string | null>(null)
 
   // ========== UI 状态 ==========
   const leftPanelCollapsed = ref(false)
@@ -66,6 +79,12 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
   const selectedArtifact = computed(() => {
     if (!selectedArtifactId.value) return null
     return artifacts.value.find(a => a.artifact_id === selectedArtifactId.value) || null
+  })
+
+  /** 当前选中的面板预览 */
+  const selectedPanel = computed(() => {
+    if (!selectedPanelId.value) return null
+    return panelPreviews.value.find(p => p.id === selectedPanelId.value) || null
   })
 
   const isRunning = computed(() => currentRun.value?.status === 'running')
@@ -479,6 +498,218 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     selectedArtifactId.value = null
   }
 
+  // ========== 面板预览管理 ==========
+
+  /**
+   * 添加面板预览
+   *
+   * emit_panel_preview 工具产出的面板会通过此方法添加到列表
+   * @param preview 面板数据
+   * @param timelineEntryId 关联的时间线条目 ID（可选，用于导航）
+   */
+  function addPanelPreview(preview: {
+    layout?: unknown
+    blocks?: unknown[]
+    dataBlocks?: Record<string, unknown>
+    data_blocks?: Record<string, unknown>
+    panel_spec?: { layout?: unknown; blocks?: unknown[]; data_envelopes?: Record<string, unknown> }
+    panel_payload?: { layout?: unknown; blocks?: unknown[]; data_envelopes?: Record<string, unknown> }
+    panel_data_blocks?: Record<string, unknown>
+    previews?: Array<{ title?: string; preview_id?: string }>
+    source_query?: string
+  }, timelineEntryId?: string) {
+    // 生成唯一 ID
+    const id = `panel-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+
+    // 从后端数据结构中提取布局和块信息
+    // panel_payload 包含渲染好的 layout 和 blocks（来自 PanelPayload.model_dump()）
+    const layout = preview.layout || preview.panel_payload?.layout || preview.panel_spec?.layout
+    const blocks = preview.blocks || preview.panel_payload?.blocks || preview.panel_spec?.blocks || []
+    const dataBlocks = preview.dataBlocks || preview.data_blocks || preview.panel_data_blocks || preview.panel_spec?.data_envelopes || {}
+
+    // 提取标题
+    const title = preview.previews?.[0]?.title || '数据面板'
+
+    const panelPreview: PanelPreview = {
+      id,
+      title,
+      layout,
+      blocks,
+      dataBlocks,
+      createdAt: new Date().toISOString(),
+      sourceQuery: preview.source_query,
+      timelineEntryId,
+    }
+
+    panelPreviews.value.push(panelPreview)
+    return id
+  }
+
+  /**
+   * 选择面板预览
+   */
+  function selectPanel(panelId: string) {
+    selectedPanelId.value = panelId
+    // 选择面板时清空产物选择，避免冲突
+    selectedArtifactId.value = null
+  }
+
+  /**
+   * 清空面板预览列表
+   */
+  function clearPanelPreviews() {
+    panelPreviews.value = []
+    selectedPanelId.value = null
+  }
+
+  // ========== 时间线管理（Manus 风格流式视图）==========
+
+  /**
+   * 生成唯一 ID
+   */
+  function generateId(prefix: string = 'entry'): string {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+  }
+
+  /**
+   * 添加时间线条目
+   */
+  function addTimelineEntry(entry: Omit<TimelineEntry, 'id' | 'timestamp'>): string {
+    const id = generateId(entry.type)
+    const newEntry: TimelineEntry = {
+      ...entry,
+      id,
+      timestamp: new Date().toISOString(),
+    }
+    timelineEntries.value.push(newEntry)
+    return id
+  }
+
+  /**
+   * 添加用户查询条目
+   */
+  function addUserQueryEntry(query: string): string {
+    return addTimelineEntry({
+      type: 'user_query',
+      userQuery: { query },
+    })
+  }
+
+  /**
+   * 添加思考条目
+   */
+  function addThinkingEntry(content: string): string {
+    return addTimelineEntry({
+      type: 'thinking',
+      thinking: { content },
+    })
+  }
+
+  /**
+   * 添加工具调用条目
+   */
+  function addToolCallEntry(toolCall: {
+    tool_name: string
+    tool_id: string
+    parameters?: Record<string, unknown>
+    status?: ToolCallStatus
+  }): string {
+    return addTimelineEntry({
+      type: 'tool_call',
+      toolCall: {
+        ...toolCall,
+        status: toolCall.status || 'running',
+      },
+    })
+  }
+
+  /**
+   * 更新工具调用状态
+   */
+  function updateToolCallStatus(
+    entryId: string,
+    status: ToolCallStatus,
+    result?: { result_summary?: string; data_id?: string; error?: string }
+  ) {
+    const entry = timelineEntries.value.find(e => e.id === entryId)
+    if (entry && entry.toolCall) {
+      entry.toolCall.status = status
+      if (result) {
+        if (result.result_summary) entry.toolCall.result_summary = result.result_summary
+        if (result.data_id) entry.toolCall.data_id = result.data_id
+        if (result.error) entry.toolCall.error = result.error
+      }
+    }
+  }
+
+  /**
+   * 添加面板条目
+   */
+  function addPanelEntry(panel: {
+    title: string
+    layout: unknown
+    blocks: unknown[]
+    dataBlocks: Record<string, unknown>
+  }): string {
+    return addTimelineEntry({
+      type: 'panel',
+      panel,
+    })
+  }
+
+  /**
+   * 添加错误条目
+   */
+  function addErrorEntry(message: string, details?: string): string {
+    return addTimelineEntry({
+      type: 'error',
+      error: { message, details },
+    })
+  }
+
+  /**
+   * 添加消息条目
+   */
+  function addMessageEntry(content: string, level: 'info' | 'warning' | 'success' = 'info'): string {
+    return addTimelineEntry({
+      type: 'message',
+      message: { content, level },
+    })
+  }
+
+  /**
+   * 清空时间线
+   */
+  function clearTimeline() {
+    timelineEntries.value = []
+  }
+
+  /**
+   * 滚动到指定时间线条目
+   */
+  function scrollToTimelineEntry(entryId: string) {
+    scrollToEntryId.value = entryId
+  }
+
+  /**
+   * 清除滚动目标（滚动完成后调用）
+   */
+  function clearScrollTarget() {
+    scrollToEntryId.value = null
+  }
+
+  /**
+   * 获取最后一个工具调用条目（用于更新状态）
+   */
+  function getLastToolCallEntry(): TimelineEntry | undefined {
+    for (let i = timelineEntries.value.length - 1; i >= 0; i--) {
+      if (timelineEntries.value[i].type === 'tool_call') {
+        return timelineEntries.value[i]
+      }
+    }
+    return undefined
+  }
+
   /**
    * 切换画布视图
    */
@@ -550,6 +781,9 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     stepStatuses.value = {}
     artifacts.value = []
     selectedArtifactId.value = null
+    panelPreviews.value = []
+    selectedPanelId.value = null
+    timelineEntries.value = []
     currentStepOutput.value = null
     progressEvents.value = []
     error.value = null
@@ -575,6 +809,10 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     stepStatuses,
     artifacts,
     selectedArtifactId,
+    panelPreviews,
+    selectedPanelId,
+    timelineEntries,
+    scrollToEntryId,
     canvasView,
     currentStepOutput,
     leftPanelCollapsed,
@@ -591,6 +829,7 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     currentWorkflow,
     currentWorkflowSteps,
     selectedArtifact,
+    selectedPanel,
     isRunning,
     isPaused,
     isCompleted,
@@ -614,6 +853,9 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     addArtifactFromDataRef,
     addArtifactsFromDataStash,
     clearArtifacts,
+    addPanelPreview,
+    selectPanel,
+    clearPanelPreviews,
     setCanvasView,
     toggleLeftPanel,
     toggleRightPanel,
@@ -622,5 +864,19 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     setWsConnected,
     reset,
     cleanup,
+
+    // Timeline Actions (Manus 风格)
+    addTimelineEntry,
+    addUserQueryEntry,
+    addThinkingEntry,
+    addToolCallEntry,
+    updateToolCallStatus,
+    addPanelEntry,
+    addErrorEntry,
+    addMessageEntry,
+    clearTimeline,
+    getLastToolCallEntry,
+    scrollToTimelineEntry,
+    clearScrollTarget,
   }
 })

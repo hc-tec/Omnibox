@@ -2,6 +2,7 @@
 仪表盘 API Controller
 
 Phase 5: Dashboard REST API 端点
+# Reload trigger: 2025-12-10
 """
 
 from typing import Optional
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from api.schemas.dashboard import (
     PinArtifactRequest,
     PinWorkflowRequest,
+    PinPanelRequest,
     UpdateCardRequest,
     UpdateLayoutRequest,
     UpdateTriggersRequest,
@@ -140,6 +142,37 @@ async def pin_workflow(request: PinWorkflowRequest):
         view_config=request.view_config,
         refresh_interval=request.refresh_interval,
         triggers=triggers,
+        position=position
+    )
+
+    return card_to_response(card)
+
+
+@router.post("/pin/panel", response_model=CardResponse)
+async def pin_panel(request: PinPanelRequest):
+    """
+    将面板 Pin 到仪表盘
+
+    面板数据来自 emit_panel_preview，包含完整的布局和数据块信息。
+    这类卡片数据直接存储，无需后端刷新。
+    """
+    service = get_dashboard_service()
+
+    position = None
+    if request.position:
+        position = {
+            "x": request.position.x,
+            "y": request.position.y,
+            "width": request.position.width,
+            "height": request.position.height
+        }
+
+    card = service.pin_panel(
+        title=request.title,
+        layout=request.layout,
+        blocks=request.blocks,
+        data_blocks=request.data_blocks,
+        description=request.description,
         position=position
     )
 

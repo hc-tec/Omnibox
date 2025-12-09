@@ -331,6 +331,57 @@ class DashboardCard(SQLModel, table=True):
             card.set_position(**position)
         return card
 
+    @classmethod
+    def create_panel_card(
+        cls,
+        name: str,
+        layout: Dict[str, Any],
+        blocks: List[Dict[str, Any]],
+        data_blocks: Dict[str, Any],
+        description: str = "",
+        refresh_interval: str = RefreshInterval.MANUAL.value,
+        position: Optional[Dict[str, int]] = None
+    ) -> "DashboardCard":
+        """
+        工厂方法：创建面板卡片
+
+        面板数据直接存储在 source_config 中，无需后端数据源刷新。
+        这是从 emit_panel_preview 产出的可视化面板数据。
+
+        Args:
+            name: 卡片名称
+            layout: 布局信息（LayoutTree）
+            blocks: UI 块列表（UIBlock[]）
+            data_blocks: 数据块映射（Record<string, DataBlock>）
+            description: 卡片描述
+            refresh_interval: 刷新频率（面板默认手动刷新）
+            position: 布局位置
+        """
+        card = cls(
+            card_id=cls.generate_card_id(),
+            name=name,
+            description=description,
+            card_type=CardType.CUSTOM.value,
+            refresh_interval=refresh_interval
+        )
+        # 将面板数据存储在 source_config 中
+        card.set_source_config({
+            "panel_type": "preview",
+            "layout": layout,
+            "blocks": blocks,
+            "data_blocks": data_blocks
+        })
+        # 直接缓存数据，无需后续刷新
+        card.set_cached_data({
+            "layout": layout,
+            "blocks": blocks,
+            "data_blocks": data_blocks,
+            "refreshed_at": datetime.now().isoformat()
+        })
+        if position:
+            card.set_position(**position)
+        return card
+
 
 class Notification(SQLModel, table=True):
     """

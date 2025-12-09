@@ -1,15 +1,21 @@
 """Session 控制器
 
-提供 Session 管理的 REST API：
+提供 Session 管理的 REST API 和 WebSocket 流式接口：
 - 创建/获取/关闭 Session
 - 在 Session 内执行查询（保持上下文）
 - 获取执行步骤记录
 - 保存为工作流模板
+- WebSocket 流式执行（实时进度反馈）
 """
 
 import logging
-from typing import Optional, Any, List, Dict
-from fastapi import APIRouter, HTTPException, Depends, Query
+import asyncio
+import time
+import uuid
+from queue import Queue, Empty
+import threading
+from typing import Optional, Any, List, Dict, Generator
+from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 
 from api.schemas.session import (
@@ -27,6 +33,17 @@ from api.schemas.session import (
     ListSessionsResponse,
 )
 from api.schemas.panel import PanelPayload
+from api.schemas.stream_messages import (
+    StageMessage,
+    DataMessage,
+    ErrorMessage,
+    CompleteMessage,
+    ResearchStepMessage,
+    StreamStage,
+    STAGE_DESCRIPTIONS,
+    STAGE_PROGRESS,
+)
+from api.schemas.llm_call_event import LLMCallTracker, LLMCallEvent
 
 from services.session import (
     SessionRuntimeManager,
@@ -465,3 +482,323 @@ async def list_sessions(
             total=0,
             error=str(e)
         )
+
+
+# ========== WebSocket 流式端点 ==========
+
+def _generate_stream_id() -> str:
+    """生成流 ID"""
+    return f"session-stream-{uuid.uuid4().hex[:12]}"
+
+
+def _stream_session_execution(
+    runtime_manager: SessionRuntimeManager,
+    session_id: str,
+    query: str,
+    stream_id: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> Generator[dict, None, None]:
+    """
+    流式执行 Session 查询
+
+    按阶段 yield 消息：
+    1. planning - 开始规划
+    2. executing - 执行工具
+    3. panel_preview - 面板预览
+    4. complete - 完成
+
+    Args:
+        runtime_manager: Session 运行时管理器
+        session_id: Session ID
+        query: 用户查询
+        stream_id: 流 ID
+        context: 额外上下文
+
+    Yields:
+        流式消息
+    """
+    start_time = time.time()
+    panel_previews: List[Dict[str, Any]] = []
+    step_counter = 0
+
+    try:
+        # ========== 阶段1: 开始规划 ==========
+        yield StageMessage(
+            stream_id=stream_id,
+            stage=StreamStage.INTENT,
+            message="分析查询并规划执行步骤...",
+            progress=10,
+        ).model_dump()
+
+        # 检查 Session 是否存在
+        state = runtime_manager.get_session(session_id)
+        if not state:
+            yield ErrorMessage(
+                stream_id=stream_id,
+                error_code="SESSION_NOT_FOUND",
+                error_message=f"Session 不存在或已过期: {session_id}",
+                stage=StreamStage.INTENT,
+            ).model_dump()
+            return
+
+        # ========== 阶段2: 开始执行 ==========
+        yield StageMessage(
+            stream_id=stream_id,
+            stage=StreamStage.FETCH,
+            message="执行查询...",
+            progress=30,
+        ).model_dump()
+
+        # 事件队列，用于接收回调
+        event_queue: Queue = Queue()
+        result_holder: Dict[str, Any] = {}
+
+        def panel_callback(payload: Dict[str, Any]) -> None:
+            """面板预览回调"""
+            panel_previews.append(payload)
+            event_queue.put(("panel_preview", payload))
+
+        def run_execution():
+            """在后台线程执行"""
+            try:
+                result = runtime_manager.execute_in_session(
+                    session_id=session_id,
+                    query=query,
+                    context=context,
+                    panel_callback=panel_callback,
+                )
+                result_holder["result"] = result
+            except Exception as exc:
+                result_holder["error"] = exc
+            finally:
+                event_queue.put(("done", None))
+
+        # 启动后台线程
+        worker = threading.Thread(target=run_execution, daemon=True)
+        worker.start()
+
+        # 处理事件队列
+        while True:
+            try:
+                event_type, payload = event_queue.get(timeout=0.1)
+            except Empty:
+                if worker.is_alive():
+                    continue
+                else:
+                    break
+
+            if event_type == "done":
+                break
+
+            if event_type == "panel_preview":
+                step_counter += 1
+                preview_payload = payload or {}
+                previews = preview_payload.get("previews") or []
+                first_preview = previews[0] if previews else {}
+                title = first_preview.get("title") or preview_payload.get("source_query") or "数据面板"
+                route = first_preview.get("generated_path")
+                source = first_preview.get("source")
+                item_count = len(first_preview.get("items") or [])
+
+                # 推送步骤消息
+                yield ResearchStepMessage(
+                    stream_id=stream_id,
+                    task_id=session_id,
+                    step_id=f"step_{step_counter}",
+                    step_type="data_fetch",
+                    action=f"生成数据面板：{title}",
+                    status="success",
+                    details={
+                        "route": route,
+                        "datasource": source,
+                        "item_count": item_count,
+                    },
+                ).model_dump()
+
+                # 推送面板预览数据
+                yield DataMessage(
+                    stream_id=stream_id,
+                    stage=StreamStage.FETCH,
+                    data={
+                        "type": "panel_preview",
+                        "panel_payload": preview_payload.get("panel_payload"),
+                        "panel_spec": preview_payload.get("panel_spec"),
+                        "previews": previews,
+                        "data_blocks": preview_payload.get("data_blocks"),
+                    }
+                ).model_dump()
+
+        # 检查执行结果
+        if "error" in result_holder:
+            raise result_holder["error"]
+
+        result = result_holder.get("result")
+        if result is None:
+            raise RuntimeError("执行结果为空")
+
+        # ========== 阶段3: 结果总结 ==========
+        yield StageMessage(
+            stream_id=stream_id,
+            stage=StreamStage.SUMMARY,
+            message="生成执行摘要...",
+            progress=90,
+        ).model_dump()
+
+        # 获取更新后的 Session 状态
+        updated_state = runtime_manager.get_session(session_id)
+        session_summary = None
+        if updated_state:
+            session_summary = {
+                "data_stash_count": len(updated_state.data_stash),
+                "chat_history_count": len(updated_state.chat_history),
+                "recorded_steps_count": len(updated_state.recorded_steps),
+            }
+
+        # 推送最终数据
+        yield DataMessage(
+            stream_id=stream_id,
+            stage=StreamStage.SUMMARY,
+            data={
+                "success": result.success,
+                "final_report": result.final_report,
+                "data_stash": [
+                    ref.model_dump() if hasattr(ref, 'model_dump') else ref
+                    for ref in result.data_stash
+                ],
+                "execution_steps": result.execution_steps,
+                "panel_previews": panel_previews,
+                "session_summary": session_summary,
+            }
+        ).model_dump()
+
+        # ========== 完成 ==========
+        total_time = time.time() - start_time
+        yield CompleteMessage(
+            stream_id=stream_id,
+            success=result.success,
+            message=result.final_report or "执行完成",
+            total_time=total_time,
+        ).model_dump()
+
+    except Exception as e:
+        logger.error(f"[{stream_id}] Session 流式执行失败: {e}", exc_info=True)
+        yield ErrorMessage(
+            stream_id=stream_id,
+            error_code="EXECUTION_ERROR",
+            error_message=f"执行失败: {str(e)}",
+            stage=None,
+        ).model_dump()
+
+        total_time = time.time() - start_time
+        yield CompleteMessage(
+            stream_id=stream_id,
+            success=False,
+            message=f"执行失败: {str(e)}",
+            total_time=total_time,
+        ).model_dump()
+
+
+@router.websocket("/{session_id}/stream")
+async def session_stream(
+    websocket: WebSocket,
+    session_id: str,
+    runtime_manager: SessionRuntimeManager = Depends(get_runtime_manager)
+):
+    """
+    Session WebSocket 流式执行端点
+
+    在 Session 内流式执行查询，实时推送进度。
+
+    消息格式:
+    - 客户端发送: { "query": "...", "context": {...} }
+    - 服务端推送: stage, data, research_step, complete, error
+
+    连接地址: ws://host:port/api/v1/sessions/{session_id}/stream
+
+    Example:
+        ```javascript
+        const ws = new WebSocket(`ws://localhost:8000/api/v1/sessions/${sessionId}/stream`);
+        ws.onopen = () => {
+            ws.send(JSON.stringify({ query: "获取B站热搜" }));
+        };
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            console.log(message.type, message);
+            if (message.type === 'complete') {
+                ws.close();
+            }
+        };
+        ```
+    """
+    await websocket.accept()
+
+    stream_id = _generate_stream_id()
+    logger.info(f"[{stream_id}] Session WebSocket 连接已建立 (session_id={session_id})")
+
+    try:
+        # 接收查询请求
+        request_data = await websocket.receive_json()
+        query = request_data.get("query", "")
+        context = request_data.get("context")
+
+        logger.info(f"[{stream_id}] Session 收到查询: {query[:50]}...")
+
+        # 验证查询
+        if not query or not query.strip():
+            error_msg = ErrorMessage(
+                stream_id=stream_id,
+                error_code="VALIDATION_ERROR",
+                error_message="查询不能为空",
+                stage=None,
+            ).model_dump()
+            await websocket.send_json(error_msg)
+            await websocket.close()
+            return
+
+        # 流式执行
+        message_generator = _stream_session_execution(
+            runtime_manager=runtime_manager,
+            session_id=session_id,
+            query=query,
+            stream_id=stream_id,
+            context=context,
+        )
+
+        # 逐个推送消息
+        while True:
+            try:
+                message = await asyncio.to_thread(next, message_generator, None)
+                if message is None:
+                    break
+
+                await websocket.send_json(message)
+                logger.debug(f"[{stream_id}] 推送消息: {message.get('type')}")
+
+            except StopIteration:
+                break
+            except Exception as e:
+                logger.error(f"[{stream_id}] 消息推送失败: {e}", exc_info=True)
+                break
+
+        logger.info(f"[{stream_id}] Session 流式执行完成")
+
+    except WebSocketDisconnect:
+        logger.info(f"[{stream_id}] 客户端断开连接")
+    except Exception as e:
+        logger.error(f"[{stream_id}] Session WebSocket 处理失败: {e}", exc_info=True)
+        try:
+            error_msg = ErrorMessage(
+                stream_id=stream_id,
+                error_code="INTERNAL_ERROR",
+                error_message=f"服务器内部错误: {str(e)}",
+                stage=None,
+            )
+            await websocket.send_json(error_msg.model_dump())
+        except:
+            pass
+    finally:
+        try:
+            await websocket.close()
+            logger.info(f"[{stream_id}] Session WebSocket 连接已关闭")
+        except:
+            pass

@@ -19,7 +19,7 @@ from api.controllers.research_controller import router as research_router
 from api.controllers.subscription_controller import router as subscription_router
 from api.controllers.workflow_controller import router as workflow_router
 from api.controllers.template_controller import router as template_router
-from api.controllers.dashboard_controller import router as dashboard_router
+from api.controllers.dashboard_controller import router as dashboard_router  # Pin panel endpoint added
 from api.controllers.session_controller import (
     router as session_router,
     initialize_session_services,
