@@ -1,7 +1,7 @@
 # Phase 3: 工作台 UI 设计方案
 
 **创建日期**: 2025-12-09
-**状态**: 🔄 进行中
+**状态**: ✅ 已完成
 **目标**: 实现三栏式工作台界面，支持工作流可视化、数据产物管理、实时交互
 
 ---
@@ -674,27 +674,84 @@ async def workflow_progress_ws(websocket: WebSocket, run_id: str)
 
 | 问题 | 选项 A | 选项 B | 建议 |
 |------|--------|--------|------|
-| **对话区位置** | 主画布底部（固定） | 浮动输入框（可拖动） | A: 固定更直观 |
-| **产物预览方式** | 右侧面板内预览 | 中间画布预览 | B: 画布空间更大 |
-| **工作流列表位置** | 左侧面板顶部 | 独立页面选择 | A: 快速切换 |
-| **步骤依赖可视化** | 竖向列表 + 连线 | DAG 图形化 | A: 先简单实现 |
+| **对话区位置** | 主画布底部（固定） | 浮动输入框（可拖动） | A: 固定更直观 | A
+| **产物预览方式** | 右侧面板内预览 | 中间画布预览 | B: 画布空间更大 | B
+| **工作流列表位置** | 左侧面板顶部 | 独立页面选择 | A: 快速切换 | A
+| **步骤依赖可视化** | 竖向列表 + 连线 | DAG 图形化 | A: 先简单实现 | A
 
 ---
 
 ## 九、TODO 清单
 
-- [ ] 用户确认设计方案
-- [ ] Phase 3.1: 创建目录结构
-- [ ] Phase 3.2: 实现 WorkspaceView + WorkspaceLayout
-- [ ] Phase 3.3: 实现 WorkflowPanel 组件
-- [ ] Phase 3.4: 实现 ArtifactPanel 组件
-- [ ] Phase 3.5: 实现 MainCanvas + 视图切换
-- [ ] Phase 3.6: 实现 ChatInteractionArea + WebSocket
-- [ ] Phase 3.7: 后端 API 实现
-- [ ] Phase 3.8: 集成测试
+- [x] 用户确认设计方案 (2025-12-09)
+- [x] Phase 3.1: 创建目录结构 (2025-12-09)
+- [x] Phase 3.2: 实现 WorkspaceView + WorkspaceLayout (2025-12-09)
+- [x] Phase 3.3: 实现 WorkflowPanel 组件 (2025-12-09)
+- [x] Phase 3.4: 实现 ArtifactPanel 组件 (2025-12-09)
+- [x] Phase 3.5: 实现 MainCanvas + 视图切换 (2025-12-09)
+- [x] Phase 3.6: 实现 ChatInteractionArea (2025-12-09)
+- [x] Phase 3.7: 后端 API schemas (2025-12-09)
+- [x] Phase 3.8: 后端 API router (2025-12-09)
+- [x] Phase 3.9: WebSocket 进度推送 (2025-12-09)
+- [x] Phase 3.10: 前端 API 集成 (2025-12-09)
 
 ---
 
 ## 十、设计决策记录
 
-（待用户确认后填写）
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 对话区位置 | 主画布底部（固定） | 更直观，用户视线自然流动 |
+| 产物预览方式 | 中间画布预览 | 画布空间更大，可充分展示数据 |
+| 工作流列表位置 | 左侧面板顶部 | 快速切换，符合常见 IDE 布局 |
+| 步骤依赖可视化 | 竖向列表 + 连线 | 先简单实现，后续可扩展为 DAG 图 |
+
+---
+
+## 十一、实施进度
+
+### 已完成的前端组件
+
+| 文件 | 说明 |
+|------|------|
+| `views/WorkspaceView.vue` | 工作台主视图 |
+| `features/workspace/index.ts` | 模块导出 |
+| `features/workspace/WorkspaceLayout.vue` | 三栏布局容器 |
+| `features/workspace/stores/workspaceStore.ts` | Pinia 状态管理 |
+| `features/workspace/types/workspace.ts` | TypeScript 类型定义 |
+| `features/workspace/components/workflow/WorkflowPanel.vue` | 工作流面板 |
+| `features/workspace/components/workflow/WorkflowListItem.vue` | 工作流列表项 |
+| `features/workspace/components/workflow/WorkflowStepTree.vue` | 步骤树 |
+| `features/workspace/components/canvas/MainCanvas.vue` | 主画布 |
+| `features/workspace/components/canvas/CanvasEmptyState.vue` | 空状态 |
+| `features/workspace/components/canvas/ChatInteractionArea.vue` | 对话交互区 |
+| `features/workspace/components/artifact/ArtifactPanel.vue` | 数据产物面板 |
+| `features/workspace/components/artifact/ArtifactListItem.vue` | 产物列表项 |
+| `features/workspace/components/artifact/ArtifactPreview.vue` | 产物预览 |
+
+### 路由配置
+
+```
+/workspace                    - 工作台主页
+/workspace/:workflowId        - 指定工作流
+/workspace/:workflowId/run/:runId - 指定执行实例
+```
+
+### 后端实现
+
+1. **API Schemas** (`api/schemas/workflow.py`)
+   - WorkflowCreate/Update/Response
+   - RunCreate/Response
+   - ArtifactSchema
+   - ProgressEventSchema
+
+2. **API Controller** (`api/controllers/workflow_controller.py`)
+   - 工作流 CRUD：GET/POST/PATCH/DELETE /api/v1/workflows
+   - 执行管理：POST runs, pause, resume, cancel
+   - 产物查询：GET artifacts, artifact data
+   - WebSocket：GET /stream 进度推送
+
+3. **前端 API 集成** (`features/workspace/services/workspaceApi.ts`)
+   - 所有 REST API 封装
+   - WebSocket 连接管理 (connectProgressStream)
+   - workspaceStore 已集成 API 调用

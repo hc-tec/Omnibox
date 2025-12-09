@@ -4,6 +4,8 @@
  * 路由说明：
  * - / (MainView): 主界面，包含聊天和数据面板
  * - /research/:taskId (ResearchView): 专属研究视图，包含上下文面板和数据面板
+ * - /workspace (WorkspaceView): 工作流工作台，三栏布局
+ * - /workspace/templates (TemplateMarket): 模板市场页面
  * - /subscriptions (SubscriptionsView): 订阅管理页面
  * - /dev/components (DevComponentsView): 组件调试页面（仅开发模式）
  */
@@ -37,6 +39,39 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('../views/SubscriptionsView.vue'),
     meta: {
       title: '我的订阅',
+    },
+  },
+  // 工作流工作台
+  {
+    path: '/workspace',
+    name: 'Workspace',
+    component: () => import('../views/WorkspaceView.vue'),
+    meta: {
+      title: '工作台',
+    },
+  },
+  {
+    path: '/workspace/templates',
+    name: 'TemplateMarket',
+    component: () => import('../features/workspace/components/template/TemplateMarket.vue'),
+    meta: {
+      title: '模板市场',
+    },
+  },
+  {
+    path: '/workspace/:workflowId',
+    name: 'WorkspaceWorkflow',
+    component: () => import('../views/WorkspaceView.vue'),
+    meta: {
+      title: '工作台',
+    },
+  },
+  {
+    path: '/workspace/:workflowId/run/:runId',
+    name: 'WorkspaceRun',
+    component: () => import('../views/WorkspaceView.vue'),
+    meta: {
+      title: '工作台',
     },
   },
   // 开发者组件调试页面（仅开发模式可用）

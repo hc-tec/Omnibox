@@ -23,10 +23,17 @@ from .models import (
     Variable,
     VariableType,
     ProgressEvent,
+    TemplateCategory,
 )
 from .store import WorkflowStore, get_workflow_store, reset_workflow_store
 from .engine import WorkflowEngine, WorkflowExecutionError, create_workflow_engine
 from .variable_resolver import VariableResolver, VariableValidationError
+from .template_service import (
+    TemplateService,
+    get_template_service,
+    reset_template_service,
+    WorkflowTemplateExport,
+)
 
 __all__ = [
     # 模型
@@ -39,6 +46,7 @@ __all__ = [
     "Variable",
     "VariableType",
     "ProgressEvent",
+    "TemplateCategory",
     # 存储
     "WorkflowStore",
     "get_workflow_store",
@@ -50,4 +58,9 @@ __all__ = [
     # 变量解析
     "VariableResolver",
     "VariableValidationError",
+    # 模板服务
+    "TemplateService",
+    "get_template_service",
+    "reset_template_service",
+    "WorkflowTemplateExport",
 ]

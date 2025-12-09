@@ -10,7 +10,7 @@ from typing import Optional, List
 from sqlmodel import Session, select, SQLModel
 
 from services.database.connection import DatabaseConnection, get_db_connection
-from .models import Workflow, WorkflowRun, WorkflowStatus, RunStatus
+from .models import Workflow, WorkflowRun, WorkflowStatus, RunStatus, TemplateCategory
 
 logger = logging.getLogger(__name__)
 
@@ -347,3 +347,121 @@ class WorkflowStore:
                 "template_count": template_count,
                 "running_count": running_count
             }
+
+    # ========== 模板市场 ==========
+
+    def list_templates(
+        self,
+        category: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        search: Optional[str] = None,
+        sort_by: str = "usage_count",
+        limit: int = 20,
+        offset: int = 0
+    ) -> tuple[List[Workflow], int]:
+        """
+        查询模板市场
+
+        Args:
+            category: 按分类筛选
+            tags: 按标签筛选（任一匹配）
+            search: 搜索关键词（名称/描述）
+            sort_by: 排序方式 (usage_count | created_at | name)
+            limit: 返回数量限制
+            offset: 偏移量
+
+        Returns:
+            (模板列表, 总数)
+        """
+        with self._get_session() as session:
+            # 基础查询：只查模板
+            query = select(Workflow).where(Workflow.is_template == True)
+
+            # 分类筛选
+            if category:
+                query = query.where(Workflow.category == category)
+
+            # 搜索（名称或描述）
+            if search:
+                search_pattern = f"%{search}%"
+                query = query.where(
+                    (Workflow.name.like(search_pattern)) |
+                    (Workflow.description.like(search_pattern))
+                )
+
+            # 排序
+            if sort_by == "usage_count":
+                query = query.order_by(Workflow.usage_count.desc())
+            elif sort_by == "created_at":
+                query = query.order_by(Workflow.created_at.desc())
+            elif sort_by == "name":
+                query = query.order_by(Workflow.name.asc())
+            else:
+                query = query.order_by(Workflow.usage_count.desc())
+
+            # 执行查询获取所有匹配结果（用于标签过滤和计数）
+            all_templates = list(session.exec(query).all())
+
+            # 标签筛选（JSON 字段，需要后处理）
+            if tags:
+                all_templates = [
+                    t for t in all_templates
+                    if any(tag in t.get_tags() for tag in tags)
+                ]
+
+            # 计算总数
+            total = len(all_templates)
+
+            # 分页
+            templates = all_templates[offset:offset + limit]
+
+            return templates, total
+
+    def get_template_stats(self) -> dict:
+        """
+        获取模板市场统计
+
+        Returns:
+            {
+                "total": 总数,
+                "by_category": { "data_analysis": 5, ... }
+            }
+        """
+        with self._get_session() as session:
+            templates = list(session.exec(
+                select(Workflow).where(Workflow.is_template == True)
+            ).all())
+
+            by_category = {}
+            for t in templates:
+                cat = t.category or "custom"
+                by_category[cat] = by_category.get(cat, 0) + 1
+
+            return {
+                "total": len(templates),
+                "by_category": by_category
+            }
+
+    def increment_usage_count(self, workflow_id: str) -> bool:
+        """
+        增加模板使用计数
+
+        Args:
+            workflow_id: 模板 ID
+
+        Returns:
+            是否成功
+        """
+        with self._get_session() as session:
+            workflow = session.exec(
+                select(Workflow).where(Workflow.workflow_id == workflow_id)
+            ).first()
+
+            if not workflow or not workflow.is_template:
+                return False
+
+            workflow.usage_count += 1
+            session.add(workflow)
+            session.commit()
+            logger.info(f"WorkflowStore: 模板使用计数 +1 {workflow_id} -> {workflow.usage_count}")
+            return True

@@ -24,6 +24,16 @@ class WorkflowStatus(str, Enum):
     TEMPLATE = "template"     # 模板（已发布）
 
 
+class TemplateCategory(str, Enum):
+    """模板分类"""
+    DATA_ANALYSIS = "data_analysis"           # 数据分析
+    CONTENT_RESEARCH = "content_research"     # 内容研究
+    COMPETITIVE = "competitive"               # 竞品分析
+    SOCIAL_MONITORING = "social_monitoring"   # 社交监控
+    REPORT_GENERATION = "report_generation"   # 报告生成
+    CUSTOM = "custom"                         # 自定义
+
+
 class StepType(str, Enum):
     """步骤类型"""
     FETCH = "fetch"           # 数据采集
@@ -153,6 +163,13 @@ class Workflow(SQLModel, table=True):
     # 模板相关
     is_template: bool = SQLField(default=False, description="是否为模板")
     template_source_id: Optional[str] = SQLField(default=None, description="来源模板 ID")
+
+    # 模板元数据
+    category: Optional[str] = SQLField(default=None, description="模板分类")
+    author: Optional[str] = SQLField(default=None, description="模板作者")
+    usage_count: int = SQLField(default=0, description="使用次数")
+    preview_image: Optional[str] = SQLField(default=None, description="预览图 URL")
+    version: str = SQLField(default="1.0.0", description="模板版本")
 
     # 标签
     tags_json: str = SQLField(default="[]", description="标签 JSON")

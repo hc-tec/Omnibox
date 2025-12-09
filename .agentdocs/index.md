@@ -121,12 +121,12 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251209-phase3-workspace-ui-design.md` - **工作流工作台 Phase 3: 工作台 UI**（🔄 进行中）
-  - **目标**：实现三栏式工作台界面，支持工作流可视化、数据产物管理、实时交互
-  - **核心组件**：WorkspaceLayout、WorkflowPanel、MainCanvas、ArtifactPanel、ChatInteractionArea
-  - **复用现有组件**：PanelBoard、DynamicBlockRenderer、UI 组件库
 - `new-architecture.md` - **工作流工作台架构总设计**（已确认方向）
   - 5 个 Phase：基础设施 → 工作流引擎 → 工作台 UI → 模板系统 → 仪表盘
+- `workflow/251209-phase5-dashboard-design.md` - **工作流工作台 Phase 5: 仪表盘**（设计中）
+  - **目标**：实现数据监控仪表盘，支持卡片 Pin、定时刷新、条件触发、通知推送
+  - **核心功能**：DashboardCard、SchedulerService、TriggerService、NotificationService
+  - **前端组件**：DashboardView、DashboardGrid、TriggerConfigDialog、NotificationBell
 - `workflow/251117-v5-phase3-p1-tools.md` - **V5.0 Phase 3: P1 工具 + 聚合 + 私有数据**（已完成）✅
   - 目标：支持私有数据访问和聚合统计，实现完整的数据分析闭环
   - 核心工具：data_operator（动态算子，统一过滤/对比/聚合）、fetch_private_data（私有数据框架）
@@ -166,6 +166,15 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/251209-phase4-template-system-design.md` - **工作流工作台 Phase 4: 模板系统** [✅ 完成 2025-12-09]
+  - **目标**：实现工作流模板化，支持模板创建、分享、市场发现
+  - **核心功能**：模板创建/实例化、变量系统、模板市场、导出导入
+  - **后端实现**：TemplateService + template_controller.py API
+  - **前端实现**：TemplateMarket、TemplateCard、VariableFormDialog 等组件
+- `workflow/done/251209-phase3-workspace-ui-design.md` - **工作流工作台 Phase 3: 工作台 UI** [✅ 完成 2025-12-09]
+  - **目标**：实现三栏式工作台界面，支持工作流可视化、数据产物管理、实时交互
+  - **核心组件**：WorkspaceLayout、WorkflowPanel、MainCanvas、ArtifactPanel、ChatInteractionArea
+  - **后端实现**：workflow_controller.py API + WebSocket 进度推送
 - `workflow/done/251209-phase2-workflow-engine-design.md` - **工作流工作台 Phase 2: Workflow Engine** [✅ 完成 2025-12-09]
   - **目标**：建立工作流引擎层，支持多步骤 DAG 执行、进度追踪、中断/恢复
   - **核心内容**：Workflow/WorkflowRun 模型、WorkflowStore、WorkflowEngine、变量系统
