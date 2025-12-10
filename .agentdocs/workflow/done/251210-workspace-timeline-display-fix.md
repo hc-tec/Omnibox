@@ -187,6 +187,15 @@ useSessionWebSocket.ts.handleMessage()
 3. ✅ 重复的面板生成 → addPanelPreview 去重 + 后端 summary 移除 panel_previews
 4. ✅ 工具调用步骤延迟显示 → 添加 tool_callback 实时推送工具调用完成消息
 
+**测试验证通过**（2025-12-10 15:23）：
+- Agent 推理内容实时显示，带 Lightbulb 图标和"详细推理"标签
+- 工具调用步骤实时显示（fetch_public_data、data_operator、emit_panel_preview）
+- Agent 正确识别已有数据："之前已成功获取并清洗了B站热榜数据（Step 2，data_id: lg-xxx）"
+- 时间线顺序正确：推理 → 工具调用 → 推理 → 工具调用...
+
+**测试中发现的其他问题**（非本次任务范围）：
+- ListPanel 组件契约的 link 字段应该设为可选（require: false），而非必填
+
 ThinkingEntry.vue 现在会展示：
 - 主要内容（content）
 - 详细推理（reasoning），带 Lightbulb 图标和"详细推理"标签
@@ -195,8 +204,6 @@ ThinkingEntry.vue 现在会展示：
 - Agent 推理步骤（planning）
 - 工具调用步骤（tool_call）- 新增
 - 面板预览步骤（data_fetch）
-
-**下一步**：重新测试，验证工具调用步骤是否实时显示
 
 ## 技术细节
 

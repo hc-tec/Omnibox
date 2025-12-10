@@ -46,6 +46,21 @@ def create_tool_executor_node(runtime: LangGraphRuntime):
             extras=enhanced_extras,
         )
 
+        # 工具开始回调（供前端实时显示“运行中”状态）
+        tool_start_callback = enhanced_extras.get("emit_tool_start")
+        if callable(tool_start_callback):
+            try:
+                tool_start_callback(
+                    {
+                        "step_id": call.step_id,
+                        "tool_name": call.plugin_id,
+                        "description": call.description,
+                        "status": "processing",
+                    }
+                )
+            except Exception as exc:
+                logger.warning("emit_tool_start 回调失败: %s", exc)
+
         try:
             payload = runtime.tool_registry.execute(call, enhanced_context)
         except Exception as exc:

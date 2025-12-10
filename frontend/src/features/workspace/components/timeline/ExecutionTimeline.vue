@@ -86,6 +86,27 @@ function getDotColor(entry: typeof timelineEntries.value[0]) {
       return 'bg-muted-foreground'
   }
 }
+
+// 判断条目是否处于“运行中”以展示炫光
+function isEntryActive(entry: typeof timelineEntries.value[0], index: number) {
+  switch (entry.type) {
+    case 'thinking':
+      // 最新的思考，且尚未完成流程时提示“进行中”
+      return index === timelineEntries.value.length - 1
+    case 'tool_call':
+      return entry.toolCall?.status === 'running' || entry.toolCall?.status === 'pending'
+    case 'user_query':
+      // 刚提交且还未有其他事件时，视为等待中
+      return index === timelineEntries.value.length - 1 && timelineEntries.value.length === 1
+    case 'message':
+      // 流式信息，若是最新一条且流程未结束
+      return index === timelineEntries.value.length - 1 && store.isRunning
+    case 'panel':
+    case 'error':
+    default:
+      return false
+  }
+}
 </script>
 
 <template>
@@ -128,24 +149,28 @@ function getDotColor(entry: typeof timelineEntries.value[0]) {
             <UserQueryEntry
               v-if="entry.type === 'user_query'"
               :entry="entry"
+              :is-active="isEntryActive(entry, index)"
             />
 
             <!-- 思考 -->
             <ThinkingEntry
               v-else-if="entry.type === 'thinking'"
               :entry="entry"
+              :is-active="isEntryActive(entry, index)"
             />
 
             <!-- 工具调用 -->
             <ToolCallEntry
               v-else-if="entry.type === 'tool_call'"
               :entry="entry"
+              :is-active="isEntryActive(entry, index)"
             />
 
             <!-- 面板 -->
             <PanelEntry
               v-else-if="entry.type === 'panel'"
               :entry="entry"
+              :is-active="isEntryActive(entry, index)"
             />
 
             <!-- 错误 -->
@@ -158,6 +183,7 @@ function getDotColor(entry: typeof timelineEntries.value[0]) {
             <MessageEntry
               v-else-if="entry.type === 'message'"
               :entry="entry"
+              :is-active="isEntryActive(entry, index)"
             />
           </div>
         </div>

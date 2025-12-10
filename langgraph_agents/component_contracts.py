@@ -69,8 +69,8 @@ CONTRACTS: Dict[str, ComponentContract] = {
         component_id="ListPanel",
         contract_id="ListPanel-contract-v3",
         description="通用列表：文本/链接记录列表，支持摘要、作者、时间、分类。",
-        required_fields=["title", "link"],
-        optional_fields=["summary", "author", "published_at", "categories"],
+        required_fields=["title"],
+        optional_fields=["link", "summary", "author", "published_at", "categories"],
         props_mapping={
             "title_field": "title",
             "link_field": "link",

@@ -14,6 +14,8 @@ interface DataOperatorResult {
 
 const props = defineProps<{
   entry: TimelineEntry
+  /** 是否当前活跃步骤，用于运行态提示 */
+  isActive?: boolean
 }>()
 
 // 展开代码
@@ -85,6 +87,13 @@ const displaySummary = computed(() => {
   return props.entry.toolCall?.result_summary
 })
 
+// 运行态标志（用于炫光）
+const isActive = computed(() =>
+  props.isActive ||
+  props.entry.toolCall?.status === 'running' ||
+  props.entry.toolCall?.status === 'pending'
+)
+
 // 状态图标
 const statusIcon = computed(() => {
   switch (props.entry.toolCall?.status) {
@@ -137,12 +146,21 @@ const toolDisplayName = computed(() => {
         class="h-3.5 w-3.5 flex-shrink-0"
         :class="{ 'animate-spin': entry.toolCall?.status === 'running' }"
       />
-      <span class="text-[13px] font-medium text-foreground">{{ toolDisplayName }}</span>
+      <span
+        class="text-[13px] font-medium text-foreground"
+        :class="isActive ? 'shimmer-text' : ''"
+      >
+        {{ toolDisplayName }}
+      </span>
       <span class="text-[11px] text-muted-foreground ml-auto">{{ entry.toolCall?.tool_name }}</span>
     </div>
 
     <!-- 摘要内容 -->
-    <div v-if="displaySummary" class="mt-1.5 text-xs leading-relaxed text-foreground/80">
+    <div
+      v-if="displaySummary"
+      class="mt-1.5 text-xs leading-relaxed text-foreground/80"
+      :class="isActive ? 'shimmer-text' : ''"
+    >
       {{ displaySummary }}
     </div>
 
@@ -168,3 +186,37 @@ const toolDisplayName = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.shimmer-text {
+  position: relative;
+  color: var(--foreground);
+}
+
+.shimmer-text::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 45%,
+    rgba(255, 255, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0.4) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+</style>

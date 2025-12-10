@@ -263,9 +263,9 @@ class ResearchStepMessage(BaseModel):
     stream_id: str = Field(..., description="流ID")
     task_id: str = Field(..., description="研究任务ID")
     step_id: str = Field(..., description="步骤ID（如 sub_query_0）")
-    step_type: Literal["planning", "data_fetch", "analysis"] = Field(
+    step_type: Literal["planning", "data_fetch", "analysis", "tool_call"] = Field(
         ...,
-        description="步骤类型：planning=规划, data_fetch=数据获取, analysis=分析"
+        description="步骤类型：planning=规划, data_fetch=数据获取, analysis=分析, tool_call=工具调用"
     )
     action: str = Field(..., description="步骤描述（如：正在获取 up主15616847 的视频）")
     status: Literal["processing", "success", "error"] = Field(

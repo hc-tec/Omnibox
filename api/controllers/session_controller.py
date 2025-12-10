@@ -558,6 +558,10 @@ def _stream_session_execution(
             panel_previews.append(payload)
             event_queue.put(("panel_preview", payload))
 
+        def tool_start_callback(payload: Dict[str, Any]) -> None:
+            """工具开始回调"""
+            event_queue.put(("tool_start", payload))
+
         def reasoning_callback(payload: Dict[str, Any]) -> None:
             """Agent推理回调"""
             event_queue.put(("agent_reasoning", payload))
@@ -574,6 +578,7 @@ def _stream_session_execution(
                     query=query,
                     context=context,
                     panel_callback=panel_callback,
+                    tool_start_callback=tool_start_callback,
                     reasoning_callback=reasoning_callback,
                     tool_callback=tool_callback,
                 )
@@ -607,6 +612,7 @@ def _stream_session_execution(
                 decision = reasoning_payload.get("decision", "CONTINUE")
                 reasoning = reasoning_payload.get("reasoning", "")
                 tool_call = reasoning_payload.get("tool_call", {})
+                status = reasoning_payload.get("status", "success")
 
                 # 确定 action 描述
                 if decision == "FINISH":
@@ -626,11 +632,30 @@ def _stream_session_execution(
                     step_id=f"think_{step_id}",
                     step_type="planning",
                     action=action,
-                    status="success",
+                    status=status if status in {"processing", "success", "error"} else "success",
                     reasoning=reasoning,
                     details={
                         "decision": decision,
                         "tool_call": tool_call,
+                    },
+                ).model_dump()
+
+            if event_type == "tool_start":
+                start_payload = payload or {}
+                step_id = start_payload.get("step_id", step_counter + 1)
+                tool_name = start_payload.get("tool_name", "unknown")
+                description = start_payload.get("description") or f"调用工具: {tool_name}"
+
+                yield ResearchStepMessage(
+                    stream_id=stream_id,
+                    task_id=session_id,
+                    step_id=f"step_{step_id}",
+                    step_type="tool_call",
+                    action=description,
+                    status="processing",
+                    details={
+                        "tool_name": tool_name,
+                        "summary": description,
                     },
                 ).model_dump()
 

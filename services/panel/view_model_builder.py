@@ -124,11 +124,18 @@ class ViewModelBuilder:
             record.setdefault("title", record.get("title") or schema.title or f"记录 {idx}")
             normalized.append(record)
         validated = ensure_list_panel(normalized)
+
         return GeneratedViewModel(
             view_model_id=f"vm-{uuid4().hex[:8]}",
             component_id="ListPanel",
             data={"items": [item.model_dump() for item in validated]},
-            props={"title": schema.title or "数据列表"},
+            props={
+                "title": schema.title or "数据列表",
+                # 固定字段映射，避免启发式推断：数据契约应保证存在这些字段
+                "title_field": "title",
+                "link_field": "link",
+                "description_field": "summary",
+            },
             contract_id=schema.contract_id,
         )
 

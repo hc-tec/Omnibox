@@ -128,6 +128,10 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251210-content-analyzer-agent.md` - **ContentAnalyzer Agent 设计**（待实施）
+  - **目标**：安全可控地让 LLM 访问原始数据子集，支持内容分析
+  - **核心方案**：两阶段分析（AI 智能选择字段 → 加载过滤数据 → 执行分析）
+  - **安全保障**：数量限制（最多10条）+ 字段黑名单 + 值截断 + token 预估
 - `workflow/251210-workspace-panel-improvement.md` - **工作台面板展示改进**（待确认方案）
   - **目标**：将工作台从"数据产物为主角"改为"面板为主角"
   - **核心改进**：画布中央展示 Panel、右侧面板重构为 ContextPanel、Pin 功能迁移到面板

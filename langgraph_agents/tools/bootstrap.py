@@ -18,6 +18,9 @@ from .private_data import register_private_data_tool
 from .dataset_inspector import register_dataset_inspector_tool
 from .data_operator import register_data_operator_tool
 
+# V6.0 新工具
+from .content_analysis import register_content_analysis_tool
+
 
 def register_default_tools(registry: ToolRegistry) -> None:
     """
@@ -39,6 +42,9 @@ def register_default_tools(registry: ToolRegistry) -> None:
     register_data_aggregator_tool(registry)
     register_insights_extractor_tool(registry)
     register_private_data_tool(registry)
+
+    # V6.0 新工具（内容分析）
+    register_content_analysis_tool(registry)
 
     # V4.4 兼容工具（仍然保留）
     register_public_data_tool(registry)

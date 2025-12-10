@@ -897,3 +897,20 @@ User Input → ChatInteractionArea
 2. **错误处理**：WebSocket 断开时的重连策略
 3. **并发控制**：同一 Session 不能同时有多个 WebSocket 请求
 4. **向后兼容**：保留同步 HTTP API 作为降级方案
+
+## 工具生命周期流式事件（新增需求）
+
+**痛点**：工具完成后才推送，导致时间线在末尾集中刷屏，执行中缺少“正在调用哪个工具”的实时反馈。
+
+**方案**：
+- 工具执行前推送 `tool_start`：携带 `step_id`、`tool_name`、`description`，状态 `processing`，前端立即呈现“运行中”动效。
+- 工具完成仍用 `tool_result`，只更新状态，不在 summary 阶段重复回放。
+- summary 阶段 data_stash 仅用于 artifacts/统计，不再生成时间线条目。
+
+**落地点**：
+- 后端：`langgraph_agents/agents/tool_executor.py` 触发 start 回调；`langgraph_agents/sync_executor.py`、`services/session/runtime_manager.py` 注入 `emit_tool_start`；`api/controllers/session_controller.py` 监听并推送 `research_step`。
+- 前端：`frontend/src/features/workspace/composables/useSessionWebSocket.ts` 继续消费 `research_step`（running 态已有流光动效）。
+
+### 待改进问题（2025-12-10）
+1) **同一内容的 start/finish 未复用同一条时间线记录**：tool_start 和 tool_result 仍可能生成两个条目，需按 tool_id/tool_name 合并更新，确保只更新状态而非新增记录。
+2) **动画对比度不足**：当前 shimmer 动效在深色背景下不明显，需要调整渐变强度/叠加描边或使用更亮的高光色，确保“运行中”提示易辨识。

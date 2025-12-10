@@ -108,6 +108,7 @@ class SyncLangGraphExecutor:
         thread_id: Optional[str] = None,
         panel_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         reasoning_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        tool_start_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> LangGraphExecutionResult:
         """
         同步执行 LangGraph 工作流。
@@ -162,11 +163,14 @@ class SyncLangGraphExecutor:
         extras = getattr(tool_context, "extras", None)
         old_panel_callback = extras.get("emit_panel_preview") if extras else None
         old_reasoning_callback = extras.get("emit_agent_reasoning") if extras else None
+        old_tool_start_callback = extras.get("emit_tool_start") if extras else None
 
         if panel_callback and extras is not None:
             extras["emit_panel_preview"] = panel_callback
         if reasoning_callback and extras is not None:
             extras["emit_agent_reasoning"] = reasoning_callback
+        if tool_start_callback and extras is not None:
+            extras["emit_tool_start"] = tool_start_callback
 
         try:
             # 同步调用 LangGraph
@@ -197,6 +201,11 @@ class SyncLangGraphExecutor:
                         extras.pop("emit_agent_reasoning", None)
                     else:
                         extras["emit_agent_reasoning"] = old_reasoning_callback
+                if tool_start_callback:
+                    if old_tool_start_callback is None:
+                        extras.pop("emit_tool_start", None)
+                    else:
+                        extras["emit_tool_start"] = old_tool_start_callback
 
     def _extract_result(self, state: GraphState) -> LangGraphExecutionResult:
         """从最终状态提取结果。"""

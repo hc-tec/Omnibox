@@ -318,6 +318,17 @@ def create_research_agent_node(runtime: LangGraphRuntime):
 
         prompt = "\n".join(prompt_parts)
 
+        # 规划开始前推送“思考中”状态，供前端实时展示
+        _emit_reasoning(
+            runtime,
+            {
+                "step_id": next_step,
+                "decision": "PLANNING",
+                "reasoning": "生成执行摘要并规划下一步…",
+                "status": "processing",
+            },
+        )
+
         # 使用重试装饰器包装 LLM 调用
         @retry_with_backoff(max_retries=3, initial_delay=1.0)
         def call_llm():

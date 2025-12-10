@@ -12,6 +12,8 @@ import type { LayoutTree, UIBlock, DataBlock } from '@/shared/types/panel'
 
 const props = defineProps<{
   entry: TimelineEntry
+  /** 是否当前活跃步骤，用于运行态提示 */
+  isActive?: boolean
 }>()
 
 const dashboardStore = useDashboardStore()
@@ -64,7 +66,9 @@ async function handlePin() {
       >
         <component :is="isExpanded ? ChevronDown : ChevronRight" class="h-4 w-4 text-muted-foreground" />
         <LayoutGrid class="h-4 w-4 text-green-500" />
-        <span class="text-sm font-medium text-foreground">{{ entry.panel?.title || '数据面板' }}</span>
+        <span class="text-sm font-medium text-foreground" :class="props.isActive ? 'shimmer-text' : ''">
+          {{ entry.panel?.title || '数据面板' }}
+        </span>
       </div>
       <div class="flex items-center gap-2">
         <!-- Pin 状态提示 -->
@@ -105,3 +109,37 @@ async function handlePin() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.shimmer-text {
+  position: relative;
+  color: var(--foreground);
+}
+
+.shimmer-text::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 45%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(255, 255, 255, 0.35) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.3s linear infinite;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+</style>

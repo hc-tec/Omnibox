@@ -2,16 +2,21 @@
   思考条目组件 - Manus 风格（简洁版）
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Brain, ChevronDown, ChevronRight, Lightbulb } from 'lucide-vue-next'
 import type { TimelineEntry } from '../../../types/workspace'
 
-defineProps<{
+const { entry, isActive = false } = defineProps<{
   entry: TimelineEntry
+  /** 是否当前正在执行的思考步骤，用于控制炫光 */
+  isActive?: boolean
 }>()
 
 // 折叠状态（默认展开）
 const isExpanded = ref(true)
+
+// 炫光开关：仅在执行中时启用
+const shimmerClass = computed(() => (isActive ? 'shimmer-text' : ''))
 </script>
 
 <template>
@@ -22,7 +27,7 @@ const isExpanded = ref(true)
       @click="isExpanded = !isExpanded"
     >
       <Brain class="h-3.5 w-3.5 text-muted-foreground" />
-      <span class="text-xs font-medium text-muted-foreground">思考中</span>
+      <span class="text-xs font-medium text-muted-foreground" :class="shimmerClass">思考中</span>
       <component
         :is="isExpanded ? ChevronDown : ChevronRight"
         class="h-3.5 w-3.5 text-muted-foreground/60 ml-auto"
@@ -51,3 +56,37 @@ const isExpanded = ref(true)
     </div>
   </div>
 </template>
+
+<style scoped>
+.shimmer-text {
+  position: relative;
+  color: var(--foreground);
+}
+
+.shimmer-text::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.45) 45%,
+    rgba(255, 255, 255, 0.9) 50%,
+    rgba(255, 255, 255, 0.45) 55%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.2s linear infinite;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+</style>

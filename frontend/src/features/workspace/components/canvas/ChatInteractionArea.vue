@@ -204,9 +204,6 @@ async function handleSend() {
       context.artifact_refs = [selectedArtifact.value.artifact_id]
     }
 
-    // 2. 添加思考条目（表示开始处理）
-    store.addThinkingEntry('分析查询并规划执行步骤...')
-
     // 使用 WebSocket 流式执行
     wsExecuting.value = true
 

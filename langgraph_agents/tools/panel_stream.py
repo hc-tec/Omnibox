@@ -206,21 +206,40 @@ def _build_panel_from_source_ref(
     if not isinstance(dataset_payload, dict):
         raise ValueError("无法解析数据内容，缺少 payload 结构")
 
+    # 兼容内容分析类输出：将 analysis/analysis_result 下的 items 提升为顶层 items，便于面板渲染
+    analysis_block = dataset_payload.get("analysis") or dataset_payload.get("analysis_result")
+    if isinstance(analysis_block, dict):
+        if "items" in analysis_block and "items" not in dataset_payload:
+            items = analysis_block.get("items") or []
+            if isinstance(items, list):
+                dataset_payload["items"] = items
+        if analysis_block.get("summary") and "summary" not in dataset_payload:
+            dataset_payload["summary"] = analysis_block.get("summary")
+        if analysis_block.get("title") and "title" not in dataset_payload:
+            dataset_payload["title"] = analysis_block.get("title")
+        # 记录分析任务元信息
+        if dataset_payload.get("task"):
+            metadata = dataset_payload.setdefault("metadata", {})
+            metadata.setdefault("analysis_task", dataset_payload.get("task"))
+
     source_metadata = build_source_metadata(dataset_payload, resolved.source_data_id, resolved.source_step_id, payload_ref)
     envelope_meta = envelope.get("metadata") or {}
     stats = dict(envelope_meta)
     stats.setdefault("instruction", envelope_meta.get("instruction"))
     stats.update({k: v for k, v in source_metadata.items() if v is not None})
 
+    # 生成 route：优先来源于元数据（真实 generated_path），若仍缺再兜底
     route = select_non_empty(
-        envelope.get("generated_path"),
+        stats.get("generated_path"),
         dataset_payload.get("generated_path"),
         dataset_payload.get("route"),
-        stats.get("generated_path"),
+        envelope.get("generated_path"),
         stats.get("route"),
-    )
-    if not route:
-        raise ValueError("缺少 generated_path，无法确定面板适配器")
+    ) or "custom/panel"
+    # 将最终 route 写回 payload/metadata，便于前端溯源
+    dataset_payload.setdefault("generated_path", route)
+    dataset_payload.setdefault("route", route)
+    stats.setdefault("generated_path", route)
 
     preview_source_records = extract_records(dataset_payload)
     if not preview_source_records:

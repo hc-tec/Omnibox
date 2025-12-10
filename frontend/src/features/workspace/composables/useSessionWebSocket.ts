@@ -10,6 +10,7 @@
 import { ref, computed, type Ref } from 'vue'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useSessionStore } from '../stores/sessionStore'
+import type { ToolCallStatus } from '../types/workspace'
 
 // 消息类型定义
 export interface StreamMessage {
@@ -161,11 +162,12 @@ export function useSessionWebSocket(options: SessionWebSocketOptions) {
    * 处理阶段消息 - 转为思考条目
    */
   function handleStageMessage(message: StreamMessage): void {
-    const stage = message.stage || 'unknown'
-    const text = message.message || `执行阶段: ${stage}`
+    const stage = message.stage || 'processing'
+    const text = message.message || `执行阶段：${stage}`
+    const reasoning = message.reasoning
 
-    // 添加思考条目到时间线
-    workspaceStore.addThinkingEntry(text)
+    // 阶段提示：独立记录，让用户看到思考进度
+    workspaceStore.addThinkingEntry(text, reasoning)
   }
 
   /**
@@ -246,32 +248,9 @@ export function useSessionWebSocket(options: SessionWebSocketOptions) {
       sessionStore.currentSession.recorded_steps_count = sessionSummary.recorded_steps_count || 0
     }
 
-    // 添加工具调用条目
+    // data_stash 仅用于产物/统计，不再在 summary 阶段重复追加工具调用，避免结束时“一股脑”刷屏
     if (dataStash) {
       workspaceStore.addArtifactsFromDataStash(dataStash)
-
-      for (const ref of dataStash) {
-        if (ref.tool_name && ref.tool_name !== 'emit_panel_preview') {
-          workspaceStore.addToolCallEntry({
-            tool_name: ref.tool_name,
-            tool_id: ref.data_id || `tool-${Date.now()}`,
-            status: ref.status === 'success' ? 'success' : 'error',
-          })
-
-          const lastEntry = workspaceStore.getLastToolCallEntry()
-          if (lastEntry) {
-            workspaceStore.updateToolCallStatus(
-              lastEntry.id,
-              ref.status === 'success' ? 'success' : 'error',
-              {
-                result_summary: ref.summary,
-                data_id: ref.data_id || undefined,
-                error: ref.error_message || undefined,
-              }
-            )
-          }
-        }
-      }
     }
 
     // 处理额外的面板预览（如果之前没有通过 panel_preview 推送）
@@ -300,20 +279,57 @@ export function useSessionWebSocket(options: SessionWebSocketOptions) {
   function handleStepMessage(message: StreamMessage): void {
     const stepId = message.step_id || `step-${Date.now()}`
     const action = message.action || '执行步骤'
-    const status = message.status || 'success'
+    const statusRaw = message.status || 'success'
     const stepType = message.step_type || 'tool_call'
     const reasoning = message.reasoning
+    const details = (message.details || {}) as Record<string, unknown>
+    const toolName = (details.tool_name as string) || action
+    const resultSummary = (details.summary as string) || reasoning
+    const errorText =
+      typeof message.details === 'string'
+        ? message.details
+        : typeof message.details === 'object' && message.details
+          ? (message.details as Record<string, unknown>).error as string | undefined
+          : undefined
+    const status: ToolCallStatus =
+      statusRaw === 'processing'
+        ? 'running'
+        : statusRaw === 'error'
+          ? 'error'
+          : 'success'
 
     // 如果是 planning 类型（Agent 思考），添加为思考条目
     if (stepType === 'planning') {
       workspaceStore.addThinkingEntry(action, reasoning)
-    } else {
-      // 否则添加工具调用条目
-      workspaceStore.addToolCallEntry({
-        tool_name: action,
-        tool_id: stepId,
-        status: status === 'success' ? 'success' : status === 'error' ? 'error' : 'running',
+      return
+    }
+
+    // 工具调用：如果已有同一 tool_id 的条目，则更新状态/摘要，避免 start+result 重复刷屏
+    const existingEntry = workspaceStore.timelineEntries.find(
+      e =>
+        e.type === 'tool_call' &&
+        e.toolCall &&
+        (e.toolCall.tool_id === stepId || e.toolCall.tool_name === toolName)
+    )
+
+    if (existingEntry?.toolCall) {
+      existingEntry.toolCall.tool_name = toolName
+      workspaceStore.updateToolCallStatus(existingEntry.id, status, {
+        result_summary: resultSummary,
+        error: errorText || reasoning,
       })
+    } else {
+      const entryId = workspaceStore.addToolCallEntry({
+        tool_name: toolName,
+        tool_id: stepId,
+        status,
+      })
+      if (status === 'error' || reasoning || errorText || resultSummary) {
+        workspaceStore.updateToolCallStatus(entryId, status, {
+          result_summary: resultSummary,
+          error: errorText || reasoning,
+        })
+      }
     }
   }
 
@@ -337,13 +353,18 @@ export function useSessionWebSocket(options: SessionWebSocketOptions) {
    * 处理错误消息
    */
   function handleErrorMessage(message: StreamMessage): void {
-    const errorMsg = message.error_message || '未知错误'
+    const errorMsg = message.error_message || message.message || '未知错误'
     console.error('[SessionWS] 执行错误:', errorMsg)
 
     error.value = errorMsg
 
+    const detailsLines: string[] = []
+    if (message.error_code) detailsLines.push(`错误码: ${message.error_code}`)
+    if (message.data) detailsLines.push(`数据: ${JSON.stringify(message.data, null, 2)}`)
+    const details = detailsLines.length > 0 ? detailsLines.join('\n') : undefined
+
     // 添加错误条目到时间线
-    workspaceStore.addErrorEntry(errorMsg)
+    workspaceStore.addErrorEntry(errorMsg, details)
 
     // 调用外部回调
     onError?.(errorMsg)

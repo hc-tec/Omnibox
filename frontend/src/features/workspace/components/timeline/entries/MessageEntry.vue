@@ -14,6 +14,8 @@ interface StructuredReport {
 
 const props = defineProps<{
   entry: TimelineEntry
+  /** 是否当前活跃步骤，用于运行态提示 */
+  isActive?: boolean
 }>()
 
 // 尝试解析结构化报告
@@ -85,7 +87,11 @@ const textClass = computed(() => {
 
 <template>
   <!-- 结构化报告展示 -->
-  <div v-if="isStructured && parsedReport" class="rounded-lg p-3 border-l-[3px] space-y-2.5" :class="containerClass">
+  <div
+    v-if="isStructured && parsedReport"
+    class="rounded-lg p-3 border-l-[3px] space-y-2.5"
+    :class="[containerClass, props.isActive ? 'shimmer-text' : '']"
+  >
     <!-- 摘要 -->
     <div class="flex items-start gap-2">
       <component :is="icon" class="h-4 w-4 flex-shrink-0 mt-0.5" :class="iconClass" />
@@ -125,8 +131,46 @@ const textClass = computed(() => {
   </div>
 
   <!-- 普通文本消息 -->
-  <div v-else class="rounded-lg p-2.5 border-l-[3px] flex items-center gap-2" :class="containerClass">
+  <div
+    v-else
+    class="rounded-lg p-2.5 border-l-[3px] flex items-center gap-2"
+    :class="[containerClass, props.isActive ? 'shimmer-text' : '']"
+  >
     <component :is="icon" class="h-4 w-4 flex-shrink-0" :class="iconClass" />
     <p class="text-sm" :class="textClass">{{ entry.message?.content }}</p>
   </div>
 </template>
+
+<style scoped>
+.shimmer-text {
+  position: relative;
+  color: var(--foreground);
+}
+
+.shimmer-text::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 45%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(255, 255, 255, 0.35) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.3s linear infinite;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+</style>

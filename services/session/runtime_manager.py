@@ -188,6 +188,7 @@ class SessionRuntimeManager:
         panel_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         reasoning_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         tool_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        tool_start_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> LangGraphExecutionResult:
         """
         在 Session 内执行查询（核心方法）
@@ -236,6 +237,7 @@ class SessionRuntimeManager:
         old_panel_callback = extras.get("emit_panel_preview") if extras else None
         old_reasoning_callback = extras.get("emit_agent_reasoning") if extras else None
         old_tool_callback = extras.get("emit_tool_result") if extras else None
+        old_tool_start_callback = extras.get("emit_tool_start") if extras else None
 
         if panel_callback and extras is not None:
             extras["emit_panel_preview"] = panel_callback
@@ -243,6 +245,8 @@ class SessionRuntimeManager:
             extras["emit_agent_reasoning"] = reasoning_callback
         if tool_callback and extras is not None:
             extras["emit_tool_result"] = tool_callback
+        if tool_start_callback and extras is not None:
+            extras["emit_tool_start"] = tool_start_callback
 
         try:
             # 执行 LangGraph
@@ -280,6 +284,16 @@ class SessionRuntimeManager:
                         extras.pop("emit_agent_reasoning", None)
                     else:
                         extras["emit_agent_reasoning"] = old_reasoning_callback
+                if tool_callback:
+                    if old_tool_callback is None:
+                        extras.pop("emit_tool_result", None)
+                    else:
+                        extras["emit_tool_result"] = old_tool_callback
+                if tool_start_callback:
+                    if old_tool_start_callback is None:
+                        extras.pop("emit_tool_start", None)
+                    else:
+                        extras["emit_tool_start"] = old_tool_start_callback
 
     def close_session(self, session_id: str) -> bool:
         """
