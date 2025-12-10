@@ -34,10 +34,15 @@ def _format_summaries(data_stash: List[DataReference]) -> str:
 
 def _format_working_memory(working_memory: Dict) -> str:
     """格式化轻量工具结果（working_memory）。"""
-    if not working_memory:
+    if not isinstance(working_memory, dict) or not working_memory:
         return "暂无"
     lines = []
     for tool_id, result in working_memory.items():
+        if not isinstance(result, dict):
+            preview = str(result)
+            preview = preview if len(preview) <= 200 else preview[:200] + "…"
+            lines.append(f"[{tool_id}] (unknown): {preview}")
+            continue
         status = result.get("status", "unknown")
         description = result.get("description", "")
         step_id = result.get("step_id", "?")
@@ -115,4 +120,3 @@ def create_reflector_node(runtime: LangGraphRuntime):
         return {"reflection": reflection}
 
     return node
-

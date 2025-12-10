@@ -368,12 +368,16 @@ class SessionRuntimeManager:
             else:
                 chat_history_strs.append(str(item))
 
+        base_working_memory = (
+            session_state.working_memory if isinstance(session_state.working_memory, dict) else {}
+        )
+
         # 构建初始状态
         initial_state: GraphState = {
             "original_query": query,
             "chat_history": chat_history_strs,
             "data_stash": data_stash,
-            "working_memory": session_state.working_memory.copy(),
+            "working_memory": dict(base_working_memory),
             "next_tool_call": None,
             "reflection": None,
             "final_report": None,

@@ -38,11 +38,17 @@ def _format_working_memory(working_memory: Dict) -> str:
 
     轻量工具的结果不持久化，仅在当前会话中可用。
     """
-    if not working_memory:
+    if not isinstance(working_memory, dict) or not working_memory:
         return "暂无轻量工具结果"
 
     lines = []
     for tool_id, result in working_memory.items():
+        if not isinstance(result, dict):
+            preview = str(result)
+            preview = preview if len(preview) <= 200 else preview[:200] + "…"
+            lines.append(f"- [Step ?] [{tool_id}] (unknown): {preview}")
+            continue
+
         status = result.get("status", "unknown")
         description = result.get("description", "")
         step_id = result.get("step_id", "?")
@@ -128,4 +134,3 @@ def create_planner_node(runtime: LangGraphRuntime):
             raise
 
     return node
-

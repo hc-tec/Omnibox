@@ -228,12 +228,17 @@ class HierarchicalMemoryManager:
 
     def _format_working_memory(self, working_memory: Dict[str, Any]) -> str:
         """格式化工作记忆。"""
-        if not working_memory:
+        if not isinstance(working_memory, dict) or not working_memory:
             return ""
 
         lines = []
         for tool_id, result in working_memory.items():
             if tool_id == "filter_datasource":
+                continue
+            if not isinstance(result, dict):
+                preview = str(result)
+                preview = preview if len(preview) <= 200 else preview[:200] + "…"
+                lines.append(f"- [{tool_id}]: {preview}")
                 continue
             status = result.get("status", "unknown")
             description = result.get("description", "")

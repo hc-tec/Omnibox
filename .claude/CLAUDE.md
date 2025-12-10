@@ -164,3 +164,6 @@ const response = await requestPanel({ query, mode: 'simple' })  // 绝对禁止�
 
 ## 沟通原则
 - 与用户的所有回复与沟通，文档与代码注释均使用中文，必要时可保留英文专业名词，并在首次出现时附简要中文注释。
+
+后端解释器使用 D:\Anaconda\envs\torch-cuda\python.exe，端口绑定8002
+使用playwright mcp进行端到端测试

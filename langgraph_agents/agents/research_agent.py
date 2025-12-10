@@ -26,6 +26,15 @@ from ..component_contracts import (
 logger = logging.getLogger(__name__)
 
 
+def _short_preview(value: Any, limit: int = 200) -> str:
+    """将任意对象转换为可读的短字符串，避免提示词过长或格式错误。"""
+    try:
+        text = json.dumps(value, ensure_ascii=False)
+    except Exception:
+        text = str(value)
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
 def _emit_reasoning(runtime: LangGraphRuntime, payload: Dict[str, Any]) -> None:
     """
     触发 Agent reasoning 回调（如果有）。
@@ -87,14 +96,15 @@ def _format_data_stash(data_stash: List[DataReference]) -> str:
 
 def _format_working_memory(working_memory: Dict) -> str:
     """格式化轻量工具结果。"""
-    if not working_memory:
+    if not isinstance(working_memory, dict) or not working_memory:
         return "暂无"
     lines = []
     for tool_id, result in working_memory.items():
         if tool_id == "filter_datasource":
             continue  # 跳过内部标记
         if tool_id == "component_contracts":
-            contracts = result.get("contracts") or {}
+            contracts_entry = result if isinstance(result, dict) else {}
+            contracts = contracts_entry.get("contracts") or {}
             if not contracts:
                 continue
             lines.append("组件契约登记：")
@@ -108,6 +118,10 @@ def _format_working_memory(working_memory: Dict) -> str:
                 lines.append(
                     f"  - {component_id} ({contract_id}) [{status}] → {target_str} {description}".rstrip()
                 )
+            continue
+        if not isinstance(result, dict):
+            preview = _short_preview(result)
+            lines.append(f"[{tool_id}] (unknown): {preview}")
             continue
         status = result.get("status", "unknown")
         description = result.get("description", "")
@@ -145,8 +159,10 @@ def _format_raw_fetch_refs(data_stash: List[DataReference]) -> str:
 
 def _format_component_contract_registry(working_memory: Dict[str, Any]) -> str:
     """单独格式化组件契约信息，供提示词引用。"""
+    if not isinstance(working_memory, dict):
+        return "暂无"
     contracts_entry = working_memory.get("component_contracts")
-    if not contracts_entry:
+    if not isinstance(contracts_entry, dict):
         return "暂无"
     contracts = contracts_entry.get("contracts") or {}
     if not contracts:
@@ -185,9 +201,12 @@ def _merge_component_contracts(
     if not payloads:
         return None
 
-    working_memory = dict(state.get("working_memory", {}))
-    current_entry = dict(working_memory.get("component_contracts", {}))
-    existing_contracts = dict(current_entry.get("contracts", {}))
+    state_working_memory = state.get("working_memory", {})
+    working_memory = dict(state_working_memory) if isinstance(state_working_memory, dict) else {}
+    raw_entry = working_memory.get("component_contracts", {})
+    current_entry = dict(raw_entry) if isinstance(raw_entry, dict) else {}
+    raw_contracts = current_entry.get("contracts", {})
+    existing_contracts = dict(raw_contracts) if isinstance(raw_contracts, dict) else {}
 
     updated = False
     for payload in payloads:
