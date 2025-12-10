@@ -38,13 +38,20 @@ import type {
 } from "../../../shared/types/panel";
 import DynamicBlockRenderer from "./blocks/DynamicBlockRenderer.vue";
 import { usePanelStore } from "@/store/panelStore";
-import { PANEL_SIZE_PRESETS, type PanelLayoutSize } from "@/shared/panelSizePresets";
+import { PANEL_SIZE_PRESETS, type PanelLayoutSize, type PanelSizePreset } from "@/shared/panelSizePresets";
 
-const props = defineProps<{
-  layout: LayoutTree;
-  blocks: UIBlock[];
-  dataBlocks: Record<string, DataBlock>;
-}>();
+const props = withDefaults(
+  defineProps<{
+    layout: LayoutTree;
+    blocks: UIBlock[];
+    dataBlocks: Record<string, DataBlock>;
+    /** 覆盖全局尺寸预设，用于工作区等需要紧凑显示的场景 */
+    sizePreset?: PanelSizePreset;
+  }>(),
+  {
+    sizePreset: undefined,
+  }
+);
 
 const emit = defineEmits<{
   (event: "snapshot-change", snapshot: LayoutSnapshotItem[]): void;
@@ -56,7 +63,7 @@ const boardRef = ref<HTMLElement | null>(null);
 const boardWidth = ref(0);
 const resizeObserver = ref<ResizeObserver | null>(null);
 
-const sizePreset = computed(() => PANEL_SIZE_PRESETS[panelStore.state.sizePreset]);
+const sizePreset = computed(() => PANEL_SIZE_PRESETS[props.sizePreset ?? panelStore.state.sizePreset]);
 
 const blockMap = computed(() => {
   const map = new Map<string, UIBlock>();

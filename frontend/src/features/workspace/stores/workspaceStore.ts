@@ -501,7 +501,7 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
   // ========== 面板预览管理 ==========
 
   /**
-   * 添加面板预览
+   * 添加面板预览（带去重逻辑）
    *
    * emit_panel_preview 工具产出的面板会通过此方法添加到列表
    * @param preview 面板数据
@@ -518,9 +518,6 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
     previews?: Array<{ title?: string; preview_id?: string }>
     source_query?: string
   }, timelineEntryId?: string) {
-    // 生成唯一 ID
-    const id = `panel-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-
     // 从后端数据结构中提取布局和块信息
     // panel_payload 包含渲染好的 layout 和 blocks（来自 PanelPayload.model_dump()）
     const layout = preview.layout || preview.panel_payload?.layout || preview.panel_spec?.layout
@@ -529,6 +526,20 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
 
     // 提取标题
     const title = preview.previews?.[0]?.title || '数据面板'
+
+    // 去重：检查是否已存在相同标题和来源的面板（在最近 3 个面板内）
+    const recentPanels = panelPreviews.value.slice(-3)
+    const existingPanel = recentPanels.find(p =>
+      p.title === title &&
+      p.sourceQuery === preview.source_query
+    )
+    if (existingPanel) {
+      // 如果找到重复面板，返回已有面板的 ID
+      return existingPanel.id
+    }
+
+    // 生成唯一 ID
+    const id = `panel-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
 
     const panelPreview: PanelPreview = {
       id,
@@ -596,12 +607,22 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
   }
 
   /**
-   * 添加思考条目
+   * 添加思考条目（带去重逻辑）
    */
-  function addThinkingEntry(content: string): string {
+  function addThinkingEntry(content: string, reasoning?: string): string {
+    // 去重：检查最后一条是否是相同的思考条目
+    const lastEntry = timelineEntries.value[timelineEntries.value.length - 1]
+    if (lastEntry?.type === 'thinking' && lastEntry.thinking?.content === content) {
+      // 如果新的 reasoning 更详细，更新 reasoning
+      if (reasoning && reasoning !== lastEntry.thinking.reasoning) {
+        lastEntry.thinking.reasoning = reasoning
+      }
+      return lastEntry.id
+    }
+
     return addTimelineEntry({
       type: 'thinking',
-      thinking: { content },
+      thinking: { content, reasoning },
     })
   }
 

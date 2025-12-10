@@ -867,23 +867,29 @@ User Input → ChatInteractionArea
 
 ### TODO
 
-- [ ] Phase 5.1: 后端扩展
-  - [ ] chat_stream.py 支持 session_id 参数
-  - [ ] 查询结果保存到 SessionRuntimeStore
+- [x] Phase 5.1: 后端扩展（✅ 2025-12-10 已完成）
+  - [x] `session_controller.py` 新增 WebSocket 端点 `/{session_id}/stream`
+  - [x] 使用 threading + Queue 模式处理异步回调
+  - [x] 推送 stage, data, research_step, complete, error 消息
 
-- [ ] Phase 5.2: 前端 WebSocket 适配
-  - [ ] 创建 useWorkspaceWebSocket.ts（复用 useResearchWebSocket 模式）
-  - [ ] ChatInteractionArea.vue 使用 WebSocket 替代 HTTP
-  - [ ] 消息转换为 TimelineEntry
+- [x] Phase 5.2: 前端 WebSocket 适配（✅ 2025-12-10 已完成）
+  - [x] 创建 `useSessionWebSocket.ts`（连接管理、消息处理）
+  - [x] `ChatInteractionArea.vue` 使用 WebSocket 替代 HTTP
+  - [x] 消息转换为 TimelineEntry（thinking, tool_call, panel, error）
 
-- [ ] Phase 5.3: 全局连接管理
-  - [ ] 创建 useWorkspaceWebSocketManager.ts
-  - [ ] 处理连接复用、请求去重、资源清理
+- [x] Phase 5.3: 单元测试（✅ 2025-12-10 已完成）
+  - [x] 创建 `tests/api/test_session_stream.py`
+  - [x] 11 个测试用例全部通过
 
-- [ ] Phase 5.4: 测试验证
-  - [ ] 手动测试：查询后实时看到时间线更新
-  - [ ] 验证：思考 → 工具调用 → 面板 按顺序展示
-  - [ ] 验证：进度实时可见，不再等待数分钟
+- [x] Phase 5.4: 测试验证（✅ 2025-12-10 已完成）
+  - [x] 修复 progress 值范围（0-1 浮点数）
+  - [x] 修复类型错误（DataStashItem 接口）
+
+**实现文件清单**：
+- 后端：`api/controllers/session_controller.py` (新增 `session_stream` 和 `_stream_session_execution`)
+- 前端：`frontend/src/features/workspace/composables/useSessionWebSocket.ts`（新建）
+- 前端：`frontend/src/features/workspace/components/canvas/ChatInteractionArea.vue`（修改 handleSend）
+- 测试：`tests/api/test_session_stream.py`（新建）
 
 ### 风险与注意事项
 

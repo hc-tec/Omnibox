@@ -107,6 +107,7 @@ class SyncLangGraphExecutor:
         filter_datasource: Optional[str] = None,
         thread_id: Optional[str] = None,
         panel_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        reasoning_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> LangGraphExecutionResult:
         """
         同步执行 LangGraph 工作流。
@@ -115,6 +116,8 @@ class SyncLangGraphExecutor:
             user_query: 用户查询
             filter_datasource: 过滤数据源（可选）
             thread_id: 会话 ID（可选，用于多轮对话）
+            panel_callback: 面板预览回调（可选）
+            reasoning_callback: Agent推理回调（可选）
 
         Returns:
             LangGraphExecutionResult
@@ -157,9 +160,13 @@ class SyncLangGraphExecutor:
 
         tool_context = getattr(self.runtime, "tool_context", None)
         extras = getattr(tool_context, "extras", None)
-        old_callback = extras.get("emit_panel_preview") if extras else None
+        old_panel_callback = extras.get("emit_panel_preview") if extras else None
+        old_reasoning_callback = extras.get("emit_agent_reasoning") if extras else None
+
         if panel_callback and extras is not None:
             extras["emit_panel_preview"] = panel_callback
+        if reasoning_callback and extras is not None:
+            extras["emit_agent_reasoning"] = reasoning_callback
 
         try:
             # 同步调用 LangGraph
@@ -179,11 +186,17 @@ class SyncLangGraphExecutor:
                 error=str(exc),
             )
         finally:
-            if panel_callback and extras is not None:
-                if old_callback is None:
-                    extras.pop("emit_panel_preview", None)
-                else:
-                    extras["emit_panel_preview"] = old_callback
+            if extras is not None:
+                if panel_callback:
+                    if old_panel_callback is None:
+                        extras.pop("emit_panel_preview", None)
+                    else:
+                        extras["emit_panel_preview"] = old_panel_callback
+                if reasoning_callback:
+                    if old_reasoning_callback is None:
+                        extras.pop("emit_agent_reasoning", None)
+                    else:
+                        extras["emit_agent_reasoning"] = old_reasoning_callback
 
     def _extract_result(self, state: GraphState) -> LangGraphExecutionResult:
         """从最终状态提取结果。"""

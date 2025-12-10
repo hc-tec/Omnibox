@@ -527,7 +527,7 @@ def _stream_session_execution(
             stream_id=stream_id,
             stage=StreamStage.INTENT,
             message="分析查询并规划执行步骤...",
-            progress=10,
+            progress=0.1,
         ).model_dump()
 
         # 检查 Session 是否存在
@@ -546,7 +546,7 @@ def _stream_session_execution(
             stream_id=stream_id,
             stage=StreamStage.FETCH,
             message="执行查询...",
-            progress=30,
+            progress=0.3,
         ).model_dump()
 
         # 事件队列，用于接收回调
@@ -558,6 +558,14 @@ def _stream_session_execution(
             panel_previews.append(payload)
             event_queue.put(("panel_preview", payload))
 
+        def reasoning_callback(payload: Dict[str, Any]) -> None:
+            """Agent推理回调"""
+            event_queue.put(("agent_reasoning", payload))
+
+        def tool_callback(payload: Dict[str, Any]) -> None:
+            """工具调用完成回调"""
+            event_queue.put(("tool_result", payload))
+
         def run_execution():
             """在后台线程执行"""
             try:
@@ -566,6 +574,8 @@ def _stream_session_execution(
                     query=query,
                     context=context,
                     panel_callback=panel_callback,
+                    reasoning_callback=reasoning_callback,
+                    tool_callback=tool_callback,
                 )
                 result_holder["result"] = result
             except Exception as exc:
@@ -589,6 +599,63 @@ def _stream_session_execution(
 
             if event_type == "done":
                 break
+
+            if event_type == "agent_reasoning":
+                # Agent 推理消息
+                reasoning_payload = payload or {}
+                step_id = reasoning_payload.get("step_id", step_counter + 1)
+                decision = reasoning_payload.get("decision", "CONTINUE")
+                reasoning = reasoning_payload.get("reasoning", "")
+                tool_call = reasoning_payload.get("tool_call", {})
+
+                # 确定 action 描述
+                if decision == "FINISH":
+                    action = "完成任务"
+                elif decision == "REQUEST_CLARIFICATION":
+                    action = "请求用户澄清"
+                elif tool_call:
+                    tool_name = tool_call.get("plugin_id", "未知工具")
+                    action = f"计划调用工具: {tool_name}"
+                else:
+                    action = "分析执行策略"
+
+                # 推送带 reasoning 的 ResearchStepMessage
+                yield ResearchStepMessage(
+                    stream_id=stream_id,
+                    task_id=session_id,
+                    step_id=f"think_{step_id}",
+                    step_type="planning",
+                    action=action,
+                    status="success",
+                    reasoning=reasoning,
+                    details={
+                        "decision": decision,
+                        "tool_call": tool_call,
+                    },
+                ).model_dump()
+
+            if event_type == "tool_result":
+                # 工具调用完成消息
+                tool_payload = payload or {}
+                step_id = tool_payload.get("step_id", step_counter + 1)
+                tool_name = tool_payload.get("tool_name", "unknown")
+                description = tool_payload.get("description", "")
+                status = tool_payload.get("status", "success")
+                summary = tool_payload.get("summary", "")
+
+                # 推送工具调用完成消息
+                yield ResearchStepMessage(
+                    stream_id=stream_id,
+                    task_id=session_id,
+                    step_id=f"step_{step_id}",
+                    step_type="tool_call",
+                    action=description or f"调用工具: {tool_name}",
+                    status=status,
+                    details={
+                        "tool_name": tool_name,
+                        "summary": summary,
+                    },
+                ).model_dump()
 
             if event_type == "panel_preview":
                 step_counter += 1
@@ -641,7 +708,7 @@ def _stream_session_execution(
             stream_id=stream_id,
             stage=StreamStage.SUMMARY,
             message="生成执行摘要...",
-            progress=90,
+            progress=0.9,
         ).model_dump()
 
         # 获取更新后的 Session 状态
@@ -655,6 +722,7 @@ def _stream_session_execution(
             }
 
         # 推送最终数据
+        # 注意：panel_previews 已通过 panel_preview 事件实时推送，此处不再重复推送
         yield DataMessage(
             stream_id=stream_id,
             stage=StreamStage.SUMMARY,
@@ -666,7 +734,6 @@ def _stream_session_execution(
                     for ref in result.data_stash
                 ],
                 "execution_steps": result.execution_steps,
-                "panel_previews": panel_previews,
                 "session_summary": session_summary,
             }
         ).model_dump()

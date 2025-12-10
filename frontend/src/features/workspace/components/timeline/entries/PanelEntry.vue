@@ -90,18 +90,17 @@ async function handlePin() {
       </div>
     </div>
 
-    <!-- 面板内容 -->
-    <div v-show="isExpanded" class="p-3">
-      <div class="bg-background rounded-lg border border-border/40 max-h-[400px] overflow-y-auto">
-        <PanelBoard
-          v-if="entry.panel?.layout"
-          :layout="(entry.panel.layout as LayoutTree)"
-          :blocks="(entry.panel.blocks as UIBlock[])"
-          :data-blocks="(entry.panel.dataBlocks as Record<string, DataBlock>)"
-        />
-        <div v-else class="p-4 text-center text-muted-foreground text-sm">
-          面板数据加载中...
-        </div>
+    <!-- 面板内容 - 全宽紧凑显示 -->
+    <div v-show="isExpanded" class="p-2">
+      <PanelBoard
+        v-if="entry.panel?.layout"
+        :layout="(entry.panel.layout as LayoutTree)"
+        :blocks="(entry.panel.blocks as UIBlock[])"
+        :data-blocks="(entry.panel.dataBlocks as Record<string, DataBlock>)"
+        size-preset="compact"
+      />
+      <div v-else class="p-4 text-center text-muted-foreground text-sm">
+        面板数据加载中...
       </div>
     </div>
   </div>

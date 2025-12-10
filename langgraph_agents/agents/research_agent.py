@@ -26,6 +26,50 @@ from ..component_contracts import (
 logger = logging.getLogger(__name__)
 
 
+def _emit_reasoning(runtime: LangGraphRuntime, payload: Dict[str, Any]) -> None:
+    """
+    触发 Agent reasoning 回调（如果有）。
+
+    Args:
+        runtime: LangGraph 运行时
+        payload: reasoning 数据载荷
+    """
+    tool_context = getattr(runtime, "tool_context", None)
+    if not tool_context:
+        return
+
+    extras = getattr(tool_context, "extras", None)
+    if not extras:
+        return
+
+    callback = extras.get("emit_agent_reasoning")
+    if callback and callable(callback):
+        try:
+            callback(payload)
+        except Exception as exc:
+            logger.warning("emit_agent_reasoning 回调失败: %s", exc)
+
+
+def _format_chat_history(chat_history: List[str]) -> str:
+    """
+    格式化对话历史。
+
+    chat_history 是字符串列表，格式为 "role: content"
+    """
+    if not chat_history:
+        return "暂无"
+
+    # 限制显示最近的 10 轮对话，避免 prompt 过长
+    recent_history = chat_history[-20:] if len(chat_history) > 20 else chat_history
+
+    lines = []
+    for entry in recent_history:
+        # entry 格式是 "role: content"
+        lines.append(f"  {entry}")
+
+    return "\n".join(lines)
+
+
 def _format_data_stash(data_stash: List[DataReference]) -> str:
     """格式化已获取的数据摘要。"""
     if not data_stash:
@@ -225,6 +269,7 @@ def create_research_agent_node(runtime: LangGraphRuntime):
 
         data_stash = state.get("data_stash", [])
         working_memory = state.get("working_memory", {})
+        chat_history = state.get("chat_history", [])  # Session 多轮对话历史
         next_step = len(data_stash) + 1
 
         # 检查是否有上一步工具执行结果需要处理
@@ -241,10 +286,19 @@ def create_research_agent_node(runtime: LangGraphRuntime):
             system_prompt,
             "\n## 数据处理约束\n- 对 fetch_public_data / fetch_private_data 获取的原始 RSS 数据，必须先调用 data_operator（source_ref 使用 \"$step.N\" 或 data_id）进行过滤/清洗，再进入后续分析或总结。\n- 禁止直接基于适配器 / 面板层数据编写逻辑。",
             f"\n## 可用工具列表\n{available_tools}",
-            f"\n## 用户查询\n{query}",
+            f"\n## 用户当前查询\n{query}",
+        ]
+
+        # 添加对话历史（Session 多轮对话支持）
+        if chat_history:
+            prompt_parts.append(
+                f"\n## 对话历史（重要：需要结合历史上下文理解当前查询）\n{_format_chat_history(chat_history)}"
+            )
+
+        prompt_parts.extend([
             f"\n## 已执行的工具链\n{_extract_executed_tools(data_stash)}",
             f"\n## 已获取的数据（data_stash）\n{_format_data_stash(data_stash)}",
-        ]
+        ])
 
         prompt_parts.append(
             f"\n## 原始 RSS 数据引用（必须先用 data_operator 处理）\n{_format_raw_fetch_refs(data_stash)}"
@@ -272,7 +326,7 @@ def create_research_agent_node(runtime: LangGraphRuntime):
         try:
             response = call_llm()
             data = parse_json_payload(response)
-            return _process_agent_decision(data, next_step, state)
+            return _process_agent_decision(data, next_step, state, runtime)
 
         except Exception as exc:
             logger.exception("ResearchAgent 解析失败: %s", exc)
@@ -294,6 +348,7 @@ def _process_agent_decision(
     data: Dict[str, Any],
     next_step: int,
     state: GraphState,
+    runtime: LangGraphRuntime,
 ) -> Dict[str, Any]:
     """
     处理 Agent 的决策结果。
@@ -306,6 +361,14 @@ def _process_agent_decision(
     updated_working_memory = _merge_component_contracts(state, contract_payloads, next_step)
 
     logger.info("ResearchAgent 决策: %s - %s", decision, reasoning[:100])
+
+    # 触发 reasoning 回调（如果有）
+    _emit_reasoning(runtime, {
+        "step_id": next_step,
+        "decision": decision,
+        "reasoning": reasoning,
+        "tool_call": data.get("tool_call"),
+    })
 
     if decision == "FINISH":
         # 任务完成，生成最终报告

@@ -190,6 +190,12 @@ class TestFormatHelpers:
 class TestProcessAgentDecision:
     """测试Agent决策处理"""
 
+    def _create_mock_runtime(self):
+        """创建模拟运行时（用于 reasoning 回调）"""
+        runtime = Mock()
+        runtime.tool_context = None
+        return runtime
+
     def test_process_finish_decision(self):
         """测试FINISH决策"""
         data = {
@@ -202,7 +208,8 @@ class TestProcessAgentDecision:
             },
         }
         state: GraphState = {"original_query": "测试查询", "data_stash": []}
-        result = _process_agent_decision(data, 1, state)
+        runtime = self._create_mock_runtime()
+        result = _process_agent_decision(data, 1, state, runtime)
 
         assert result["agent_decision"] == "FINISH"
         assert result["next_tool_call"] is None
@@ -220,7 +227,8 @@ class TestProcessAgentDecision:
             },
         }
         state: GraphState = {"original_query": "测试查询", "data_stash": []}
-        result = _process_agent_decision(data, 1, state)
+        runtime = self._create_mock_runtime()
+        result = _process_agent_decision(data, 1, state, runtime)
 
         assert result["agent_decision"] == "CONTINUE"
         assert result["next_tool_call"] is not None
@@ -235,7 +243,8 @@ class TestProcessAgentDecision:
             "tool_call": {},  # 空工具调用
         }
         state: GraphState = {"original_query": "测试查询", "data_stash": []}
-        result = _process_agent_decision(data, 1, state)
+        runtime = self._create_mock_runtime()
+        result = _process_agent_decision(data, 1, state, runtime)
 
         # 应该强制转为FINISH
         assert result["agent_decision"] == "FINISH"
@@ -252,7 +261,8 @@ class TestProcessAgentDecision:
             },
         }
         state: GraphState = {"original_query": "测试查询", "data_stash": []}
-        result = _process_agent_decision(data, 1, state)
+        runtime = self._create_mock_runtime()
+        result = _process_agent_decision(data, 1, state, runtime)
 
         assert result["agent_decision"] == "REQUEST_CLARIFICATION"
         assert result["next_tool_call"] is not None
@@ -276,7 +286,8 @@ class TestProcessAgentDecision:
             },
         }
         state: GraphState = {"original_query": "测试", "data_stash": [], "working_memory": {}}
-        result = _process_agent_decision(data, 1, state)
+        runtime = self._create_mock_runtime()
+        result = _process_agent_decision(data, 1, state, runtime)
 
         working_memory = result.get("working_memory")
         assert working_memory is not None

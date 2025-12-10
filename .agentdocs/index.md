@@ -173,6 +173,16 @@
   - 进度跟踪与完成记录
 
 ## 最近完成任务文档
+- `workflow/done/251210-workspace-timeline-display-fix.md` - **工作台时间线显示问题修复** [✅ 完成 2025-12-10]
+  - **修复问题**：
+    1. 重复的"思考中"条目 → addThinkingEntry 去重逻辑
+    2. 面板生成重复 → addPanelPreview 去重 + 后端 summary 移除 panel_previews
+    3. Agent reasoning 缺失 → 完整的 reasoning 推送链路（research_agent → sync_executor → runtime_manager → session_controller → WebSocket → frontend）
+  - **核心改进**：
+    - Phase 1: Agent Reasoning 实时推送（扩展 LangGraph 回调机制 + ResearchStepMessage 带 reasoning 字段 + ThinkingEntry.vue 显示详细推理）
+    - Phase 2: 去重机制（后端/前端双重去重）
+    - Phase 3: 时间线优化（合并连续思考条目）
+  - **ThinkingEntry 新功能**：主要内容 + 详细推理（带 Lightbulb 图标和"详细推理"标签）
 - `workflow/done/251209-session-runtime-unified-architecture.md` - **工作流工作台 Phase 6: Session Runtime** [✅ 完成 2025-12-09]
   - **目标**：实现 Session Runtime 统一架构，解决每次请求创建新 LangGraph workflow 导致上下文丢失的问题
   - **核心功能**：SessionRuntimeManager、跨请求上下文保持（data_stash/chat_history/working_memory）、RecordedStep 记录、保存为模板

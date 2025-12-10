@@ -157,6 +157,25 @@ def create_data_stasher_node(runtime: LangGraphRuntime):
         data_stash: List[DataReference] = list(state.get("data_stash", []))
         data_stash.append(data_ref)
 
+        # 触发工具调用完成回调（如果有）
+        tool_context = getattr(runtime, "tool_context", None)
+        if tool_context:
+            extras = getattr(tool_context, "extras", None)
+            if extras:
+                tool_callback = extras.get("emit_tool_result")
+                if tool_callback and callable(tool_callback):
+                    try:
+                        tool_callback({
+                            "step_id": pending.call.step_id,
+                            "tool_name": pending.call.plugin_id,
+                            "description": pending.call.description,
+                            "status": pending.status,
+                            "summary": summary,
+                            "data_id": data_id,
+                        })
+                    except Exception as exc:
+                        logger.warning("emit_tool_result 回调失败: %s", exc)
+
         # V5.0 P0: 保留 last_tool_result 供 Reflector 检查状态
         return {
             "data_stash": data_stash,

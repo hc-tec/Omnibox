@@ -26,6 +26,7 @@ export interface StreamMessage {
   action?: string
   status?: string
   details?: Record<string, unknown>
+  reasoning?: string  // Agent 推理内容
   // complete 字段
   success?: boolean
   total_time?: number
@@ -57,11 +58,13 @@ export function useSessionWebSocket(options: SessionWebSocketOptions) {
 
   /**
    * 构建 WebSocket URL
+   * 基于 VITE_API_BASE 环境变量，将 http 替换为 ws
    */
   function buildWsUrl(): string {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    return `${protocol}//${host}/api/v1/sessions/${sessionId}/stream`
+    const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8002/api/v1'
+    // 将 http:// 替换为 ws://，https:// 替换为 wss://
+    const wsBase = apiBase.replace(/^http/, 'ws')
+    return `${wsBase}/sessions/${sessionId}/stream`
   }
 
   /**
@@ -292,19 +295,26 @@ export function useSessionWebSocket(options: SessionWebSocketOptions) {
   }
 
   /**
-   * 处理步骤消息 - 转为工具调用条目
+   * 处理步骤消息 - 区分思考和工具调用
    */
   function handleStepMessage(message: StreamMessage): void {
     const stepId = message.step_id || `step-${Date.now()}`
     const action = message.action || '执行步骤'
     const status = message.status || 'success'
+    const stepType = message.step_type || 'tool_call'
+    const reasoning = message.reasoning
 
-    // 添加工具调用条目
-    workspaceStore.addToolCallEntry({
-      tool_name: action,
-      tool_id: stepId,
-      status: status === 'success' ? 'success' : status === 'error' ? 'error' : 'running',
-    })
+    // 如果是 planning 类型（Agent 思考），添加为思考条目
+    if (stepType === 'planning') {
+      workspaceStore.addThinkingEntry(action, reasoning)
+    } else {
+      // 否则添加工具调用条目
+      workspaceStore.addToolCallEntry({
+        tool_name: action,
+        tool_id: stepId,
+        status: status === 'success' ? 'success' : status === 'error' ? 'error' : 'running',
+      })
+    }
   }
 
   /**

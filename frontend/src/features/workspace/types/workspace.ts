@@ -235,6 +235,7 @@ export interface TimelineEntry {
   /** 思考信息（Agent 推理过程） */
   thinking?: {
     content: string
+    reasoning?: string  // Agent 的详细推理内容（如：发现已有数据，不用重复获取）
   }
 
   /** 工具调用信息 */

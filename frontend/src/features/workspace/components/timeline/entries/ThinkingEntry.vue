@@ -3,7 +3,7 @@
 -->
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Brain, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Brain, ChevronDown, ChevronRight, Lightbulb } from 'lucide-vue-next'
 import type { TimelineEntry } from '../../../types/workspace'
 
 defineProps<{
@@ -30,8 +30,24 @@ const isExpanded = ref(true)
     </div>
 
     <!-- 内容 -->
-    <div v-show="isExpanded" class="px-3 pb-2.5 text-[13px] leading-relaxed text-foreground/80 whitespace-pre-wrap">
-      {{ entry.thinking?.content }}
+    <div v-show="isExpanded" class="px-3 pb-2.5">
+      <!-- 主要内容 -->
+      <div class="text-[13px] leading-relaxed text-foreground/80 whitespace-pre-wrap">
+        {{ entry.thinking?.content }}
+      </div>
+
+      <!-- 详细推理（如果有） -->
+      <div v-if="entry.thinking?.reasoning" class="mt-2 pt-2 border-t border-border/50">
+        <div class="flex items-center gap-1.5 mb-1.5">
+          <Lightbulb class="h-3 w-3 text-yellow-500/80" />
+          <span class="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+            详细推理
+          </span>
+        </div>
+        <div class="text-[13px] leading-relaxed text-foreground/70 whitespace-pre-wrap bg-muted/20 rounded px-2 py-1.5">
+          {{ entry.thinking.reasoning }}
+        </div>
+      </div>
     </div>
   </div>
 </template>

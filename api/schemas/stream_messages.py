@@ -276,6 +276,10 @@ class ResearchStepMessage(BaseModel):
         None,
         description="步骤详情（如：查询耗时、数据条数等）"
     )
+    reasoning: Optional[str] = Field(
+        None,
+        description="Agent 推理内容（如：发现已有数据，不用重复获取）"
+    )
     timestamp: str = Field(
         default_factory=lambda: datetime.now().isoformat(),
         description="消息时间戳（ISO格式）"

@@ -186,6 +186,8 @@ class SessionRuntimeManager:
         query: str,
         context: Optional[Dict[str, Any]] = None,
         panel_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        reasoning_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        tool_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> LangGraphExecutionResult:
         """
         在 Session 内执行查询（核心方法）
@@ -200,6 +202,8 @@ class SessionRuntimeManager:
             query: 用户查询
             context: 额外上下文（如 artifact_refs）
             panel_callback: 面板预览回调
+            reasoning_callback: Agent推理回调
+            tool_callback: 工具调用完成回调
 
         Returns:
             LangGraphExecutionResult
@@ -226,12 +230,19 @@ class SessionRuntimeManager:
             "configurable": {"thread_id": session_id},
         }
 
-        # 设置 panel_callback
+        # 设置 callbacks
         tool_context = getattr(executor.runtime, "tool_context", None)
         extras = getattr(tool_context, "extras", None) if tool_context else None
-        old_callback = extras.get("emit_panel_preview") if extras else None
+        old_panel_callback = extras.get("emit_panel_preview") if extras else None
+        old_reasoning_callback = extras.get("emit_agent_reasoning") if extras else None
+        old_tool_callback = extras.get("emit_tool_result") if extras else None
+
         if panel_callback and extras is not None:
             extras["emit_panel_preview"] = panel_callback
+        if reasoning_callback and extras is not None:
+            extras["emit_agent_reasoning"] = reasoning_callback
+        if tool_callback and extras is not None:
+            extras["emit_tool_result"] = tool_callback
 
         try:
             # 执行 LangGraph
@@ -257,12 +268,18 @@ class SessionRuntimeManager:
             raise
 
         finally:
-            # 恢复原来的 callback
-            if panel_callback and extras is not None:
-                if old_callback is None:
-                    extras.pop("emit_panel_preview", None)
-                else:
-                    extras["emit_panel_preview"] = old_callback
+            # 恢复原来的 callbacks
+            if extras is not None:
+                if panel_callback:
+                    if old_panel_callback is None:
+                        extras.pop("emit_panel_preview", None)
+                    else:
+                        extras["emit_panel_preview"] = old_panel_callback
+                if reasoning_callback:
+                    if old_reasoning_callback is None:
+                        extras.pop("emit_agent_reasoning", None)
+                    else:
+                        extras["emit_agent_reasoning"] = old_reasoning_callback
 
     def close_session(self, session_id: str) -> bool:
         """
