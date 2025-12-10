@@ -182,7 +182,23 @@ class ViewModelBuilder:
         data: Dict[str, Any]
         if component_id == "Table":
             table_payload = normalized[0] if normalized else {"columns": [], "rows": []}
-            data = table_payload
+            columns = table_payload.get("columns") or []
+            rows = table_payload.get("rows") or []
+            # TableBlock 依赖 items/props.columns，补充行数据与列配置
+            data = {
+                "items": rows,
+                "columns": columns,
+                "rows": rows,
+            }
+            if columns and "columns" not in props:
+                props["columns"] = [
+                    {
+                        "field": col.get("key") or col.get("field") or col.get("id") or f"col_{idx}",
+                        "header": col.get("label") or col.get("title") or col.get("key") or col.get("field") or col.get("id") or f"列{idx}",
+                        "sortable": col.get("sortable", True),
+                    }
+                    for idx, col in enumerate(columns, start=1)
+                ]
         else:
             data = {"items": normalized}
 

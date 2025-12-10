@@ -16,6 +16,16 @@ if "rag_system.rag_pipeline" not in sys.modules:
     rag_pipeline_stub.RAGPipeline = _StubRAGPipeline
     sys.modules["rag_system.rag_pipeline"] = rag_pipeline_stub
 
+if "rag_system.config" not in sys.modules:
+    config_stub = types.ModuleType("rag_system.config")
+    config_stub.RETRIEVAL_CONFIG = {}
+    config_stub.DATASOURCE_FILE = None
+    config_stub.SEMANTIC_DOCS_PATH = None
+    config_stub.VECTOR_DB_PATH = None
+    config_stub.EMBEDDING_MODEL_CONFIG = {}
+    config_stub.CHROMA_CONFIG = {}
+    sys.modules["rag_system.config"] = config_stub
+
 from langgraph_agents.tools.panel_stream import register_panel_stream_tool
 from langgraph_agents.tools.registry import ToolRegistry
 from langgraph_agents.runtime import ToolExecutionContext
@@ -44,7 +54,7 @@ def _build_tool():
 def _build_call():
     return ToolCall(
         plugin_id="emit_panel_preview",
-        args={"query": "demo preview"},
+        args={"source_ref": "lg-demo", "contract_id": "ListPanel-contract-v3"},
         step_id=1,
         description="emit preview",
     )
@@ -72,10 +82,25 @@ def test_panel_preview_emits_data_when_callback_present():
     def emitter(data):
         captured.append(data)
 
+    class _StubStore:
+        def load(self, data_id):
+            return {
+                "items": [{"title": "demo"}],
+                "feed_title": "Demo Feed",
+                "generated_path": "/demo/path",
+                "source": "local",
+                "metadata": {"item_count": 1},
+            }
+
     context = ToolExecutionContext(
         data_query_service=_StubDataQuery(),
         note_backend=None,
-        extras={"emit_panel_preview": emitter},
+        extras={
+            "emit_panel_preview": emitter,
+            "data_store": _StubStore(),
+            "data_stash": [],
+            "working_memory": {},
+        },
     )
 
     payload = tool.handler(_build_call(), context)
@@ -87,4 +112,6 @@ def test_panel_preview_emits_data_when_callback_present():
     assert preview["items"][0]["title"] == "demo"
     assert "panel_payload" in captured[0]
     assert "panel_spec" in captured[0]
+    assert payload.raw_output.get("panel_spec") is not None
+    assert payload.raw_output.get("contract_id") == "ListPanel-contract-v3"
     assert payload.raw_output.get("panel_spec") is not None

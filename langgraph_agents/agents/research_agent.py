@@ -21,6 +21,7 @@ from ..state import DataReference, GraphState, ToolCall
 from ..component_contracts import (
     COMPONENT_CONTRACTS_PROMPT,
     get_contract_by_component,
+    get_contract_by_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -259,6 +260,88 @@ def _merge_component_contracts(
     return working_memory
 
 
+def _select_display_contract(
+    working_memory: Dict[str, Any],
+    data_stash: List[DataReference],
+    default_contract_id: str = "ListPanel-contract-v3",
+) -> Optional[str]:
+    """选择用于展示的契约：优先 working_memory 登记 → 数据 metadata → 默认 ListPanel。"""
+    if isinstance(working_memory, dict):
+        contracts_entry = working_memory.get("component_contracts") or {}
+        contracts = contracts_entry.get("contracts") or {}
+        for record in contracts.values():
+            if record.get("status") in {"planned", "applied"}:
+                cid = record.get("contract_id")
+                if cid and get_contract_by_id(cid):
+                    return cid
+
+    # 从最近的 data_stash metadata 猜测
+    for ref in reversed(data_stash or []):
+        meta = getattr(ref, "metadata", None) or {}
+        cid = None
+        if isinstance(meta, dict):
+            cid = meta.get("contract_id")
+        if not cid and hasattr(ref, "summary"):
+            # 无法从 summary 推断，不再靠启发式
+            pass
+        if cid and get_contract_by_id(cid):
+            return cid
+
+    # 兜底
+    if get_contract_by_id(default_contract_id):
+        return default_contract_id
+    return None
+
+
+def _select_data_ref_for_display(data_stash: List[DataReference]) -> Optional[DataReference]:
+    """选择最近的成功数据引用，用于展示/改呈现。"""
+    for ref in reversed(data_stash or []):
+        if getattr(ref, "status", None) == "success" and getattr(ref, "data_id", None):
+            return ref
+    return None
+
+
+def _bump_error_counter(state: GraphState, plugin_id: str, error_code: str) -> int:
+    """记录同一工具+错误码的连续失败次数，返回最新计数。"""
+    error_counters = state.get("error_counters") or {}
+    key = f"{plugin_id}:{error_code}"
+    count = error_counters.get(key, 0) + 1
+    error_counters[key] = count
+    state["error_counters"] = error_counters
+    return count
+
+
+def _extract_error_code_from_result(result: Any) -> Optional[str]:
+    """从工具执行结果中提取错误码，兼容 raw_output.error / error_code。"""
+    if not result or getattr(result, "status", None) != "error":
+        return None
+    raw_output = getattr(result, "raw_output", None)
+    if isinstance(raw_output, dict):
+        if raw_output.get("error_code"):
+            return str(raw_output["error_code"])
+        if raw_output.get("error"):
+            return str(raw_output["error"])
+    err = getattr(result, "error_message", None)
+    return str(err) if err else None
+
+
+def _recent_tool_repeats(data_stash: List[DataReference], plugin_id: str, limit: int = 3) -> int:
+    """
+    统计 data_stash 末尾连续出现同一工具的次数。
+
+    用于防止无进展的重复调用（即便 status=success 也会检查）。
+    """
+    count = 0
+    for ref in reversed(data_stash or []):
+        if ref.tool_name == plugin_id:
+            count += 1
+            if count >= limit:
+                break
+        else:
+            break
+    return count
+
+
 def create_research_agent_node(runtime: LangGraphRuntime):
     """
     创建单Agent研究节点。
@@ -290,6 +373,7 @@ def create_research_agent_node(runtime: LangGraphRuntime):
         working_memory = state.get("working_memory", {})
         chat_history = state.get("chat_history", [])  # Session 多轮对话历史
         next_step = len(data_stash) + 1
+        default_contract_id = _select_display_contract(working_memory, data_stash)
 
         # 检查是否有上一步工具执行结果需要处理
         last_tool_result = state.get("last_tool_result")
@@ -385,6 +469,7 @@ def _process_agent_decision(
 
     返回适当的状态更新。
     """
+    data_stash = state.get("data_stash", [])
     decision = data.get("decision", "CONTINUE")
     reasoning = data.get("reasoning", "")
     contract_payloads = _extract_component_contract_payloads(data)
@@ -393,12 +478,49 @@ def _process_agent_decision(
     logger.info("ResearchAgent 决策: %s - %s", decision, reasoning[:100])
 
     # 触发 reasoning 回调（如果有）
-    _emit_reasoning(runtime, {
-        "step_id": next_step,
-        "decision": decision,
-        "reasoning": reasoning,
-        "tool_call": data.get("tool_call"),
-    })
+    _emit_reasoning(
+        runtime,
+        {
+            "step_id": next_step,
+            "decision": decision,
+            "reasoning": reasoning,
+            "tool_call": data.get("tool_call"),
+        },
+    )
+
+    # 读取工具错误码，避免无限循环（最多 3 次同一错误）
+    last_tool_result = state.get("last_tool_result")
+    last_error_code = _extract_error_code_from_result(last_tool_result)
+
+    error_counters = state.get("error_counters") or {}
+    last_plugin = getattr(last_tool_result.call, "plugin_id", None) if last_tool_result and last_tool_result.call else None
+    if last_error_code and last_plugin:
+        _bump_error_counter(state, last_plugin, last_error_code)
+        error_counters = state.get("error_counters") or {}
+
+    if decision == "CONTINUE":
+        tool_call_data = data.get("tool_call") or {}
+        plugin_id = tool_call_data.get("plugin_id")
+        if plugin_id:
+            # 若该工具同一错误累计 >=3，直接终止，避免循环
+            for key, cnt in (error_counters or {}).items():
+                if key.startswith(f"{plugin_id}:") and cnt >= 3:
+                    logger.warning("重复失败同一工具>=3次，终止循环: %s (%s)", plugin_id, key.split(":", 1)[1])
+                    return {
+                        "final_report": json.dumps(
+                            {
+                                "summary": f"任务停止：{plugin_id} 连续失败 {cnt} 次，请调整指令或数据。",
+                                "evidence": [],
+                                "next_actions": [],
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        "next_tool_call": None,
+                        "agent_decision": "FINISH",
+                        "agent_reasoning": reasoning,
+                        "last_error_code": last_error_code,
+                    }
 
     if decision == "FINISH":
         # 任务完成，生成最终报告
@@ -450,19 +572,87 @@ def _process_agent_decision(
             # 没有有效的工具调用，默认结束
             logger.warning("ResearchAgent CONTINUE 但没有 tool_call，强制 FINISH")
             return {
-                "final_report": json.dumps({
-                    "summary": "任务已完成（无更多工具调用）",
-                    "evidence": [],
-                    "next_actions": [],
-                }, ensure_ascii=False, indent=2),
+                "final_report": json.dumps(
+                    {
+                        "summary": "任务已完成（无更多工具调用）",
+                        "evidence": [],
+                        "next_actions": [],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
                 "next_tool_call": None,
                 "agent_decision": "FINISH",
                 "agent_reasoning": "无更多工具调用",
             }
 
+        # 如果是展示需求且缺少契约/映射，尝试自动填充 contract_id/field_mapping
+        args = tool_call_data.get("args", {}) or {}
+        if tool_call_data.get("plugin_id") == "emit_panel_preview":
+            if "contract_id" not in args:
+                auto_contract = _select_display_contract(state.get("working_memory", {}), state.get("data_stash", []))
+                if auto_contract:
+                    args["contract_id"] = auto_contract
+            # 展示请求优先复用最近成功数据引用
+            if "source_ref" not in args:
+                ref = _select_data_ref_for_display(state.get("data_stash", []))
+                if ref and ref.data_id:
+                    args["source_ref"] = ref.data_id
+
+            # 如果上一轮已成功生成同一契约+数据的面板，直接结束，避免重复推送
+            last_tool_result = state.get("last_tool_result")
+            if (
+                last_tool_result
+                and getattr(last_tool_result, "status", None) == "success"
+                and getattr(getattr(last_tool_result, "call", None), "plugin_id", None) == "emit_panel_preview"
+            ):
+                last_args = getattr(getattr(last_tool_result, "call", None), "args", {}) or {}
+                same_source = args.get("source_ref") == last_args.get("source_ref")
+                same_contract = (args.get("contract_id") or None) == (last_args.get("contract_id") or None)
+                if same_source and same_contract:
+                    last_ref = data_stash[-1] if data_stash else None
+                    report_payload = {
+                        "summary": last_ref.summary if last_ref else "表格已生成，可直接查看。",
+                        "evidence": [
+                            {
+                                "data_id": last_ref.data_id,
+                                "tool": last_ref.tool_name,
+                                "step": last_ref.step_id,
+                            }
+                        ] if last_ref else [],
+                        "next_actions": [],
+                    }
+                    result = {
+                        "final_report": json.dumps(report_payload, ensure_ascii=False, indent=2),
+                        "next_tool_call": None,
+                        "agent_decision": "FINISH",
+                        "agent_reasoning": reasoning,
+                    }
+                    if updated_working_memory is not None:
+                        result["working_memory"] = updated_working_memory
+                    return result
+
+        # 防止无进展的重复调用（同一工具连续 ≥3 次）
+        recent_repeat = _recent_tool_repeats(state.get("data_stash", []), tool_call_data.get("plugin_id"), limit=3)
+        if recent_repeat >= 3:
+            logger.warning("同一工具连续成功执行 %s 次，停止以避免循环: %s", recent_repeat, tool_call_data.get("plugin_id"))
+            return {
+                "final_report": json.dumps(
+                    {
+                        "summary": f"任务停止：{tool_call_data.get('plugin_id')} 已连续执行 {recent_repeat} 次且未结束，可能陷入循环，请调整指令。",
+                        "evidence": [],
+                        "next_actions": [],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                "next_tool_call": None,
+                "agent_decision": "FINISH",
+                "agent_reasoning": reasoning,
+            }
         tool_call = ToolCall(
             plugin_id=tool_call_data["plugin_id"],
-            args=tool_call_data.get("args", {}),
+            args=args,
             step_id=next_step,
             description=tool_call_data.get("description", ""),
         )
@@ -478,6 +668,8 @@ def _process_agent_decision(
             "agent_decision": "CONTINUE",
             "agent_reasoning": reasoning,
         }
+        if last_error_code:
+            result["last_error_code"] = last_error_code
         if updated_working_memory is not None:
             result["working_memory"] = updated_working_memory
         return result

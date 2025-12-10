@@ -1,0 +1,77 @@
+INFO:     Will watch for changes in these directories: ['D:\\AIProject\\omni']
+INFO:     Uvicorn running on http://0.0.0.0:8002 (Press CTRL+C to quit)
+INFO:     Started reloader process [39576] using WatchFiles
+INFO:numexpr.utils:Note: NumExpr detected 24 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO:langgraph_agents.prompt_loader:Prompt 缓存已清除
+D:\AIProject\omni\api\schemas\dashboard.py:121: UserWarning: Field name "schema" in "CardDataResponse" shadows an attribute in parent "BaseModel"
+  class CardDataResponse(BaseModel):
+INFO:     Started server process [30400]
+INFO:     Waiting for application startup.
+INFO:api.app:应用启动中...
+INFO:api.controllers.chat_controller:初始化服务（模式：auto）...
+INFO:rag_system.rag_pipeline:================================================================================
+INFO:rag_system.rag_pipeline:初始化RAG系统组件
+INFO:rag_system.rag_pipeline:================================================================================
+INFO:rag_system.vector_store:初始化向量数据库: D:\AIProject\omni\rag_system\vector_db
+INFO:rag_system.vector_store:加载已存在的集合: route_embeddings
+INFO:rag_system.vector_store:当前集合中的向量数量: 3008
+INFO:rag_system.rag_pipeline:RAG系统初始化完成
+INFO:query_processor.llm_client:\u2713 使用 LangChain ChatOpenAI 初始化成功: deepseek-chat
+INFO:orchestrator.rag_in_action:\u2713 RAG-in-Action 流程初始化完成
+INFO:integration.data_executor:DataExecutor初始化: 本地=http://localhost:1200
+INFO:integration.cache_service:缓存服务初始化完成: RSS=100条/600s, RAG=500条/3600s, LLM=500条/3600s
+INFO:integration.cache_service:创建全局缓存服务实例
+INFO:services.data_query_service:DataQueryService 初始化完成
+INFO:api.controllers.chat_controller:初始化 ResearchService...
+INFO:query_processor.llm_client:\u2713 使用 LangChain ChatOpenAI 初始化成功: deepseek-chat
+INFO:query_processor.llm_client:\u2713 使用 LangChain ChatOpenAI 初始化成功: deepseek-chat
+INFO:query_processor.llm_client:\u2713 使用 LangChain ChatOpenAI 初始化成功: deepseek-chat
+INFO:query_processor.llm_client:\u2713 使用 LangChain ChatOpenAI 初始化成功: deepseek-chat
+INFO:langgraph_agents.tools.registry:注册工具: search_data_sources - 探索可用的数据源，支持查询 RSSHub 公开数据和私有数据源 [lightweight 模式]
+INFO:langgraph_agents.tools.registry:注册工具: filter_data - 根据条件过滤数据，支持 10 种操作符和分页 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: compare_data - 对比分析多个数据源，识别共同主题和认知空白 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: ask_user_clarification - 请求用户澄清歧义，提供结构化选项 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: inspect_dataset - 读取 data_store 中的数据集 Schema、字段画像等元信息，不返回原始记录。 [lightweight 模式]
+INFO:langgraph_agents.tools.registry:注册工具: data_operator - 根据自然语言指令与数据样例，生成并执行 Python transform 代码。 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: aggregate_data - 对数据进行聚合统计（计数、求和、平均、分组） [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: extract_insights - 使用 LLM 从数据中提取洞察、趋势、模式 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: fetch_private_data - 获取用户的私有数据（收藏、历史、关注等） [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: analyze_content - 对数据进行深度内容分析（如主题提取、情感分析、要点总结等）。这是唯一可以访问原始数据的工具，用于需要查看具体内容的分析任务。 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: fetch_public_data - 使用 DataQueryService 查询 RSSHub 公共数据 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: search_private_notes - 在本地 Markdown 笔记中检索相关内容 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: emit_panel_preview - 将已有数据引用按组件契约生成面板并推送（契约化视图适配 + 推送，一体化，无需额外 LLM） [full 模式]
+INFO:services.research_service:已注册 13 个工具
+INFO:services.research_service:ResearchService 初始化完成
+INFO:api.controllers.chat_controller:\u2713 ResearchService 初始化完成
+INFO:query_processor.llm_client:\u2713 使用 LangChain ChatOpenAI 初始化成功: deepseek-chat
+INFO:services.llm_intent_classifier:LLMIntentClassifier 初始化完成
+INFO:services.chat_service:LLM 意图分类器初始化完成
+INFO:langgraph_agents.tools.registry:注册工具: search_data_sources - 探索可用的数据源，支持查询 RSSHub 公开数据和私有数据源 [lightweight 模式]
+INFO:langgraph_agents.tools.registry:注册工具: filter_data - 根据条件过滤数据，支持 10 种操作符和分页 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: compare_data - 对比分析多个数据源，识别共同主题和认知空白 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: ask_user_clarification - 请求用户澄清歧义，提供结构化选项 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: inspect_dataset - 读取 data_store 中的数据集 Schema、字段画像等元信息，不返回原始记录。 [lightweight 模式]
+INFO:langgraph_agents.tools.registry:注册工具: data_operator - 根据自然语言指令与数据样例，生成并执行 Python transform 代码。 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: aggregate_data - 对数据进行聚合统计（计数、求和、平均、分组） [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: extract_insights - 使用 LLM 从数据中提取洞察、趋势、模式 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: fetch_private_data - 获取用户的私有数据（收藏、历史、关注等） [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: analyze_content - 对数据进行深度内容分析（如主题提取、情感分析、要点总结等）。这是唯一可以访问原始数据的工具，用于需要查看具体内容的分析任务。 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: fetch_public_data - 使用 DataQueryService 查询 RSSHub 公共数据 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: search_private_notes - 在本地 Markdown 笔记中检索相关内容 [full 模式]
+INFO:langgraph_agents.tools.registry:注册工具: emit_panel_preview - 将已有数据引用按组件契约生成面板并推送（契约化视图适配 + 推送，一体化，无需额外 LLM） [full 模式]
+INFO:langgraph_agents.sync_executor:SyncLangGraphExecutor 初始化完成（13 个工具，recursion_limit=60）
+INFO:services.chat_service:V5.0 LangGraph 执行器初始化完成（13 个工具）
+INFO:query_processor.llm_client:\u2713 使用 LangChain ChatOpenAI 初始化成功: deepseek-chat
+INFO:services.chat_service:ChatService 初始化完成
+INFO:api.controllers.chat_controller:\u2713 服务初始化完成（production模式）
+INFO:services.database.connection:初始化生产数据库连接: sqlite:///D:\AIProject\omni\runtime\omni.db
+INFO:services.session.runtime_manager:SessionRuntimeManager 初始化完成
+INFO:services.session.runtime_manager:Session 清理线程已启动
+INFO:api.controllers.session_controller:Session 服务初始化完成
+INFO:api.app:\u2713 Session 服务初始化完成
+INFO:api.app:\u2713 应用启动完成
+INFO:     Application startup complete.
+INFO:services.workflow.store:WorkflowStore: 数据库表已初始化
+INFO:services.session.store:SessionStore: 创建 Session sess-cd1db12278d4
+INFO:services.session.runtime_manager:SessionRuntimeManager: 创建 Session sess-cd1db12278d4

@@ -157,6 +157,51 @@ def create_data_stasher_node(runtime: LangGraphRuntime):
         data_stash: List[DataReference] = list(state.get("data_stash", []))
         data_stash.append(data_ref)
 
+        # 若是面板生成类工具，自动登记/更新组件契约状态为 applied，供后续决策避免重复生成
+        working_memory = dict(state.get("working_memory", {}) or {})
+        if pending.call.plugin_id == "emit_panel_preview":
+            contract_id = None
+            component_id = None
+
+            raw_output = pending.raw_output if isinstance(pending.raw_output, dict) else {}
+            # 从 raw_output 或 panel_spec 中提取契约信息
+            if raw_output:
+                contract_id = raw_output.get("contract_id")
+                component_id = raw_output.get("component_id")
+                panel_spec = raw_output.get("panel_spec") or {}
+                contracts_applied = raw_output.get("contracts_applied") or panel_spec.get("contracts_applied") or []
+                if isinstance(contracts_applied, list) and contracts_applied:
+                    applied = contracts_applied[0]
+                    contract_id = contract_id or applied.get("contract_id")
+                    component_id = component_id or applied.get("component_id")
+
+            if contract_id or component_id:
+                contracts_entry = dict(working_memory.get("component_contracts") or {})
+                contracts = dict(contracts_entry.get("contracts") or {})
+                record = contracts.get(contract_id or component_id, {}).copy()
+                record.update(
+                    {
+                        "component_id": component_id,
+                        "contract_id": contract_id,
+                        "status": "applied",
+                        "description": "面板已生成并推送",
+                        "targets": [data_id] if data_id else [],
+                        "last_updated_step": pending.call.step_id,
+                    }
+                )
+                key = contract_id or component_id or f"panel-{pending.call.step_id}"
+                contracts[key] = record
+                contracts_entry.update(
+                    {
+                        "step_id": pending.call.step_id,
+                        "status": "info",
+                        "description": f"面板生成完成：{component_id or '组件'}",
+                        "contracts": contracts,
+                    }
+                )
+                working_memory["component_contracts"] = contracts_entry
+        # end 面板契约登记
+
         # 触发工具调用完成回调（如果有）
         tool_context = getattr(runtime, "tool_context", None)
         if tool_context:
@@ -181,6 +226,7 @@ def create_data_stasher_node(runtime: LangGraphRuntime):
             "data_stash": data_stash,
             "pending_tool_result": None,
             "last_tool_result": pending,
+            "working_memory": working_memory,
         }
 
     return node

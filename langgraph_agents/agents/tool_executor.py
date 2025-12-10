@@ -19,6 +19,10 @@ def create_tool_executor_node(runtime: LangGraphRuntime):
             logger.warning("ToolExecutor 未收到 ToolCall")
             return {"last_error": "缺少 ToolCall"}
 
+        last_error_code = state.get("last_error_code")
+        if last_error_code:
+            logger.info("ToolExecutor: 上一步错误码=%s，继续执行 %s", last_error_code, call.plugin_id)
+
         # V6.0 Phase 2: 注入 data_stash 到工具上下文，支持工具间数据引用
         # 创建增强的上下文副本，避免修改原始 runtime.tool_context
         enhanced_extras = dict(runtime.tool_context.extras)

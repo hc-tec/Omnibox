@@ -120,6 +120,23 @@ ALWAYS_ALLOWED_FIELDS = {"id"}
 PRELOADED_MODULES = ["json", "math", "statistics", "datetime"]
 
 
+def _error_payload(
+    call: ToolCall,
+    error_code: str,
+    message: str,
+    extra_raw: Optional[Dict[str, Any]] = None,
+) -> ToolExecutionPayload:
+    raw = {"type": "data_operator", "error": error_code, "error_code": error_code}
+    if extra_raw:
+        raw.update(extra_raw)
+    return ToolExecutionPayload(
+        call=call,
+        status="error",
+        error_message=message,
+        raw_output=raw,
+    )
+
+
 def _build_sandbox_description() -> str:
     """动态生成沙盒环境说明，确保与实际配置同步。"""
     allowed_imports = ", ".join(sorted(ALLOWED_IMPORTS))
@@ -206,28 +223,13 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
         coder_prompt = extras.get("data_operator_prompt") or load_prompt("schema_coder_system.txt")
 
         if planner_llm is None:
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message="planner_llm 不可用，无法生成代码",
-                raw_output={"type": "data_operator", "error": "planner_llm_unavailable"},
-            )
+            return _error_payload(call, "planner_llm_unavailable", "planner_llm 不可用，无法生成代码")
         if data_store is None:
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message="data_store 不可用，无法读取数据",
-                raw_output={"type": "data_operator", "error": "data_store_unavailable"},
-            )
+            return _error_payload(call, "data_store_unavailable", "data_store 不可用，无法读取数据")
 
         instruction = call.args.get("instruction")
         if not instruction or not isinstance(instruction, str):
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message="instruction 必须是字符串",
-                raw_output={"type": "data_operator", "error": "invalid_instruction"},
-            )
+            return _error_payload(call, "invalid_instruction", "instruction 必须是字符串")
 
         source_ref = call.args.get("source_ref")
         max_samples = call.args.get("max_samples") or 5
@@ -239,12 +241,7 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
 
         source_context = _resolve_records(source_ref, context, data_store)
         if not source_context or not source_context.records:
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message="无法解析 source_ref 对应的数据记录",
-                raw_output={"type": "data_operator", "error": "records_not_available"},
-            )
+            return _error_payload(call, "records_not_available", "无法解析 source_ref 对应的数据记录")
 
         schema_context = _build_schema_context(source_context, extras, max_samples)
         contract_prompt_specs = _build_contract_prompt_specs(contract_entries)
@@ -259,53 +256,39 @@ def register_data_operator_tool(registry: ToolRegistry) -> None:
             parsed = parse_json_payload(response)
         except Exception as exc:
             logger.exception("data_operator: LLM解析失败")
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message=f"无法解析生成的 JSON：{exc}",
-                raw_output={"type": "data_operator", "error": "llm_parse_failed"},
-            )
+            return _error_payload(call, "llm_parse_failed", f"无法解析生成的 JSON：{exc}")
 
         code = parsed.get("code") or parsed.get("python")
         explanation = parsed.get("explanation")
         if not code or "def transform" not in code and "def process_data" not in code:
             logger.warning("data_operator: 生成的代码无效")
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message="生成的代码无效，缺少 transform 函数",
-                raw_output={"type": "data_operator", "error": "invalid_code", "code": code},
+            return _error_payload(
+                call,
+                "invalid_code",
+                "生成的代码无效，缺少 transform 函数",
+                extra_raw={"code": code},
             )
 
         try:
             result = _execute_transform(code, source_context.records)
         except Exception as exc:
             logger.exception("data_operator: 代码执行失败")
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message=f"生成的代码执行失败: {exc}",
-                raw_output={
-                    "type": "data_operator",
-                    "error": "execution_failed",
-                    "code": code,
-                    "exception": str(exc),
-                },
+            return _error_payload(
+                call,
+                "execution_failed",
+                f"生成的代码执行失败: {exc}",
+                extra_raw={"code": code, "exception": str(exc)},
             )
 
         normalized_result = _normalize_transform_result(result, source_context, instruction, explanation)
         try:
             normalized_result = _apply_contract_constraints(normalized_result, active_contract)
         except ComponentContractViolation as exc:
-            return ToolExecutionPayload(
-                call=call,
-                status="error",
-                error_message=str(exc),
-                raw_output={
-                    "type": "data_operator",
-                    "error": "contract_violation",
-                    "details": exc.details,
-                },
+            return _error_payload(
+                call,
+                "contract_violation",
+                str(exc),
+                extra_raw={"details": exc.details},
             )
         trimmed_result = _trim_result(normalized_result)
         raw_output = {
@@ -615,6 +598,7 @@ def _apply_contract_constraints(
         raise ComponentContractViolation("contract requires result['items'] 为列表", {"field": "items"})
 
     allowed_fields = set(contract.required_fields or []) | set(contract.optional_fields or []) | ALWAYS_ALLOWED_FIELDS
+    trimmed_fields: set[str] = set()
     for idx, item in enumerate(items):
         if not isinstance(item, dict):
             raise ComponentContractViolation("contract requires items 为字典列表", {"index": idx})
@@ -626,10 +610,9 @@ def _apply_contract_constraints(
             )
         disallowed = [field for field in item.keys() if allowed_fields and field not in allowed_fields]
         if disallowed:
-            raise ComponentContractViolation(
-                f"{contract.contract_id} 不允许字段: {disallowed}",
-                {"index": idx, "disallowed": disallowed},
-            )
+            trimmed_fields.update(disallowed)
+            for field in disallowed:
+                item.pop(field, None)
 
     metadata = dict(normalized_result.get("metadata") or {})
     metadata["component_id"] = contract.component_id
@@ -641,6 +624,8 @@ def _apply_contract_constraints(
     props_override = payload.get("props") or payload.get("component_props")
     if props_override:
         metadata["component_props"] = props_override
+    if trimmed_fields:
+        metadata["trimmed_fields"] = sorted(trimmed_fields)
 
     normalized_result["metadata"] = metadata
     normalized_result["component_id"] = contract.component_id

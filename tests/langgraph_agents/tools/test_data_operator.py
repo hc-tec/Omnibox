@@ -42,6 +42,11 @@ def _install_rag_system_stubs() -> None:
     rag_pkg.VectorStore = vector_cls
     rag_pkg.RouteRetriever = retriever_cls
 
+    config_mod = types.ModuleType("rag_system.config")
+    config_mod.RETRIEVAL_CONFIG = {}
+    sys.modules["rag_system.config"] = config_mod
+    rag_pkg.config = config_mod
+
     semantic_mod = types.ModuleType("rag_system.semantic_doc_generator")
     semantic_cls = type("SemanticDocGenerator", (), {})
     semantic_mod.SemanticDocGenerator = semantic_cls
@@ -61,7 +66,7 @@ from langgraph_agents.storage import InMemoryResearchDataStore
 from langgraph_agents.state import ToolCall
 from langgraph_agents.tools.registry import ToolRegistry
 from langgraph_agents.tools.data_operator import register_data_operator_tool
-from langgraph_agents.component_contracts import get_contract_by_id
+from langgraph_agents.component_contracts import get_contract_by_component, get_contract_by_id
 
 
 class DummyLLM:
@@ -271,6 +276,53 @@ def transform(records):
 
     assert payload.status == "error"
     assert payload.raw_output["error"] == "contract_violation"
+    assert payload.raw_output["error_code"] == "contract_violation"
+
+
+def test_data_operator_trims_disallowed_fields_for_contract():
+    registry = ToolRegistry()
+    register_data_operator_tool(registry)
+
+    records = [{"title": "热搜", "summary": "说明"}]
+    source_payload = {"items": records}
+
+    dummy_llm = DummyLLM(
+        {
+            "code": """
+def transform(records):
+    return {"items": [{"title": records[0].get("title"), "summary": "情感分析", "url": "https://example.com", "content_html": "<p>desc</p>"}]}
+""",
+            "explanation": "保持标题并附加描述",
+        }
+    )
+    data_store = InMemoryResearchDataStore()
+    data_id = data_store.save(source_payload)
+    contract_entry = _build_contract_entry("ListPanel")
+    context = DummyContext(
+        extras={
+            "planner_llm": dummy_llm,
+            "data_store": data_store,
+            "schema_registry": SchemaRegistry(),
+            "component_contracts_for_call": [contract_entry],
+        }
+    )
+    call = ToolCall(
+        plugin_id="data_operator",
+        args={"source_ref": data_id, "instruction": "生成列表数据"},
+        step_id=1,
+        description="trim disallowed",
+    )
+    payload = registry.execute(call, context, use_protection=False)
+
+    assert payload.status == "success"
+    item = payload.raw_output["items"][0]
+    assert item["title"] == "热搜"
+    assert item["summary"] == "情感分析"
+    assert "url" not in item
+    assert "content_html" not in item
+    metadata = payload.raw_output["metadata"]
+    assert metadata["contract_id"] == "ListPanel-contract-v3"
+    assert "trimmed_fields" in metadata and set(metadata["trimmed_fields"]) == {"content_html", "url"}
 
 
 def test_data_operator_allows_datetime_import():
@@ -332,7 +384,7 @@ class DummyContext:
 
 
 def _build_contract_entry(component_id: str) -> Dict[str, Any]:
-    contract = get_contract_by_id(f"{component_id}-contract-v2")
+    contract = get_contract_by_id(f"{component_id}-contract-v2") or get_contract_by_component(component_id)
     if not contract:
         raise AssertionError(f"missing contract for {component_id}")
     return {

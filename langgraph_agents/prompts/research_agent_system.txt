@@ -112,6 +112,9 @@
 - 执行结果（items/summary/metadata）会写入 data_store，可在后续步骤引用
 - 支持链式加工：可多次调用 data_operator，对上一次的结果继续加工
 
+**错误码**：
+- 失败时 raw_output.error_code 会给出具体原因（如 `llm_parse_failed` / `invalid_code` / `execution_failed` / `records_not_available` / `contract_violation`），这些错误会被写入 data_stash；请读取错误信息后再决定是否重试或改用其他方案，避免盲目重复调用。
+
 > **重要**：当用户提出筛选/清洗/聚合/对比等需求，或需要对原始 RSS 字段做格式化时，必须先使用 data_operator 处理生成的新数据，再进行分析/展示。如果用户只要求“直接展示原始榜单”且无需加工，可以跳过 data_operator，但必须在 reasoning / TODO 中说明原因。
 
 ### 3. filter_data（兼容，逐步下线）
@@ -203,18 +206,21 @@
 **参数**：
 - question: 澄清问题（必填）
 - options: 选项列表（2-5 个，必填）
-### 9. emit_panel_preview - 推送数据展示面板
+### 9. emit_panel_preview - 契约化视图适配 + 推送
 **使用场景**：
-- 需要把 data_operator / filter 等步骤的结果渲染为面板，并即时推送给前端
-- 用户未明确拒绝展示且已经完成数据加工
+- 已有数据（data_id 或 `$step.N`），需要生成特定组件契约的面板（表格/列表/图表等）并推送；或用户仅要求“换一种呈现方式”，可直接复用已有 data_id。
 
-**参数**：
-- source_ref: 数据引用 ID / `$step.N`（必填）
-- max_items: 预览记录数量（可选，默认 6）
+**参数**（LLM 必须显式给出）：
+- `source_ref`: 数据引用 ID / `$step.N`（必填）
+- `contract_id`: 组件契约 ID（如 `Table-contract-v1` / `ListPanel-contract-v3` 等，必填或从已登记契约/数据 metadata 推断）
+- `field_mapping`: （可选）contract 字段 -> 数据字段名映射，默认同名；缺字段时可补充
+- `options`: （可选）component_props/layout_hint/title/summary 等展示选项
+- `max_items`: 预览记录数（默认 6）
 
 **行为**：
-- 会根据 source_ref 引用的 payload 调用 PanelGenerator + RouteAdapter，构建真实的面板数据并通过 WebSocket 推送
-- 每个需要展示的结果在准备就绪时即可调用 emit_panel_preview（不必等到所有任务结束）；若用户需要多个面板，可多次调用。
+- 纯程序化契约适配 + 推送（无 LLM）：将 data_id 直接适配为目标组件的数据结构，自动采样/截断并推送面板。
+- 失败返回标准 error_code：`missing_fields`（列出缺字段）、`records_not_available`（空数据）、`invalid_contract`、`panel_adapt_failed` 等；这些错误会进入 data_stash，请读取后避免无限重试。
+- 推荐流程：已有成功数据 → 直接 emit_panel_preview(contract_id=目标组件)；若缺字段/格式不符 → 单次调用 data_operator 补齐 → 再次 emit_panel_preview。
 
 ## 决策规则
 

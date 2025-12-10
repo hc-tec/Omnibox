@@ -128,6 +128,9 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251211-emit-panel-preview-refactor.md` - **emit_panel_preview 契约化改造（视图适配+推送一体化）**（设计中）
+  - 目标：让 emit_panel_preview 显式承担视图适配 + 推送能力，契约化输入输出，避免 Planner 误判必须先 data_operator。
+  - 关键改动：工具 schema/错误码补全、适配阶段程序化生成 panel_spec、错误状态写入 data_stash、Agent 避免重复重试。
 - `workflow/251210-content-analyzer-agent.md` - **ContentAnalyzer Agent 设计**（待实施）
   - **目标**：安全可控地让 LLM 访问原始数据子集，支持内容分析
   - **核心方案**：两阶段分析（AI 智能选择字段 → 加载过滤数据 → 执行分析）
