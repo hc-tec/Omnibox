@@ -523,12 +523,6 @@ def _stream_session_execution(
 
     try:
         # ========== 阶段1: 开始规划 ==========
-        yield StageMessage(
-            stream_id=stream_id,
-            stage=StreamStage.INTENT,
-            message="分析查询并规划执行步骤...",
-            progress=0.1,
-        ).model_dump()
 
         # 检查 Session 是否存在
         state = runtime_manager.get_session(session_id)

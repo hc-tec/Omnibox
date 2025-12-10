@@ -236,10 +236,6 @@ def _build_panel_from_source_ref(
         envelope.get("generated_path"),
         stats.get("route"),
     ) or "custom/panel"
-    # 将最终 route 写回 payload/metadata，便于前端溯源
-    dataset_payload.setdefault("generated_path", route)
-    dataset_payload.setdefault("route", route)
-    stats.setdefault("generated_path", route)
 
     preview_source_records = extract_records(dataset_payload)
     if not preview_source_records:
