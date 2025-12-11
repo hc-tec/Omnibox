@@ -141,6 +141,27 @@ class OpenAIClient(LLMClient):
                 messages.append(self._SystemMessage(content=self.system_prompt))
             messages.append(self._HumanMessage(content=prompt))
 
+            # ===== 临时调试：记录完整提示词 =====
+            debug_log_path = "llm_calls_debug.log"
+            try:
+                with open(debug_log_path, "a", encoding="utf-8") as f:
+                    f.write("\n" + "=" * 80 + "\n")
+                    f.write(f"LLM Call: {call_id}\n")
+                    f.write(f"Role: {role}\n")
+                    f.write(f"Step ID: {self.tracker_step_id}\n")
+                    f.write(f"Model: {self.model_name}\n")
+                    f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("=" * 80 + "\n")
+                    f.write("SYSTEM PROMPT:\n")
+                    f.write(self.system_prompt if self.system_prompt else "(none)\n")
+                    f.write("\n" + "-" * 80 + "\n")
+                    f.write("USER PROMPT:\n")
+                    f.write(prompt)
+                    f.write("\n" + "=" * 80 + "\n\n")
+            except Exception as e:
+                logger.warning(f"Failed to write debug log: {e}")
+            # ===== 结束临时调试 =====
+
             invoke_kwargs = {}
             if temperature is not None:
                 invoke_kwargs["temperature"] = temperature
@@ -317,6 +338,27 @@ class AnthropicClient(LLMClient):
             if self.system_prompt:
                 messages.append(self._SystemMessage(content=self.system_prompt))
             messages.append(self._HumanMessage(content=prompt))
+
+            # ===== 临时调试：记录完整提示词 =====
+            debug_log_path = "llm_calls_debug.log"
+            try:
+                with open(debug_log_path, "a", encoding="utf-8") as f:
+                    f.write("\n" + "=" * 80 + "\n")
+                    f.write(f"LLM Call: {call_id}\n")
+                    f.write(f"Role: {role}\n")
+                    f.write(f"Step ID: {self.tracker_step_id}\n")
+                    f.write(f"Model: {self.model_name}\n")
+                    f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("=" * 80 + "\n")
+                    f.write("SYSTEM PROMPT:\n")
+                    f.write(self.system_prompt if self.system_prompt else "(none)\n")
+                    f.write("\n" + "-" * 80 + "\n")
+                    f.write("USER PROMPT:\n")
+                    f.write(prompt)
+                    f.write("\n" + "=" * 80 + "\n\n")
+            except Exception as e:
+                logger.warning(f"Failed to write debug log: {e}")
+            # ===== 结束临时调试 =====
 
             invoke_kwargs = {}
             if temperature is not None:

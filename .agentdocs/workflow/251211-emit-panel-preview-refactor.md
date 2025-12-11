@@ -24,10 +24,63 @@
 - 展示契约兜底：展示需求仍默认 `emit_panel_preview(contract_id=? , source_ref=recent success)`，只有缺字段时再单次调用 data_operator 做补齐。
 
 ### 进展与下一步（2025-12-11）
-- ✅ data_operator：所有失败态返回标准 `error_code`；“多余字段”契约违规不再报错，改为裁剪并写入 `metadata.trimmed_fields`。
+- ✅ data_operator：所有失败态返回标准 `error_code`；"多余字段"契约违规不再报错，改为裁剪并写入 `metadata.trimmed_fields`。
 - ✅ ResearchAgent：统一提取错误码计数，同工具同错误 ≥3 次直接 FINISH；同一工具连续成功 ≥3 次也终止以防无进展循环。
 - ✅ 单测：`test_data_operator.py`、`test_panel_stream_tool.py` 全部通过。
-- 🔜 待做：重跑 /workspace Playwright 双轮查询（查看热搜→表格展示），确认不再触发 recursion limit；如仍循环，需要检查决策 JSON 是否携带 contract_id/source_ref 并是否触发 stop 逻辑。
+- ✅ **根本原因诊断（2025-12-11 晚）**：通过端到端代码分析+Playwright实测发现了**两个关键 bug**
+
+  **Bug 1: Summary 质量不足** (`data_stasher.py`)
+  - **问题根源**: `_smart_default_summary` 函数缺少对 `panel_preview` 类型的处理
+  - **导致现象**: Summary 是截断的 JSON 字符串，LLM 无法理解"面板已推送"的语义
+  - **修复方案**: 在 `_smart_default_summary` 中添加专门处理，生成人类可读的摘要：
+    ```python
+    if data_type == "panel_preview":
+        component_id = payload.get("component_id") or "未知组件"
+        contract_id = payload.get("contract_id") or ""
+        count = payload.get("count", 0)
+        return f"已生成并推送 {component_id} 面板（{contract_id}），展示 {count} 条数据"
+    ```
+  - **实施位置**: `langgraph_agents/agents/data_stasher.py:82-89`
+  - **验证**: ✅ 端到端测试通过，summary 清晰可读
+
+  **Bug 2: Count 计算错误** (`panel_stream.py`)
+  - **问题根源**: `count = len(preview_payload.get("previews", []))` 计算的是 previews 数组长度（固定为1），而非实际数据条数
+  - **数据结构**:
+    ```python
+    preview_payload = {
+        "previews": [  # 固定只有 1 个元素
+            {
+                "items": [...]  # 这里才是实际的 3 条数据
+            }
+        ]
+    }
+    ```
+  - **导致现象**: Summary 显示"展示 1 条数据"，Agent 误以为数据不完整，重复推送
+  - **修复方案**: 从 `previews[0].items` 计算实际数据条数
+    ```python
+    actual_count = 0
+    previews = preview_payload.get("previews", [])
+    if previews and isinstance(previews[0], dict):
+        items = previews[0].get("items", [])
+        actual_count = len(items) if isinstance(items, list) else 0
+    ```
+  - **实施位置**: `langgraph_agents/tools/panel_stream.py:125-143`
+  - **ListPanel 验证**: ✅ 正确显示"展示 3 条数据"
+  - **Table 组件验证**: ⚠️ **仍显示 1 条数据**（数据结构不同）
+
+- ⚠️ **剩余问题（Table 组件的 count 计算）**：
+  - **现象**: Table 组件生成时 `count calculation: previews=1, actual_count=1`（应该是 3）
+  - **原因**: Table 组件的 `preview_payload` 结构可能不同，`previews[0].items` 可能不包含所有行数据
+  - **影响**: 第二轮"用表格呈现"查询时，Agent 看到"展示 1 条数据"，重复调用 3 次后触发保护机制
+  - **解决方向**:
+    1. 检查 Table 组件的 `preview_payload` 实际结构
+    2. 从 `panel_spec` 或 `panel_payload` 中提取正确的行数
+    3. 优化 count 计算逻辑，支持不同组件类型
+
+- 🔜 **下一步行动**：
+  1. 深入分析 Table 组件的数据结构，找到正确的行数来源
+  2. 优化 `panel_stream.py` 中的 count 计算，支持 Table/ListPanel/MediaCard 等不同组件
+  3. 重新测试"表格呈现"场景，验证不再重复调用
 
 ### 方案概述
 - emit_panel_preview 强化为“视图适配器 + 推送器”：

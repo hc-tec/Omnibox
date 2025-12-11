@@ -330,9 +330,23 @@ class SessionRuntimeManager:
             if not self.llm_client or not self.data_query_service:
                 raise ValueError("LLM client 或 data_query_service 未配置")
 
+            # 为每个 session 创建独立的 LLM 追踪器，便于调试 prompt/response
+            llm_tracker = None
+            try:
+                from api.schemas.llm_call_event import LLMCallTracker
+
+                llm_tracker = LLMCallTracker(
+                    stream_id=f"session-{session_id}",
+                    callback=None,
+                    dev_mode=True,
+                )
+            except Exception as exc:  # 防御性处理，追踪器不可用时不中断
+                logger.warning("创建 LLMCallTracker 失败，将继续无追踪: %s", exc)
+
             executor = create_sync_executor(
                 llm_client=self.llm_client,
-                data_query_service=self.data_query_service
+                data_query_service=self.data_query_service,
+                llm_tracker=llm_tracker,
             )
             self._executors[session_id] = executor
             logger.debug(f"SessionRuntimeManager: 创建 Executor for {session_id}")

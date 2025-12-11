@@ -1,3 +1,12 @@
-INFO:     127.0.0.1:40937 - "OPTIONS /api/v1/sessions HTTP/1.1" 200 OK
-INFO:     127.0.0.1:4468 - "GET /api/v1/workflows HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40937 - "POST /api/v1/sessions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19864 - "OPTIONS /api/v1/sessions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47100 - "GET /api/v1/workflows HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19864 - "POST /api/v1/sessions HTTP/1.1" 200 OK
+启动 FastAPI 服务器...
+地址: http://0.0.0.0:8002
+模式: 开发（热重载）
+日志级别: info
+--------------------------------------------------
+ INFO:     127.0.0.1:47280 - "OPTIONS /api/v1/sessions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65430 - "GET /api/v1/workflows HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47280 - "POST /api/v1/sessions HTTP/1.1" 200 OK
+ 

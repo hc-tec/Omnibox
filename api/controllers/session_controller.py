@@ -582,6 +582,20 @@ def _stream_session_execution(
             finally:
                 event_queue.put(("done", None))
 
+        # LLM 调用事件：如果 executor 挂了 tracker，推送完整 prompt/response 方便调试
+        executor = runtime_manager._get_or_create_executor(session_id)
+        tracker = getattr(executor, "llm_tracker", None)
+        if tracker:
+            def llm_event_callback(event):
+                try:
+                    payload = event.to_dict()
+                    payload["type"] = "llm_call"
+                    event_queue.put(("llm_call", payload))
+                except Exception as exc:
+                    logger.warning("llm_event_callback 失败: %s", exc)
+
+            tracker.callback = llm_event_callback
+
         # 启动后台线程
         worker = threading.Thread(target=run_execution, daemon=True)
         worker.start()
@@ -675,6 +689,12 @@ def _stream_session_execution(
                         "summary": summary,
                     },
                 ).model_dump()
+
+            if event_type == "llm_call":
+                # 推送 LLM 调用详情（dev_mode 下返回完整 prompt/response）
+                llm_payload = payload or {}
+                llm_payload["type"] = "llm_call"
+                yield llm_payload
 
             if event_type == "panel_preview":
                 step_counter += 1

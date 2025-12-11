@@ -599,39 +599,6 @@ def _process_agent_decision(
                 if ref and ref.data_id:
                     args["source_ref"] = ref.data_id
 
-            # 如果上一轮已成功生成同一契约+数据的面板，直接结束，避免重复推送
-            last_tool_result = state.get("last_tool_result")
-            if (
-                last_tool_result
-                and getattr(last_tool_result, "status", None) == "success"
-                and getattr(getattr(last_tool_result, "call", None), "plugin_id", None) == "emit_panel_preview"
-            ):
-                last_args = getattr(getattr(last_tool_result, "call", None), "args", {}) or {}
-                same_source = args.get("source_ref") == last_args.get("source_ref")
-                same_contract = (args.get("contract_id") or None) == (last_args.get("contract_id") or None)
-                if same_source and same_contract:
-                    last_ref = data_stash[-1] if data_stash else None
-                    report_payload = {
-                        "summary": last_ref.summary if last_ref else "表格已生成，可直接查看。",
-                        "evidence": [
-                            {
-                                "data_id": last_ref.data_id,
-                                "tool": last_ref.tool_name,
-                                "step": last_ref.step_id,
-                            }
-                        ] if last_ref else [],
-                        "next_actions": [],
-                    }
-                    result = {
-                        "final_report": json.dumps(report_payload, ensure_ascii=False, indent=2),
-                        "next_tool_call": None,
-                        "agent_decision": "FINISH",
-                        "agent_reasoning": reasoning,
-                    }
-                    if updated_working_memory is not None:
-                        result["working_memory"] = updated_working_memory
-                    return result
-
         # 防止无进展的重复调用（同一工具连续 ≥3 次）
         recent_repeat = _recent_tool_repeats(state.get("data_stash", []), tool_call_data.get("plugin_id"), limit=3)
         if recent_repeat >= 3:

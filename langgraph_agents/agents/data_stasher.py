@@ -79,6 +79,15 @@ def _smart_default_summary(payload, max_chars: int) -> str:
         question = payload.get("question", "未知问题")
         return f"等待用户澄清: {question[:50]}"
 
+    # 面板预览/推送类
+    if data_type == "panel_preview":
+        component_id = payload.get("component_id") or "未知组件"
+        contract_id = payload.get("contract_id") or ""
+        count = payload.get("count", 0)
+        if contract_id:
+            return f"已生成并推送 {component_id} 面板（{contract_id}），展示 {count} 条数据"
+        return f"已生成并推送 {component_id} 面板，展示 {count} 条数据"
+
     # 默认：截断
     text = _ensure_serializable(payload)
     return (text[: max_chars - 3] + "...") if len(text) > max_chars else text
