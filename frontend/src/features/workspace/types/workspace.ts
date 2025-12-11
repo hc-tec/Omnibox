@@ -234,8 +234,10 @@ export interface TimelineEntry {
 
   /** 思考信息（Agent 推理过程） */
   thinking?: {
+    step_id?: string  // 步骤标识，用于合并同一 step 的消息
     content: string
     reasoning?: string  // Agent 的详细推理内容（如：发现已有数据，不用重复获取）
+    status?: 'processing' | 'success' | 'error'  // 思考状态
   }
 
   /** 工具调用信息 */

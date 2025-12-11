@@ -1,5 +1,6 @@
 <!--
   思考条目组件 - Manus 风格（简洁版）
+  支持基于 status 的 UI 状态切换：processing 显示动画，success/error 显示最终状态
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
@@ -15,8 +16,17 @@ const { entry, isActive = false } = defineProps<{
 // 折叠状态（默认展开）
 const isExpanded = ref(true)
 
-// 炫光开关：仅在执行中时启用
-const shimmerClass = computed(() => (isActive ? 'shimmer-text' : ''))
+// 基于 status 判断是否正在处理中
+const isProcessing = computed(() => entry.thinking?.status === 'processing')
+
+// 炫光开关：isActive 或 processing 状态时启用
+const shimmerClass = computed(() => (isActive || isProcessing.value ? 'shimmer-text' : ''))
+
+// 状态文本
+const statusText = computed(() => {
+  if (isProcessing.value) return '思考中'
+  return '思考完成'
+})
 </script>
 
 <template>
@@ -27,7 +37,7 @@ const shimmerClass = computed(() => (isActive ? 'shimmer-text' : ''))
       @click="isExpanded = !isExpanded"
     >
       <Brain class="h-3.5 w-3.5 text-muted-foreground" />
-      <span class="text-xs font-medium text-muted-foreground" :class="shimmerClass">思考中</span>
+      <span class="text-xs font-medium text-muted-foreground" :class="shimmerClass">{{ statusText }}</span>
       <component
         :is="isExpanded ? ChevronDown : ChevronRight"
         class="h-3.5 w-3.5 text-muted-foreground/60 ml-auto"

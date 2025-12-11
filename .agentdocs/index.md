@@ -128,6 +128,11 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
+- `workflow/251211-thinking-entry-merge.md` - **思考卡片合并方案**（✅ 已完成 2025-12-11）
+  - **问题**：同一 step 的"思考前"和"思考后"被显示为两个独立卡片
+  - **解决方案**：利用后端 `step_id` 在前端合并同一 step 的消息
+  - **改动范围**：types/workspace.ts、workspaceStore.ts、useSessionWebSocket.ts、ThinkingEntry.vue
+  - **验证效果**：每个 step 只显示一张卡片，状态实时更新
 - `workflow/251211-emit-panel-preview-refactor.md` - **emit_panel_preview 契约化改造（视图适配+推送一体化）**（✅ 全部完成 2025-12-11）
   - 目标：修复 emit_panel_preview 重复调用问题（Summary 质量 + Count 计算 + 决策逻辑）
   - **核心成果**：

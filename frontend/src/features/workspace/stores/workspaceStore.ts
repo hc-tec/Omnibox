@@ -607,22 +607,43 @@ export const useWorkspaceStore = defineStore('workflow-workspace', () => {
   }
 
   /**
-   * 添加思考条目（带去重逻辑）
+   * 添加/更新思考条目（基于 step_id 合并同一 step 的消息）
    */
-  function addThinkingEntry(content: string, reasoning?: string): string {
-    // 去重：检查最后一条是否是相同的思考条目
+  function addThinkingEntry(
+    content: string,
+    reasoning?: string,
+    stepId?: string,
+    status?: 'processing' | 'success' | 'error'
+  ): string {
+    // 如果有 step_id，查找已存在的同 step 条目并更新
+    if (stepId) {
+      const existingEntry = timelineEntries.value.find(
+        e => e.type === 'thinking' && e.thinking?.step_id === stepId
+      )
+      if (existingEntry?.thinking) {
+        // 更新现有条目
+        existingEntry.thinking.content = content
+        existingEntry.thinking.status = status
+        if (reasoning) {
+          existingEntry.thinking.reasoning = reasoning
+        }
+        return existingEntry.id
+      }
+    }
+
+    // 无 step_id 时，保持原有基于 content 的去重逻辑
     const lastEntry = timelineEntries.value[timelineEntries.value.length - 1]
-    if (lastEntry?.type === 'thinking' && lastEntry.thinking?.content === content) {
-      // 如果新的 reasoning 更详细，更新 reasoning
+    if (!stepId && lastEntry?.type === 'thinking' && lastEntry.thinking?.content === content) {
       if (reasoning && reasoning !== lastEntry.thinking.reasoning) {
         lastEntry.thinking.reasoning = reasoning
       }
       return lastEntry.id
     }
 
+    // 创建新条目
     return addTimelineEntry({
       type: 'thinking',
-      thinking: { content, reasoning },
+      thinking: { step_id: stepId, content, reasoning, status },
     })
   }
 

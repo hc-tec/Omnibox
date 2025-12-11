@@ -298,9 +298,13 @@ export function useSessionWebSocket(options: SessionWebSocketOptions) {
           ? 'error'
           : 'success'
 
-    // 如果是 planning 类型（Agent 思考），添加为思考条目
+    // 如果是 planning 类型（Agent 思考），基于 step_id 合并同一 step 的消息
     if (stepType === 'planning') {
-      workspaceStore.addThinkingEntry(action, reasoning)
+      // 转换 status 到 thinking 状态
+      const thinkingStatus: 'processing' | 'success' | 'error' =
+        statusRaw === 'processing' ? 'processing' :
+        statusRaw === 'error' ? 'error' : 'success'
+      workspaceStore.addThinkingEntry(action, reasoning, stepId, thinkingStatus)
       return
     }
 

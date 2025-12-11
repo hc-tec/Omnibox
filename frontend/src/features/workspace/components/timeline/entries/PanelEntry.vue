@@ -94,14 +94,14 @@ async function handlePin() {
       </div>
     </div>
 
-    <!-- 面板内容 - 全宽紧凑显示 -->
+    <!-- 面板内容 - 使用 timeline 预设强制全宽，适配窄列时间线视图 -->
     <div v-show="isExpanded" class="p-2">
       <PanelBoard
         v-if="entry.panel?.layout"
         :layout="(entry.panel.layout as LayoutTree)"
         :blocks="(entry.panel.blocks as UIBlock[])"
         :data-blocks="(entry.panel.dataBlocks as Record<string, DataBlock>)"
-        size-preset="compact"
+        size-preset="timeline"
       />
       <div v-else class="p-4 text-center text-muted-foreground text-sm">
         面板数据加载中...

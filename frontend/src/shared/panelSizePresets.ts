@@ -1,4 +1,4 @@
-export type PanelSizePreset = "compact" | "balanced" | "spacious";
+export type PanelSizePreset = "compact" | "balanced" | "spacious" | "timeline";
 
 export type PanelLayoutSize = "quarter" | "third" | "half" | "full";
 
@@ -119,6 +119,46 @@ export const PANEL_SIZE_PRESETS: Record<PanelSizePreset, PanelSizeConfig> = {
         half: 0.64,
         full: 1,
       },
+    },
+  },
+  // 时间线专用预设：所有组件强制全宽，适用于窄列视图
+  timeline: {
+    gridGap: 16,
+    cardPadding: 12,
+    cardRadius: 14,
+    listMaxItems: 10,
+    listRowHeight: 72,
+    listVisibleRows: 5,
+    mediaRows: 2,
+    mediaRowHeight: 200,
+    mediaMaxItems: 12,
+    horizontalItemMinWidth: 200,
+    fontScale: 0.95,
+    headingSize: 15,
+    metaSize: 11,
+    spacingScale: 0.9,
+    layout: {
+      minColumns: 1,
+      maxColumns: 1,
+      baseColumnWidth: 9999, // 强制单列
+      sizeSpan: {
+        quarter: 1,
+        third: 1,
+        half: 1,
+        full: 1,
+      },
+    },
+    // 所有组件强制全宽
+    componentSizeOverrides: {
+      StatisticCard: "full",
+      ListPanel: "full",
+      LineChart: "full",
+      BarChart: "full",
+      PieChart: "full",
+      Table: "full",
+      MediaCardGrid: "full",
+      ImageGallery: "full",
+      FallbackRichText: "full",
     },
   },
 };

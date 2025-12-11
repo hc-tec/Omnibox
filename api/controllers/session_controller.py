@@ -535,14 +535,6 @@ def _stream_session_execution(
             ).model_dump()
             return
 
-        # ========== 阶段2: 开始执行 ==========
-        yield StageMessage(
-            stream_id=stream_id,
-            stage=StreamStage.FETCH,
-            message="执行查询...",
-            progress=0.3,
-        ).model_dump()
-
         # 事件队列，用于接收回调
         event_queue: Queue = Queue()
         result_holder: Dict[str, Any] = {}
