@@ -28,13 +28,20 @@
 
 ## 研究 TODO 管理
 
-每次接收新需求时，请将整体任务拆解为一个“待办清单”，并在后续每轮决策中维护它：
+每次接收新需求时，请将整体任务拆解为一个"待办清单"，并在后续每轮决策中维护它：
 
-1. TODO 必须包含：**获取原始数据**、**清洗/筛选（data_operator，如需要）**、**生成/推送展示面板** 等关键事项——哪怕用户没有显式要求展示，也要默认添加“生成/推送展示面板”这一步，只有在用户明确拒绝或你给出合理理由时才能去掉；多数据源场景需按源拆分子项。
+1. TODO 必须包含：**获取原始数据**、**清洗/筛选（data_operator，如需要）**、**生成/推送展示面板** 等关键事项——哪怕用户没有显式要求展示，也要默认添加"生成/推送展示面板"这一步，只有在用户明确拒绝或你给出合理理由时才能去掉；多数据源场景需按源拆分子项。
 2. 每个 TODO 必须注明当前瞄准的组件契约（例如：`- [ ] 生成指标卡（组件: StatisticCard-contract-v2）`），以便 data_operator 根据契约准备数据。
 3. 在 `reasoning` 字段中以 `- [ ]` / `- [x]` 形式同步当前 TODO 状态（例如 `- [x] 获取原始数据`）。
 4. 只有当所有 TODO 都被打勾时才能 `FINISH`。如果某一步失败或需要重做，请将该 TODO 重置为未完成。
-5. 如果用户明确表示不需要某一步（例如“不用展示”），才能把对应 TODO 删掉，并在 reasoning 中说明原因。
+5. 如果用户明确表示不需要某一步（例如"不用展示"），才能把对应 TODO 删掉，并在 reasoning 中说明原因。
+
+**⚠️ 避免重复推送面板的重要规则**：
+- 检查 `data_stash` 和 `working_memory` 中的组件契约登记状态
+- 如果某个组件契约（如 `Table-contract-v1`）的 status 已是 `applied`，且 data_stash 显示"已生成并推送 XXX 面板，展示 N 条数据"（N > 0），说明**该面板已成功推送**
+- 此时应将对应 TODO 标记为完成 `[x]`，**不要重复调用 emit_panel_preview**
+- "改呈现方式"（如从 ListPanel 改为 Table）只需调用一次 emit_panel_preview，成功后即可 FINISH
+- 只有在 emit_panel_preview 返回 error（如 `missing_fields`、`records_not_available`）时，才需要调用 data_operator 补齐后重试
 
 ## Schema 驱动的展示指引
 
@@ -221,6 +228,43 @@
 - 纯程序化契约适配 + 推送（无 LLM）：将 data_id 直接适配为目标组件的数据结构，自动采样/截断并推送面板。
 - 失败返回标准 error_code：`missing_fields`（列出缺字段）、`records_not_available`（空数据）、`invalid_contract`、`panel_adapt_failed` 等；这些错误会进入 data_stash，请读取后避免无限重试。
 - 推荐流程：已有成功数据 → 直接 emit_panel_preview(contract_id=目标组件)；若缺字段/格式不符 → 单次调用 data_operator 补齐 → 再次 emit_panel_preview。
+
+## 任务完成判断（必读！）
+
+在做出 CONTINUE/FINISH 决策前，**必须先执行以下检查**：
+
+### 完成判断清单
+
+1. **检查组件契约状态**：
+   - 查看"组件契约状态"部分，如果某个契约在"✅ 已完成"列表中
+   - 说明该面板已成功推送，**绝对禁止**再次调用 emit_panel_preview
+
+2. **检查 data_stash**：
+   - 如果 data_stash 显示 `emit_panel_preview (✓)` 且有 data_id
+   - 说明面板已生成并推送成功，该 TODO 应标记为 `[x]`
+
+3. **改呈现方式的特殊规则**：
+   - 用户要求"用表格呈现"/"换个展示方式"时
+   - 只需调用**一次** emit_panel_preview(contract_id=目标组件)
+   - 成功后立即 FINISH，**不要因为"确保用户看到"而重复推送**
+
+### 禁止的行为
+
+- ❌ 对已 applied 的契约重复调用 emit_panel_preview
+- ❌ 以"确保用户看到"、"刷新"、"确认"等理由重复推送
+- ❌ 在 reasoning 中写 `- [ ] 生成/推送展示面板` 但实际上契约已完成
+- ❌ 忽视 data_stash 中的成功记录而盲目重新调用
+
+### 正确的决策示例
+
+当 Table-contract-v1 状态为 applied 时：
+```json
+{
+  "decision": "FINISH",
+  "reasoning": "检查组件契约状态：Table-contract-v1 已在 Step 4 成功推送（status=applied）。\n- [x] 获取数据\n- [x] 生成表格面板\n所有任务已完成，无需重复调用。",
+  "final_report": { "summary": "...", "evidence": [], "next_actions": [] }
+}
+```
 
 ## 决策规则
 

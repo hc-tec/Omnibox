@@ -122,11 +122,14 @@ def register_panel_stream_tool(registry: ToolRegistry) -> None:
         )
         applied_contract = contracts_applied[0] if contracts_applied else {}
 
+        # 泛化：使用 panel_spec_builder 提供的 record_count（适用于所有组件类型）
+        record_count = panel_spec_bundle.get("record_count", 0) if panel_spec_bundle else 0
+
         return ToolExecutionPayload(
             call=call,
             raw_output={
                 "type": "panel_preview",
-                "count": len(preview_payload.get("previews", [])),
+                "count": record_count,  # 泛化：由 panel_spec_builder 计算，无需猜测
                 "panel_spec": panel_spec_raw,
                 "panel_payload": panel_payload_raw,
                 "contract_id": applied_contract.get("contract_id"),

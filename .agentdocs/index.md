@@ -128,9 +128,23 @@
 - `../orchestrator/` - 流程编排模块，协调RAG和LLM完成端到端处理
 
 ## 当前任务文档
-- `workflow/251211-emit-panel-preview-refactor.md` - **emit_panel_preview 契约化改造（视图适配+推送一体化）**（设计中）
-  - 目标：让 emit_panel_preview 显式承担视图适配 + 推送能力，契约化输入输出，避免 Planner 误判必须先 data_operator。
-  - 关键改动：工具 schema/错误码补全、适配阶段程序化生成 panel_spec、错误状态写入 data_stash、Agent 避免重复重试。
+- `workflow/251211-emit-panel-preview-refactor.md` - **emit_panel_preview 契约化改造（视图适配+推送一体化）**（✅ 全部完成 2025-12-11）
+  - 目标：修复 emit_panel_preview 重复调用问题（Summary 质量 + Count 计算 + 决策逻辑）
+  - **核心成果**：
+    - ✅ Bug 1 修复：data_stasher.py 添加 panel_preview 类型 summary 处理
+    - ✅ Bug 2 修复：泛化 count 计算架构（panel_spec_builder 统一提供 record_count）
+    - ✅ Bug 3 修复：Agent 决策逻辑优化（任务状态追踪方案 v2.0）
+    - ✅ 验证通过：第一轮/第二轮查询 emit_panel_preview 均只调用 1 次
+- `structured-todo-tracker-design.md` - **任务状态追踪优化方案 v2.0**（✅ 完成 2025-12-11）
+  - **核心问题**：`emit_panel_preview` 在第二轮查询时被重复调用 3 次
+  - **解决方案**：增强现有状态可理解性（不新增数据结构）
+    - 优化 `_format_data_stash()` 输出：添加任务完成度摘要
+    - 优化 `_format_component_contract_registry()` 输出：明确区分已完成/待执行
+    - 优化提示词：添加明确的完成判断规则
+    - 程序化保护：代码级阻止对已 applied 契约的重复调用
+  - **验证结果**：
+    - "B站热搜前三条" → emit_panel_preview 调用 1 次 ✅
+    - "用表格呈现B站热搜前五条数据" → emit_panel_preview 调用 1 次 ✅
 - `workflow/251210-content-analyzer-agent.md` - **ContentAnalyzer Agent 设计**（待实施）
   - **目标**：安全可控地让 LLM 访问原始数据子集，支持内容分析
   - **核心方案**：两阶段分析（AI 智能选择字段 → 加载过滤数据 → 执行分析）

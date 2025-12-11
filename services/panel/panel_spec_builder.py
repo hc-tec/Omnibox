@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from services.panel.panel_spec import (
 from services.panel.runtime import PanelRuntime
 from langgraph_agents.component_contracts import get_contract_by_id, get_contract_by_component, ComponentContract
 
+logger = logging.getLogger(__name__)
 _panel_runtime = PanelRuntime()
 _DEFAULT_CONTRACT_KIND = {
     "StatisticCard": "metric_set",
@@ -103,9 +105,28 @@ def build_panel_spec_from_dataset(
         "degraded_components": [],
         "contracts_applied": contracts_applied,
     }
+
+    # 计算实际的数据条数（从 envelope.cursor.total 获取，适用于所有组件类型）
+    record_count = envelope.cursor.total if envelope.cursor and envelope.cursor.total is not None else 0
+
+    # Table 组件特殊处理：从 view_model.data.rows 提取实际行数（Table 的 envelope 永远只有 1 个元素）
+    for vm_id, vm in view_models.items():
+        if vm.component_id == "Table" and isinstance(vm.data, dict):
+            rows = vm.data.get("rows", [])
+            if isinstance(rows, list):
+                record_count = len(rows)
+                break  # Table 组件找到即可
+
+    logger.info(
+        f"panel_spec_builder: envelope.cursor.total={envelope.cursor.total if envelope.cursor else None}, "
+        f"record_count={record_count}, "
+        f"components={[vm.component_id for vm in view_models.values()]}"
+    )
+
     return {
         "panel_spec": panel_spec,
         "panel_payload": panel_payload.model_dump(),
+        "record_count": record_count,  # 泛化：提供统一的数据条数
     }
 
 

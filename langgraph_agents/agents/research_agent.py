@@ -80,18 +80,73 @@ def _format_chat_history(chat_history: List[str]) -> str:
     return "\n".join(lines)
 
 
-def _format_data_stash(data_stash: List[DataReference]) -> str:
-    """格式化已获取的数据摘要。"""
+def _format_data_stash(data_stash: List[DataReference], working_memory: Dict[str, Any] = None) -> str:
+    """
+    格式化已获取的数据摘要，包含任务完成度分析。
+
+    增强 LLM 对"已完成"状态的理解，避免重复调用已完成的契约。
+    """
     if not data_stash:
         return "暂无数据"
-    lines = []
+
+    working_memory = working_memory or {}
+
+    # 统计任务完成度
+    panel_tools = {"emit_panel_preview"}
+    fetch_tools = {"fetch_public_data", "fetch_private_data"}
+    process_tools = {"data_operator", "filter_data"}
+
+    panel_count = sum(1 for ref in data_stash if ref.tool_name in panel_tools and ref.status == "success")
+    fetch_count = sum(1 for ref in data_stash if ref.tool_name in fetch_tools and ref.status == "success")
+    process_count = sum(1 for ref in data_stash if ref.tool_name in process_tools and ref.status == "success")
+
+    # 获取已完成的契约
+    contracts_entry = working_memory.get("component_contracts", {})
+    contracts = contracts_entry.get("contracts", {}) if isinstance(contracts_entry, dict) else {}
+    applied_contracts = [c for c in contracts.values() if isinstance(c, dict) and c.get("status") == "applied"]
+    applied_components = [c.get("component_id", "未知") for c in applied_contracts]
+
+    lines = ["## 工具执行历史 & 任务完成状态\n"]
+
+    # 任务完成度摘要（关键信息，让 LLM 一目了然）
+    lines.append("### 任务完成度摘要")
+    if applied_contracts:
+        lines.append(f"✅ 展示面板: {len(applied_contracts)} 个已完成（{', '.join(applied_components)}）")
+    if fetch_count > 0:
+        lines.append(f"✅ 数据获取: {fetch_count} 个已完成")
+    if process_count > 0:
+        lines.append(f"✅ 数据加工: {process_count} 个已完成")
+    if not (applied_contracts or fetch_count or process_count):
+        lines.append("（暂无已完成任务）")
+    lines.append("")
+
+    # 详细执行记录
+    lines.append("### 详细执行记录")
     for item in data_stash:
         status_icon = "✓" if item.status == "success" else "✗" if item.status == "error" else "?"
-        lines.append(
-            f"[Step {item.step_id}] {item.tool_name} ({status_icon}): {item.summary}"
-        )
+        line = f"[Step {item.step_id}] {item.tool_name} ({status_icon}): {item.summary}"
+
+        # 如果是面板工具且成功，标记契约完成状态
+        if item.tool_name == "emit_panel_preview" and item.status == "success":
+            for contract_id, contract in contracts.items():
+                if not isinstance(contract, dict):
+                    continue
+                if contract.get("status") == "applied":
+                    targets = contract.get("targets", [])
+                    # 匹配 data_id 或 step 引用
+                    if item.data_id and (item.data_id in targets or f"$step.{item.step_id}" in str(targets)):
+                        line += f" ← 契约 {contract_id} ✅已完成"
+                        break
+
+        lines.append(line)
         if item.data_id:
             lines.append(f"  → data_id: {item.data_id}")
+
+    # 关键警告提示（防止 LLM 重复调用）
+    if applied_contracts:
+        lines.append("")
+        lines.append("⚠️ 重要：所有面板契约都已 applied（已完成），禁止重复调用 emit_panel_preview")
+
     return "\n".join(lines)
 
 
@@ -159,7 +214,11 @@ def _format_raw_fetch_refs(data_stash: List[DataReference]) -> str:
 
 
 def _format_component_contract_registry(working_memory: Dict[str, Any]) -> str:
-    """单独格式化组件契约信息，供提示词引用。"""
+    """
+    格式化组件契约信息，明确区分已完成和待执行。
+
+    增强 LLM 对契约状态的理解，避免对已完成契约重复调用。
+    """
     if not isinstance(working_memory, dict):
         return "暂无"
     contracts_entry = working_memory.get("component_contracts")
@@ -168,17 +227,86 @@ def _format_component_contract_registry(working_memory: Dict[str, Any]) -> str:
     contracts = contracts_entry.get("contracts") or {}
     if not contracts:
         return "暂无"
-    lines: List[str] = []
-    for entry in contracts.values():
+
+    completed = []
+    pending = []
+
+    for contract_id, entry in contracts.items():
+        if not isinstance(entry, dict):
+            continue
         component_id = entry.get("component_id", "未知组件")
-        contract_id = entry.get("contract_id", "未知契约")
         status = entry.get("status", "pending")
-        targets = entry.get("targets") or []
         description = entry.get("description") or ""
-        lines.append(
-            f"- {component_id} ({contract_id}) [{status}] 目标: {', '.join(targets) if targets else '未绑定'} {description}".rstrip()
-        )
-    return "\n".join(lines) if lines else "暂无"
+        step = entry.get("last_updated_step", "?")
+        targets = entry.get("targets") or []
+        target_str = ", ".join(targets) if targets else "未绑定数据"
+
+        if status == "applied":
+            completed.append(f"- {component_id} ({contract_id}): 已在 Step {step} 推送完成 {description}")
+        else:
+            pending.append(f"- {component_id} ({contract_id}): 目标数据 {target_str}")
+
+    lines = ["## 组件契约状态\n"]
+
+    lines.append("### ✅ 已完成（禁止重复调用 emit_panel_preview）")
+    if completed:
+        lines.extend(completed)
+    else:
+        lines.append("（无）")
+    lines.append("")
+
+    lines.append("### ⏳ 待执行（需要调用 emit_panel_preview）")
+    if pending:
+        lines.extend(pending)
+    else:
+        lines.append("（无）")
+
+    # 关键决策规则提示
+    if completed:
+        lines.append("")
+        lines.append("⚠️ 决策规则：当契约 status=applied 时，该面板已成功推送，禁止重复调用")
+
+    return "\n".join(lines)
+
+
+def _is_contract_already_applied(state: GraphState, contract_id: str = None, component_id: str = None) -> bool:
+    """
+    检查某个契约或组件是否已完成（status=applied）。
+
+    用于程序化保护，阻止对已完成契约的重复调用。
+    支持通过 contract_id 或 component_id 查找匹配的已完成契约。
+    """
+    working_memory = state.get("working_memory", {})
+    if not isinstance(working_memory, dict):
+        return False
+    contracts_entry = working_memory.get("component_contracts", {})
+    if not isinstance(contracts_entry, dict):
+        return False
+    contracts = contracts_entry.get("contracts", {})
+    if not isinstance(contracts, dict):
+        return False
+
+    # 优先通过 contract_id 查找
+    if contract_id:
+        contract = contracts.get(contract_id, {})
+        if contract.get("status") == "applied":
+            return True
+
+    # 如果 contract_id 没找到，尝试通过 component_id 查找
+    if component_id:
+        for key, contract in contracts.items():
+            if isinstance(contract, dict) and contract.get("component_id") == component_id:
+                if contract.get("status") == "applied":
+                    return True
+
+    # 遍历所有契约，检查是否有匹配的 contract_id
+    if contract_id:
+        for key, contract in contracts.items():
+            if isinstance(contract, dict) and contract.get("contract_id") == contract_id:
+                if contract.get("status") == "applied":
+                    return True
+
+    return False
 
 
 def _extract_component_contract_payloads(data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -400,7 +528,7 @@ def create_research_agent_node(runtime: LangGraphRuntime):
 
         prompt_parts.extend([
             f"\n## 已执行的工具链\n{_extract_executed_tools(data_stash)}",
-            f"\n## 已获取的数据（data_stash）\n{_format_data_stash(data_stash)}",
+            f"\n## 已获取的数据（data_stash）\n{_format_data_stash(data_stash, working_memory)}",
         ])
 
         prompt_parts.append(
@@ -598,6 +726,29 @@ def _process_agent_decision(
                 ref = _select_data_ref_for_display(state.get("data_stash", []))
                 if ref and ref.data_id:
                     args["source_ref"] = ref.data_id
+
+            # 🆕 程序化保护：阻止对已完成契约的重复调用
+            contract_id = args.get("contract_id")
+            # 从 contract_id 推断 component_id（如 "Table-contract-v1" -> "Table"）
+            component_id = None
+            if contract_id and "-contract-" in contract_id:
+                component_id = contract_id.split("-contract-")[0]
+
+            if _is_contract_already_applied(state, contract_id=contract_id, component_id=component_id):
+                logger.warning(
+                    "程序化保护：阻止重复调用，契约 %s (组件 %s) 已 applied",
+                    contract_id, component_id
+                )
+                return {
+                    "final_report": json.dumps({
+                        "summary": f"任务已完成：{contract_id or component_id} 面板已成功推送，无需重复调用",
+                        "evidence": [],
+                        "next_actions": [],
+                    }, ensure_ascii=False, indent=2),
+                    "next_tool_call": None,
+                    "agent_decision": "FINISH",
+                    "agent_reasoning": f"程序保护：检测到 {contract_id or component_id} 已 applied，阻止重复调用",
+                }
 
         # 防止无进展的重复调用（同一工具连续 ≥3 次）
         recent_repeat = _recent_tool_repeats(state.get("data_stash", []), tool_call_data.get("plugin_id"), limit=3)
